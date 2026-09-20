@@ -117,17 +117,36 @@ and it is unique where the friendly name is not — both development controllers
 "WLED-Gledopto". WLED also derives its mDNS name from the MAC (`wled-6a1be8.local`), so discovery
 finds the same device at whatever address it landed on.
 
-## Where settings live
+## Where settings live: on the controllers
 
-`IProjectStore` has two implementations:
+The layout is stored on the controllers themselves, as `ledwright.json` on their flash, **mirrored
+to every one of them**. Describe the house once on one machine, press *Save to controllers*, and
+anyone else on the same network opens Ledwright and finds it already set up. Nothing is copied
+between machines, nothing lives on anyone's disk, and there is no file to keep in sync.
 
-- `DeviceProjectStore` writes `ledwright.json` to the controller's own flash. Nothing on the PC, so
-  a fresh install finds its settings by discovering the device. The development controllers had
-  ~935 KB of 983 KB free, which is room for the project and a downscaled photo.
-- `FileProjectStore` keeps an ordinary local file, for devices too small to host their own settings.
+Mirroring rather than splitting means any single controller is enough to rebuild the house, so one
+unplugged for the winter does not take the layout with it. Copies can drift if someone saves while a
+controller is offline, so each save bumps a revision number; on load the highest revision wins and
+the disagreement is reported rather than silently resolved.
 
-The app picks based on `WledCapabilities.CanStoreProjectOnDevice` rather than assuming. Flash has a
-finite write budget, so saves happen on explicit user action, not on every edit.
+Verified end to end against the two development controllers: save wrote an identical 947-byte file
+to both, and a cold restart reported *"Loaded revision 1 from WLED-Gledopto — 2 segments, 310 LEDs"*
+and opened on the House rather than on Setup.
+
+**One firmware quirk worth knowing.** WLED's file editor answers **HTTP 500 to a perfectly
+successful upload** — confirmed on 0.15.3, where the file read back byte for byte after the error.
+So `WledFileSystemClient` does not trust the status code: it reads the file back and checks the
+length before reporting success. Anything built against `/edit` needs to do the same, or it will
+report failure on every write that worked.
+
+`FileProjectStore` remains for controllers with no room to spare; `WledCapabilities.CanStoreProjectOnDevice`
+decides. Flash has a finite write budget, so saving is an explicit action, not something that
+happens on every edit.
+
+The photo travels with the project. A phone photo is several megabytes and there is under a megabyte
+free, so `PhotoPreparer` scales it to 1600px and re-encodes it as JPEG, dropping quality before
+resolution, until it fits the budget. The preview shows the prepared version, so what you see is
+what the other machine gets.
 
 ## The layout problem, and why the app has to ask
 
@@ -169,10 +188,13 @@ definition with geometry; `Ledwright.Core.Models.WledSegment` is the wire format
 ## Not done yet
 
 - Looks are modelled, resolved and tested, but the app has no UI for saving and recalling them.
+  The whole layout-aware preset mechanism is built and unreachable.
 - The photo canvas paints each segment in its segment colour; it does not yet animate effects.
   WLED can stream real per-pixel data over the WebSocket live-preview channel, which would make the
   preview exact — the frame format needs verifying against the firmware first.
-- `WledFileSystemClient` writes are implemented but have not been exercised against a device.
+- Storing the photo on the controllers is implemented and the downscaling is in place, but the
+  round trip has not been exercised with a real photo.
+- Renaming a controller on the device itself (`/cfg.json` write) has not been run against hardware.
 - No CI workflow, and no packaged installers.
 
 ## Licence

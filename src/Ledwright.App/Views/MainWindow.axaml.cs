@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Avalonia.Controls;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Ledwright.App.ViewModels;
 using Ledwright.Core.Layout;
@@ -21,6 +20,11 @@ public partial class MainWindow : Window
 
     private async void OnLoadPhoto(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (ViewModel is not { } viewModel)
+        {
+            return;
+        }
+
         try
         {
             IStorageProvider? storage = GetTopLevel(this)?.StorageProvider;
@@ -41,21 +45,30 @@ public partial class MainWindow : Window
                 return;
             }
 
-            await using Stream stream = await files[0].OpenReadAsync();
-            House.Photo = new Bitmap(stream);
-
-            if (ViewModel is { } viewModel)
+            byte[] original;
+            await using (Stream stream = await files[0].OpenReadAsync())
             {
-                viewModel.Project.PhotoPath = files[0].Path.LocalPath;
-                viewModel.Status = "Photo loaded. Pick a segment, then draw it onto the house.";
+                using var buffer = new MemoryStream();
+                await stream.CopyToAsync(buffer);
+                original = buffer.ToArray();
             }
+
+            // Prepared on the way in, not on the way out: the photo has to fit on a controller's
+            // flash, and the preview should show what actually gets stored.
+            byte[] prepared = await Task.Run(() =>
+                PhotoPreparer.ToStoredJpeg(original, DeviceProjectStore.MaxPhotoBytes));
+
+            viewModel.PhotoBytes = prepared;
+            viewModel.Project.PhotoPath = DeviceProjectStore.PhotoFile;
+
+            string summary = $"{original.Length / 1024} KB down to {prepared.Length / 1024} KB";
+            viewModel.Status = prepared.Length > DeviceProjectStore.MaxPhotoBytes
+                ? $"Photo loaded ({summary}), still too large for the controllers. Crop it and try again."
+                : $"Photo loaded ({summary}). Pick a segment, then draw it onto the house.";
         }
         catch (Exception ex)
         {
-            if (ViewModel is { } viewModel)
-            {
-                viewModel.Status = $"Could not load the photo: {ex.Message}";
-            }
+            viewModel.Status = $"Could not load the photo: {ex.Message}";
         }
     }
 

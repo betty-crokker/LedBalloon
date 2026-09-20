@@ -91,15 +91,48 @@ public sealed class WledFileSystemClient : IDisposable
         // The editor handler takes the destination from the part's filename.
         form.Add(file, "data", "/" + normalized);
 
-        using HttpResponseMessage response = await _http.PostAsync("edit", form, cancellationToken)
-            .ConfigureAwait(false);
+        HttpStatusCode status;
+        using (HttpResponseMessage response = await _http.PostAsync("edit", form, cancellationToken)
+                   .ConfigureAwait(false))
+        {
+            status = response.StatusCode;
+        }
 
-        if (!response.IsSuccessStatusCode)
+        if (status is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
             throw new WledHttpException(
-                response.StatusCode,
-                $"Could not write /{normalized} to the device ({(int)response.StatusCode}). " +
-                "The build may omit the file editor, or a settings PIN may be blocking it.");
+                status,
+                $"The controller refused to write /{normalized}. A settings PIN blocks the file editor.");
+        }
+
+        // The status code is not evidence either way. WLED's file editor answers 500 to a perfectly
+        // successful upload — verified against 0.15.3, where the file read back byte for byte after
+        // a 500. So confirm the write by reading it back rather than trusting the response.
+        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+
+        if (!await WroteSuccessfullyAsync(normalized, content.Length, cancellationToken).ConfigureAwait(false))
+        {
+            throw new WledHttpException(
+                status,
+                $"Could not write /{normalized} to the device (it answered {(int)status} and the file " +
+                "did not come back). The build may omit the file editor, or the filesystem may be full.");
+        }
+    }
+
+    /// <summary>Reads the file back and checks it is the size we just sent.</summary>
+    private async Task<bool> WroteSuccessfullyAsync(
+        string path,
+        int expectedLength,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            byte[]? written = await DownloadAsync(path, cancellationToken).ConfigureAwait(false);
+            return written is not null && written.Length == expectedLength;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or WledHttpException or TaskCanceledException)
+        {
+            return false;
         }
     }
 
