@@ -1,0 +1,219 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:Ledwright.App.ViewModels"
+        xmlns:ctrl="using:Ledwright.App.Controls"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
+        x:Class="Ledwright.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="Ledwright"
+        Width="1280" Height="800"
+        MinWidth="960" MinHeight="600">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,12,0,6" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+
+    <!-- Status bar -->
+    <Border DockPanel.Dock="Bottom" Padding="12,6" Background="#1A1D22">
+      <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
+    </Border>
+
+    <!-- Devices -->
+    <Border DockPanel.Dock="Left" Width="260" Padding="12" Background="#16181C">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Controllers" Margin="0,0,0,6" />
+
+        <StackPanel DockPanel.Dock="Top" Spacing="6">
+          <Button Content="Scan the network"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Center"
+                  Command="{Binding ScanCommand}"
+                  IsEnabled="{Binding !IsScanning}" />
+          <TextBlock Classes="hint"
+                     Text="Found over mDNS and filed by MAC, so a controller that comes back on a new IP is still recognised." />
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
+          <TextBox Watermark="192.168.0.102" Text="{Binding ManualHost}" />
+          <Button Content="Add by address"
+                  HorizontalAlignment="Stretch"
+                  HorizontalContentAlignment="Center"
+                  Command="{Binding AddManualCommand}" />
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding Devices}"
+                 SelectedItem="{Binding SelectedDevice}"
+                 Margin="0,12,0,0">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:DeviceViewModel">
+              <StackPanel Spacing="2" Margin="0,4">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                           Fill="{Binding IsConnected, Converter={x:Static vm:Converters.ConnectionBrush}}" />
+                  <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                </StackPanel>
+                <TextBlock Text="{Binding Host}" Classes="hint" />
+                <TextBlock Text="{Binding Status}" Classes="hint" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <!-- Segments -->
+    <Border DockPanel.Dock="Right" Width="330" Padding="12" Background="#16181C">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Segments" Margin="0,0,0,6" />
+
+        <StackPanel DockPanel.Dock="Top" Spacing="6">
+          <Button Content="Import from controller"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding ImportSegmentsFromDeviceCommand}" />
+          <Button Content="Work out layout from presets"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding ProposeLayoutCommand}" />
+          <TextBlock Classes="hint"
+                     Text="Each preset stores its own copy of the segment bounds, so they can disagree. This weighs them against the hardware and asks about the rest." />
+        </StackPanel>
+
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
+          <Button Content="Add a segment"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding AddSegmentCommand}" />
+          <Button Content="Re-lay end to end"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding RepackSegmentsCommand}" />
+          <Button Content="Push layout to controller"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                  Command="{Binding PushGeometryCommand}" />
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding Project.Segments}"
+                 SelectedItem="{Binding SelectedSegment}"
+                 Margin="0,12,0,0">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,4" Spacing="2">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                <TextBlock Classes="hint">
+                  <Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" />
+                  <Run Text="  ·  " /><Run Text="{Binding Count}" /><Run Text=" LEDs" />
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <!-- Main area -->
+    <TabControl Margin="12">
+
+      <TabItem Header="Lights">
+        <ScrollViewer>
+          <StackPanel Margin="8" Spacing="4" DataContext="{Binding SelectedDevice}">
+
+            <TextBlock Classes="heading" Text="Power and brightness" />
+            <ToggleSwitch IsChecked="{Binding IsOn}" OnContent="On" OffContent="Off" />
+            <Slider Minimum="0" Maximum="255" Value="{Binding Brightness}" />
+            <TextBlock Classes="hint"
+                       Text="Drag freely: updates are merged and paced before they reach the controller." />
+
+            <TextBlock Classes="heading" Text="Effect" />
+            <ComboBox ItemsSource="{Binding Effects}"
+                      SelectedIndex="{Binding SelectedEffectIndex}"
+                      HorizontalAlignment="Stretch" />
+
+            <TextBlock Classes="heading" Text="Palette" />
+            <ComboBox ItemsSource="{Binding Palettes}"
+                      SelectedIndex="{Binding SelectedPaletteIndex}"
+                      HorizontalAlignment="Stretch" />
+
+            <TextBlock Classes="heading" Text="Presets stored on the controller" />
+            <ItemsControl ItemsSource="{Binding Presets}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <Button Margin="0,2" HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Left"
+                          Content="{Binding DisplayName}"
+                          Command="{Binding $parent[TabControl].((vm:MainViewModel)DataContext).ApplyPresetCommand}"
+                          CommandParameter="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <TabItem Header="House">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="8">
+            <Button Content="Load photo" Click="OnLoadPhoto" />
+            <Button Content="Draw selected segment" Command="{Binding StartDrawingSegmentCommand}" />
+            <Button Content="Done drawing" Command="{Binding FinishDrawingSegmentCommand}" />
+            <TextBlock VerticalAlignment="Center" Classes="hint"
+                       Text="Click each end of the run on the photo. Add more clicks to follow a corner." />
+          </StackPanel>
+
+          <ctrl:HouseCanvas Name="Canvas"
+                            Project="{Binding Project}"
+                            SelectedSegment="{Binding SelectedSegment}"
+                            DeviceState="{Binding SelectedDevice.State}"
+                            IsDrawing="{Binding IsDrawingSegment}"
+                            PointAdded="OnCanvasPointAdded" />
+        </DockPanel>
+      </TabItem>
+
+      <TabItem Header="Health">
+        <ScrollViewer>
+          <StackPanel Margin="8" Spacing="6">
+            <Button Content="Check presets against the strip" Command="{Binding AuditCommand}" />
+
+            <TextBlock Classes="heading" Text="Presets that would leave LEDs dark" />
+            <ItemsControl ItemsSource="{Binding PresetGaps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="heading" Text="Layout problems" />
+            <ItemsControl ItemsSource="{Binding LayoutProblems}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <TextBlock Classes="heading" Text="Disagreements between presets" />
+            <ItemsControl ItemsSource="{Binding LayoutConflicts}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+    </TabControl>
+  </DockPanel>
+</Window>
