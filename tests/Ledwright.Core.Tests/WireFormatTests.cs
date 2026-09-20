@@ -144,7 +144,7 @@ public class WireFormatTests
     [InlineData("#ff6600", 255, 102, 0, 0)]
     [InlineData("ff6600", 255, 102, 0, 0)]
     [InlineData("#FF660080", 255, 102, 0, 128)]
-    public void Colours_parse_from_hex_in_the_forms_people_actually_type(
+    public void Colors_parse_from_hex_in_the_forms_people_actually_type(
         string hex, byte r, byte g, byte b, byte w)
     {
         RgbColor color = RgbColor.Parse(hex);

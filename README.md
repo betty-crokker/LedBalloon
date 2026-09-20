@@ -19,21 +19,21 @@ Ledwright's own saved appearances, called **looks**, store no LED indices at all
 the indices are resolved from the project at the moment the look is applied. Fix a length in one
 place and every look follows.
 
-**You cannot tell what a colour will look like from the street.** So the app takes a photo of the
-house at dusk, lets you draw each run onto it as a line, and paints the live colours back onto that
+**You cannot tell what a color will look like from the street.** So the app takes a photo of the
+house at dusk, lets you draw each run onto it as a line, and paints the live colors back onto that
 photo as you work.
 
 ### A line is not enough
 
 Where a run is does not tell you what it looks like. Bare addressable pixels facing the road read as
-a row of coloured points; the same LEDs under an eave aimed at the wall are barely visible
+a row of colored points; the same LEDs under an eave aimed at the wall are barely visible
 themselves, and what you see from the street is the overlapping scallops they throw. Drawing the
 second as though it were the first would make the preview confidently wrong, so each segment also
 carries a **fixture**:
 
 | Fixture | Drawn as |
 | --- | --- |
-| Addressable strip, facing out | One visible point of colour per LED |
+| Addressable strip, facing out | One visible point of color per LED |
 | Rope or diffused channel | A continuous line of glow, no discrete pixels |
 | Downlights under an eave | Overlapping soft-edged cones washing down the wall |
 | Uplights from the ground | The same, aimed up |
@@ -84,10 +84,10 @@ Effectively all of it, spread across three documents. Verified against 0.15.3:
 
 | What | Where | Writable |
 | --- | --- | --- |
-| Lights: power, brightness, colour, effects, palettes, segments, presets, playlists, nightlight, sync | `GET`/`POST /json/state` | yes |
+| Lights: power, brightness, color, effects, palettes, segments, presets, playlists, nightlight, sync | `GET`/`POST /json/state` | yes |
 | Device description: firmware, LED count, FPS, power, filesystem, usermods | `GET /json/info` | read-only |
 | Effect and palette names | `GET /json/eff`, `/json/pal` | read-only |
-| Everything behind the settings gear: network, wifi, ethernet, LED outputs, buttons, IR, relay, light behaviour, boot defaults, sync, MQTT, Hue, Alexa, NTP, overlays, timers, OTA, usermods | `GET`/`POST /cfg.json` | yes, carefully |
+| Everything behind the settings gear: network, wifi, ethernet, LED outputs, buttons, IR, relay, light behavior, boot defaults, sync, MQTT, Hue, Alexa, NTP, overlays, timers, OTA, usermods | `GET`/`POST /cfg.json` | yes, carefully |
 | Presets and playlists | `GET /presets.json`, saved via `psave` in `/json/state` | yes |
 | Files on the device | `/edit` | yes |
 
@@ -214,9 +214,9 @@ then rewrite the device's existing presets to match.
 
 ## Design notes worth knowing
 
-**Partial updates.** `WledState` has nullable properties throughout and serialises with
+**Partial updates.** `WledState` has nullable properties throughout and serializes with
 `JsonIgnoreCondition.WhenWritingNull`, so the same type is both a full snapshot and a sparse patch.
-`new WledState { On = true }` serialises to exactly `{"on":true}` and touches nothing else.
+`new WledState { On = true }` serializes to exactly `{"on":true}` and touches nothing else.
 
 **Source-generated JSON.** Not optional polish — it is what keeps trimmed and NativeAOT publishes
 from failing at runtime.
@@ -235,9 +235,9 @@ definition with geometry; `Ledwright.Core.Models.WledSegment` is the wire format
 
 ## Not done yet
 
-- Looks are modelled, resolved and tested, but the app has no UI for saving and recalling them.
+- Looks are modeled, resolved and tested, but the app has no UI for saving and recalling them.
   The whole layout-aware preset mechanism is built and unreachable.
-- The photo canvas paints each segment in its segment colour; it does not yet animate effects.
+- The photo canvas paints each segment in its segment color; it does not yet animate effects.
   WLED can stream real per-pixel data over the WebSocket live-preview channel, which would make the
   preview exact — the frame format needs verifying against the firmware first.
 - Storing the photo on the controllers is implemented and the downscaling is in place, but the
@@ -245,6 +245,6 @@ definition with geometry; `Ledwright.Core.Models.WledSegment` is the wire format
 - Renaming a controller on the device itself (`/cfg.json` write) has not been run against hardware.
 - No CI workflow, and no packaged installers.
 
-## Licence
+## License
 
 MIT.

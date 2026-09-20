@@ -8,7 +8,7 @@ namespace Ledwright.Core;
 /// <param name="Start">First LED index this output drives.</param>
 /// <param name="Length">How many LEDs are wired to it.</param>
 /// <param name="Pins">GPIO pins in use.</param>
-/// <param name="ColorOrder">WLED's colour-order code.</param>
+/// <param name="ColorOrder">WLED's color-order code.</param>
 /// <param name="Reversed">Whether the output is configured to run backwards.</param>
 public sealed record LedBus(int Start, int Length, int[] Pins, int ColorOrder, bool Reversed)
 {

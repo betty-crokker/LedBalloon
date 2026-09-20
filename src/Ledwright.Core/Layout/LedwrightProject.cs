@@ -209,6 +209,125 @@ public sealed class LedwrightProject
         return problems;
     }
 
+    /// <summary>
+    /// The part of this project that belongs to one controller, and nothing else.
+    /// <para>
+    /// A controller has no business holding another controller's runs, name or LED counts. Each one
+    /// stores its own slice, so a box is a complete and honest description of what is plugged into
+    /// it — readable on its own, and meaningless to nobody.
+    /// </para>
+    /// <para>
+    /// The photo is the exception, and it is stored as a separate file rather than in here: it is a
+    /// picture of the whole house and cannot be divided.
+    /// </para>
+    /// </summary>
+    public LedwrightProject SliceFor(string controllerKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
+
+        IReadOnlyList<Segment> mine = SegmentsOn(controllerKey);
+        var ids = mine.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
+
+        var slice = new LedwrightProject
+        {
+            Schema = Schema,
+            Name = Name,
+            Revision = Revision,
+            SavedUtc = SavedUtc,
+            PhotoPath = PhotoPath,
+            PhotoHash = PhotoHash,
+            PhotoOnDevice = PhotoOnDevice,
+            Controllers = [.. Controllers.Where(c => KeyEquals(c.Key, controllerKey))],
+            Segments = [.. mine],
+        };
+
+        // A look spans the house, so each controller keeps only the part about its own runs.
+        foreach (Look look in Looks)
+        {
+            var trimmed = new Look
+            {
+                Id = look.Id,
+                Name = look.Name,
+                On = look.On,
+                Brightness = look.Brightness,
+                Transition = look.Transition,
+                UnlistedSegmentsOff = look.UnlistedSegmentsOff,
+            };
+
+            foreach ((string segmentId, SegmentLook appearance) in look.Segments.Where(p => ids.Contains(p.Key)))
+            {
+                trimmed.Segments[segmentId] = appearance;
+            }
+
+            slice.Looks.Add(trimmed);
+        }
+
+        return slice;
+    }
+
+    /// <summary>
+    /// Reassembles a house from the slices each controller holds. Later slices add to the picture;
+    /// none of them overwrites another's runs.
+    /// </summary>
+    public static LedwrightProject Assemble(IEnumerable<LedwrightProject> slices)
+    {
+        ArgumentNullException.ThrowIfNull(slices);
+
+        var house = new LedwrightProject { Name = string.Empty };
+        var seenSegments = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (LedwrightProject slice in slices)
+        {
+            if (string.IsNullOrEmpty(house.Name) || house.Name == "My House")
+            {
+                house.Name = slice.Name;
+            }
+
+            house.Revision = Math.Max(house.Revision, slice.Revision);
+            house.SavedUtc = slice.SavedUtc > house.SavedUtc ? slice.SavedUtc : house.SavedUtc;
+            house.PhotoHash ??= slice.PhotoHash;
+            house.PhotoPath ??= slice.PhotoPath;
+            house.PhotoOnDevice |= slice.PhotoOnDevice;
+
+            foreach (ControllerRef controller in slice.Controllers)
+            {
+                if (house.FindController(controller.Key) is null)
+                {
+                    house.Controllers.Add(controller);
+                }
+            }
+
+            foreach (Segment segment in slice.Segments.Where(s => seenSegments.Add(s.Id)))
+            {
+                house.Segments.Add(segment);
+            }
+
+            foreach (Look look in slice.Looks)
+            {
+                Look? existing = house.Looks.FirstOrDefault(l =>
+                    string.Equals(l.Id, look.Id, StringComparison.Ordinal));
+
+                if (existing is null)
+                {
+                    house.Looks.Add(look);
+                    continue;
+                }
+
+                foreach ((string segmentId, SegmentLook appearance) in look.Segments)
+                {
+                    existing.Segments[segmentId] = appearance;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(house.Name))
+        {
+            house.Name = "My House";
+        }
+
+        return house;
+    }
+
     private static bool KeyEquals(string? a, string? b) =>
         string.Equals(a ?? string.Empty, b ?? string.Empty, StringComparison.OrdinalIgnoreCase);
 }

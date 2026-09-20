@@ -18,13 +18,13 @@ namespace Ledwright.App.ViewModels;
 /// The two halves of the app.
 /// <para>
 /// Describing the house is a job with an end. Once it is done the LED counts, the mDNS names and
-/// the beam angles stop being interesting and the only question left is what colour things should
+/// the beam angles stop being interesting and the only question left is what color things should
 /// be, so they get out of the way until someone asks for them back.
 /// </para>
 /// </summary>
 public enum AppMode
 {
-    /// <summary>Colours, effects and presets, on the photo.</summary>
+    /// <summary>Colors, effects and presets, on the photo.</summary>
     Design,
 
     /// <summary>Controllers, runs, lengths and geometry.</summary>
@@ -41,7 +41,7 @@ public sealed record FixtureChoice(FixtureStyle Style, string Name, string Descr
 /// The app is about a house, not about hardware.
 /// <para>
 /// Controllers are a setup concern: found once, named once, and then out of the way. Everything the
-/// user works with afterwards — segments, presets, colours — is addressed by what it is and where it
+/// user works with afterwards — segments, presets, colors — is addressed by what it is and where it
 /// hangs, never by which box happens to drive it.
 /// </para>
 /// </summary>
@@ -73,7 +73,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Which half of the app is showing.</summary>
     [ObservableProperty] private AppMode _mode = AppMode.Setup;
 
-    /// <summary>The colour of whatever is selected, or of the whole house when nothing is.</summary>
+    /// <summary>The color of whatever is selected, or of the whole house when nothing is.</summary>
     [ObservableProperty] private Color _pickedColor = Colors.White;
     [ObservableProperty] private byte[]? _photoBytes;
 
@@ -96,13 +96,14 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private int _layoutRevision;
 
     /// <summary>
-    /// Live state per controller, so the canvas colours each run from the box that drives it rather
+    /// Live state per controller, so the canvas colors each run from the box that drives it rather
     /// than from whichever controller happens to be selected.
     /// </summary>
     [ObservableProperty] private IReadOnlyDictionary<string, WledState> _controllerStates =
         new Dictionary<string, WledState>();
 
     private bool _suppressPush;
+    private bool _rebuildingRows;
 
     public MainViewModel()
     {
@@ -137,6 +138,49 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Overlaps and gaps, kept up to date as lengths are typed.</summary>
     public ObservableCollection<string> LayoutWarnings { get; } = [];
 
+    /// <summary>
+    /// Which controller the segment list is showing.
+    /// <para>
+    /// One controller at a time: a run belongs to a box, and mixing two boxes' runs in one list
+    /// makes it easy to edit the wrong one.
+    /// </para>
+    /// </summary>
+    public ControllerCoverage? SelectedCoverage
+    {
+        get => _selectedCoverage;
+        set
+        {
+            if (!SetProperty(ref _selectedCoverage, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(SegmentsHeading));
+
+            if (value is not null && DeviceFor(value.Key) is { } device)
+            {
+                SelectedDevice = device;
+            }
+
+            RebuildSegmentRows();
+
+            // A selection from the other controller is not in this list any more.
+            if (SelectedSegment is { } segment &&
+                !string.Equals(segment.ControllerKey, value?.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                SelectedSegment = Project.SegmentsOn(value?.Key ?? string.Empty).FirstOrDefault();
+            }
+        }
+    }
+
+    private ControllerCoverage? _selectedCoverage;
+
+    public string SegmentsHeading =>
+        SelectedCoverage is null ? "Segments" : $"Runs on {SelectedCoverage.Name}";
+
+    /// <summary>True when the selected controller has any runs to list.</summary>
+    public bool HasVisibleSegments => SegmentRows.Count > 0;
+
     public bool HasLayoutWarnings => LayoutWarnings.Count > 0;
 
     /// <summary>The row selected in the list. Drives <see cref="SelectedSegment"/>.</summary>
@@ -156,9 +200,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Brings in one controller's outputs as segments, named after it.</summary>
     [RelayCommand]
-    private async Task ImportFromControllerAsync(ControllerCoverage? coverage)
+    private async Task ImportFromControllerAsync()
     {
-        if (coverage is null || DeviceFor(coverage.Key) is not { } device)
+        if (SelectedCoverage is not { } coverage || DeviceFor(coverage.Key) is not { } device)
         {
             return;
         }
@@ -196,7 +240,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsSetupMode => Mode == AppMode.Setup;
 
-    /// <summary>What the colour controls are pointed at right now.</summary>
+    /// <summary>What the color controls are pointed at right now.</summary>
     public string SelectionLabel => SelectedSegment?.Name ?? "The whole house";
 
     partial void OnModeChanged(AppMode value)
@@ -212,17 +256,17 @@ public sealed partial class MainViewModel : ViewModelBase
         ActiveTab = SetupTab;
     }
 
-    /// <summary>Leaves setup behind and goes back to choosing colours.</summary>
+    /// <summary>Leaves setup behind and goes back to choosing colors.</summary>
     [RelayCommand]
     private void FinishSetup()
     {
         Mode = AppMode.Design;
         Status = HasSegments
-            ? "Click a run on the photo to change it, or pick a colour for the whole house."
+            ? "Click a run on the photo to change it, or pick a color for the whole house."
             : "Nothing described yet — describe at least one run in Setup first.";
     }
 
-    /// <summary>Points the colour controls back at the whole house.</summary>
+    /// <summary>Points the color controls back at the whole house.</summary>
     [RelayCommand]
     private void SelectWholeHouse() => SelectedSegment = null;
 
@@ -230,7 +274,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<FixtureChoice> FixtureStyles { get; } =
     [
         new(FixtureStyle.PointSource, "Addressable strip, facing out",
-            "Bare pixels you can see. Each LED is a point of colour."),
+            "Bare pixels you can see. Each LED is a point of color."),
         new(FixtureStyle.DiffusedStrip, "Rope or diffused channel",
             "A continuous line of glow with no visible pixels."),
         new(FixtureStyle.Downlight, "Downlights under an eave",
@@ -617,20 +661,11 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Adds a run to a named controller, for building one up by hand.</summary>
-    [RelayCommand]
-    private void AddSegmentOn(ControllerCoverage? coverage)
-    {
-        if (coverage is not null)
-        {
-            AddSegmentTo(coverage.Key);
-        }
-    }
-
+    /// <summary>Adds a run to whichever controller the list is showing.</summary>
     [RelayCommand]
     private void AddSegment()
     {
-        string? key = SelectedSegment?.ControllerKey ?? SelectedDevice?.DeviceKey;
+        string? key = SelectedCoverage?.Key ?? SelectedSegment?.ControllerKey ?? SelectedDevice?.DeviceKey;
         if (key is null)
         {
             Status = "Connect a controller first.";
@@ -787,9 +822,9 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Sends the chosen colour to whatever is selected, or to every run when nothing is.
+    /// Sends the chosen color to whatever is selected, or to every run when nothing is.
     /// <para>
-    /// Posted rather than applied, so dragging round a colour wheel is merged and paced before it
+    /// Posted rather than applied, so dragging round a color wheel is merged and paced before it
     /// reaches the hardware.
     /// </para>
     /// </summary>
@@ -800,17 +835,17 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        var colour = new RgbColor(value.R, value.G, value.B);
+        var color = new RgbColor(value.R, value.G, value.B);
 
         if (SelectedSegment is { } segment)
         {
-            DeviceFor(segment)?.Device.SetPrimaryColor(colour, Project.WledSegmentIdFor(segment));
+            DeviceFor(segment)?.Device.SetPrimaryColor(color, Project.WledSegmentIdFor(segment));
             return;
         }
 
         foreach (Segment each in Project.Segments)
         {
-            DeviceFor(each)?.Device.SetPrimaryColor(colour, Project.WledSegmentIdFor(each));
+            DeviceFor(each)?.Device.SetPrimaryColor(color, Project.WledSegmentIdFor(each));
         }
     }
 
@@ -826,7 +861,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public void PickSegment(Segment segment)
     {
         SelectedSegment = segment;
-        Status = $"'{segment.Name}' selected. Choose a colour, or click the photo again to pick another run.";
+        Status = $"'{segment.Name}' selected. Choose a color, or click the photo again to pick another run.";
     }
 
     partial void OnSelectedSegmentChanged(Segment? value)
@@ -1102,21 +1137,41 @@ public sealed partial class MainViewModel : ViewModelBase
             SelectedSegment = Project.Segments.FirstOrDefault();
         }
 
-        Segment? keep = SelectedSegment;
-
-        SegmentRows.Clear();
-        foreach (Segment segment in Project.Segments)
+        // Re-entrant: assigning SelectedCoverage below makes the list write its selection back,
+        // which lands here again mid-rebuild and duplicates every row.
+        if (_rebuildingRows)
         {
-            SegmentRows.Add(new SegmentRow(segment, ControllerNameFor(segment.ControllerKey)));
+            return;
         }
 
-        Coverage.Clear();
-        foreach (DeviceViewModel device in Devices)
+        _rebuildingRows = true;
+        try
         {
-            if (device.DeviceKey is not { } key)
-            {
-                continue;
-            }
+            RebuildSegmentRowsCore();
+        }
+        finally
+        {
+            _rebuildingRows = false;
+        }
+    }
+
+    private void RebuildSegmentRowsCore()
+    {
+        Segment? keep = SelectedSegment;
+
+        // Coverage first: it decides which runs the list shows.
+        string? previousKey = _selectedCoverage?.Key;
+
+        Coverage.Clear();
+
+        // One row per physical controller. Discovery can hand back the same box more than once,
+        // and a list with two Norths in it is worse than useless.
+        foreach (IGrouping<string, DeviceViewModel> group in Devices
+                     .Where(d => d.DeviceKey is not null)
+                     .GroupBy(d => d.DeviceKey!, StringComparer.OrdinalIgnoreCase))
+        {
+            DeviceViewModel device = group.First();
+            string key = group.Key;
 
             IReadOnlyList<Segment> mine = Project.SegmentsOn(key);
             Coverage.Add(new ControllerCoverage(
@@ -1127,10 +1182,31 @@ public sealed partial class MainViewModel : ViewModelBase
                 device.Capabilities?.LedCount ?? 0));
         }
 
+        // Re-point at the same controller across a rebuild, rather than resetting to the first.
+        _selectedCoverage =
+            Coverage.FirstOrDefault(c => string.Equals(c.Key, previousKey, StringComparison.OrdinalIgnoreCase))
+            ?? Coverage.FirstOrDefault(c => string.Equals(c.Key, keep?.ControllerKey, StringComparison.OrdinalIgnoreCase))
+            ?? Coverage.FirstOrDefault();
+
+        OnPropertyChanged(nameof(SelectedCoverage));
+        OnPropertyChanged(nameof(SegmentsHeading));
+
+        // Only the selected controller's runs, so there is no chance of editing the wrong box's.
+        IEnumerable<Segment> visible = _selectedCoverage is { } showing
+            ? Project.SegmentsOn(showing.Key)
+            : Project.Segments;
+
+        SegmentRows.Clear();
+        foreach (Segment segment in visible)
+        {
+            SegmentRows.Add(new SegmentRow(segment, ControllerNameFor(segment.ControllerKey)));
+        }
+
         RefreshLayoutWarnings();
 
         _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep));
         OnPropertyChanged(nameof(SelectedRow));
+        OnPropertyChanged(nameof(HasVisibleSegments));
     }
 
     private string ControllerNameFor(string? key) =>

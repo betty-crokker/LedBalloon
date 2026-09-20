@@ -75,7 +75,7 @@
 
     <Grid>
 
-      <!-- ================= DESIGN: what colour should things be ================= -->
+      <!-- ================= DESIGN: what color should things be ================= -->
       <DockPanel IsVisible="{Binding IsDesignMode}">
 
         <Border DockPanel.Dock="Top" Padding="14,10"
@@ -91,7 +91,7 @@
           </DockPanel>
         </Border>
 
-        <!-- Colour, for whatever is selected -->
+        <!-- Color, for whatever is selected -->
         <Border DockPanel.Dock="Right" Width="320" Padding="14"
                 Background="{DynamicResource PanelBackground}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
@@ -162,7 +162,7 @@
         <Border DockPanel.Dock="Top" Padding="14,10"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
           <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Done — back to colours"
+            <Button DockPanel.Dock="Right" Content="Done — back to colors"
                     Command="{Binding FinishSetupCommand}"
                     IsEnabled="{Binding HasSegments}" />
             <StackPanel VerticalAlignment="Center">
@@ -179,47 +179,55 @@
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="0">
 
-              <TextBlock Classes="panelTitle" Text="Segments" Margin="0,0,0,10" />
+              <TextBlock Classes="panelTitle" Text="Controller" Margin="0,0,0,6" />
+              <TextBlock Classes="hint" Margin="0,0,0,6"
+                         Text="Pick one. The runs below are the ones plugged into it." />
 
-              <ItemsControl ItemsSource="{Binding Coverage}" Margin="0,0,0,10">
-                <ItemsControl.ItemTemplate>
+              <!-- A list, not a heading: choosing the controller is what filters everything under it. -->
+              <ListBox ItemsSource="{Binding Coverage}"
+                       SelectedItem="{Binding SelectedCoverage}"
+                       Background="Transparent"
+                       Margin="0,0,0,12">
+                <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:ControllerCoverage">
-                    <StackPanel Margin="0,0,0,8" Spacing="3">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
+                    <StackPanel Margin="0,3" Spacing="2">
+                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                       <TextBlock Classes="hint" Text="{Binding Summary}" />
-                      <Button Classes="block" FontSize="12" Padding="6,3"
-                              Content="Bring in its outputs as segments"
-                              IsVisible="{Binding NeedsAttention}"
-                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ImportFromControllerCommand}"
-                              CommandParameter="{Binding}" />
-                      <Button Classes="block" FontSize="12" Padding="6,3"
-                              Content="Add a run here by hand"
-                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddSegmentOnCommand}"
-                              CommandParameter="{Binding}" />
                     </StackPanel>
                   </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
+                </ListBox.ItemTemplate>
+              </ListBox>
+
+              <TextBlock Classes="panelTitle" Text="{Binding SegmentsHeading}" Margin="0,0,0,6"
+                         TextTrimming="CharacterEllipsis" />
+
+              <Button Classes="block" Margin="0,0,0,8" FontSize="12" Padding="6,3"
+                      Content="Bring in its outputs as segments"
+                      Command="{Binding ImportFromControllerCommand}" />
 
               <ListBox ItemsSource="{Binding SegmentRows}"
                        SelectedItem="{Binding SelectedRow}"
                        Background="Transparent"
                        MaxHeight="190"
-                       IsVisible="{Binding HasSegments}">
+                       IsVisible="{Binding HasVisibleSegments}">
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="vm:SegmentRow">
                     <StackPanel Margin="0,4" Spacing="2">
                       <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
                                  TextTrimming="CharacterEllipsis" />
                       <TextBlock Classes="hint">
-                        <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs  ·  on " /><Run Text="{Binding ControllerName}" />
+                        <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs  ·  LED " /><Run Text="{Binding Segment.Start}" /><Run Text=" to " /><Run Text="{Binding Segment.StopExclusive}" />
                       </TextBlock>
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
               </ListBox>
 
-              <StackPanel Spacing="8" Margin="0,12,0,0" IsVisible="{Binding HasSegments}">
+              <TextBlock Classes="hint" Margin="0,6,0,0"
+                         IsVisible="{Binding !HasVisibleSegments}"
+                         Text="Nothing described on this controller yet. Bring in its outputs above, or add a run by hand below." />
+
+              <StackPanel Spacing="8" Margin="0,12,0,0">
 
                 <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
                      reported here as it is typed rather than behind a button elsewhere. -->
@@ -349,7 +357,7 @@
               <StackPanel Margin="8,8,8,16" Spacing="6">
 
                 <TextBlock Classes="hint" Margin="0,8,0,0"
-                           Text="Found over mDNS and filed by MAC address, so a controller that comes back on a different IP is still recognised." />
+                           Text="Found over mDNS and filed by MAC address, so a controller that comes back on a different IP is still recognized." />
 
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
                   <Button Content="Scan the network" Command="{Binding ScanCommand}"

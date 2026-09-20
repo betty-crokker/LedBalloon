@@ -6,7 +6,7 @@ using Ledwright.Core.Models;
 namespace Ledwright.Core.Json;
 
 /// <summary>
-/// Source-generated serialisation for the WLED wire format.
+/// Source-generated serialization for the WLED wire format.
 /// <para>
 /// This is not optional polish: <see cref="JsonIgnoreCondition.WhenWritingNull"/> is what turns a
 /// <see cref="WledState"/> into a sparse patch, and the generated context is what keeps trimmed and

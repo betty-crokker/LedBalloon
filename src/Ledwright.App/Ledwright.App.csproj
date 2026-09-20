@@ -16,7 +16,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
-    <!-- The colour wheel: choosing colours is half of what this app is for. -->
+    <!-- The color wheel: choosing colors is half of what this app is for. -->
     <PackageReference Include="Avalonia.Controls.ColorPicker" Version="12.1.2" />
     <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>

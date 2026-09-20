@@ -23,7 +23,7 @@ public sealed class WledSegment
     [JsonPropertyName("bri")] public byte? Brightness { get; set; }
     [JsonPropertyName("cct")] public int? ColorTemperature { get; set; }
 
-    /// <summary>Up to three colour slots (primary, secondary, tertiary), each 3 or 4 channels.</summary>
+    /// <summary>Up to three color slots (primary, secondary, tertiary), each 3 or 4 channels.</summary>
     [JsonPropertyName("col")] public int[][]? Colors { get; set; }
 
     [JsonPropertyName("fx")] public int? Effect { get; set; }
@@ -76,7 +76,7 @@ public sealed class WledSegment
     }
 
     /// <summary>
-    /// Writes one colour slot, leaving the others untouched. WLED will not accept a sparse array,
+    /// Writes one color slot, leaving the others untouched. WLED will not accept a sparse array,
     /// so slots below the one being set are back-filled with whatever is already there.
     /// </summary>
     public void SetColorSlot(int slot, RgbColor color)

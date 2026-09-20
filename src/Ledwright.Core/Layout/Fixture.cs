@@ -7,14 +7,14 @@ namespace Ledwright.Core.Layout;
 /// <summary>What kind of light is actually hanging there.</summary>
 /// <remarks>
 /// This decides what the preview draws, and the difference is not cosmetic. A bare addressable
-/// strip pointed at the street reads as a row of coloured pixels. The same LEDs tucked under an eave
+/// strip pointed at the street reads as a row of colored pixels. The same LEDs tucked under an eave
 /// pointing down are barely visible themselves — what you see from the road is the overlapping
 /// scallops they throw on the wall. Drawing the second as though it were the first would make the
-/// preview worse than useless for choosing colours.
+/// preview worse than useless for choosing colors.
 /// </remarks>
 public enum FixtureStyle
 {
-    /// <summary>Bare pixels facing the viewer. Each LED is a visible point of colour.</summary>
+    /// <summary>Bare pixels facing the viewer. Each LED is a visible point of color.</summary>
     PointSource,
 
     /// <summary>Rope, neon flex or a diffused channel. A continuous line of glow, no discrete dots.</summary>
@@ -60,7 +60,7 @@ public sealed class Fixture : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// How far the light reaches, as a fraction of the photo's height. Normalised like the rest of
+    /// How far the light reaches, as a fraction of the photo's height. Normalized like the rest of
     /// the geometry so it survives swapping the photo.
     /// </summary>
     [JsonPropertyName("throw")]

@@ -140,7 +140,7 @@ public sealed class WledDevice : INotifyPropertyChanged, IAsyncDisposable
 
     /// <summary>
     /// Queues a patch through the rate limiter. This is the right call for anything driven by a
-    /// slider, a colour wheel or a drag: post freely, the coalescer sorts out the pacing.
+    /// slider, a color wheel or a drag: post freely, the coalescer sorts out the pacing.
     /// </summary>
     public void Post(WledState patch) => _coalescer.Post(patch);
 

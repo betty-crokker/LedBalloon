@@ -9,7 +9,7 @@ public sealed class WledNightlight
     /// <summary>Duration in minutes.</summary>
     [JsonPropertyName("dur")] public int? Duration { get; set; }
 
-    /// <summary>0 instant, 1 fade, 2 colour fade, 3 sunrise.</summary>
+    /// <summary>0 instant, 1 fade, 2 color fade, 3 sunrise.</summary>
     [JsonPropertyName("mode")] public int? Mode { get; set; }
 
     /// <summary>Target brightness at the end of the nightlight period.</summary>

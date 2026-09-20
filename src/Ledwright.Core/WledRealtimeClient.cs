@@ -67,7 +67,7 @@ public sealed class WledRealtimeClient : IDisposable
     /// <summary>
     /// Streams a full frame, choosing DRGB or DNRGB and splitting across packets as needed.
     /// </summary>
-    /// <param name="pixels">One colour per LED, starting at the first LED.</param>
+    /// <param name="pixels">One color per LED, starting at the first LED.</param>
     /// <param name="holdSeconds">
     /// How long the device keeps showing this frame if nothing else arrives, 1-254 seconds.
     /// 255 means hold until the device is reset, which is rarely what you want.
@@ -143,7 +143,7 @@ public sealed class WledRealtimeClient : IDisposable
     }
 
     /// <summary>
-    /// Sends sparse pixel updates as index/colour pairs. Cheaper than a full frame when only a few
+    /// Sends sparse pixel updates as index/color pairs. Cheaper than a full frame when only a few
     /// LEDs changed, but the single-byte index caps it at the first 256 LEDs.
     /// </summary>
     public ValueTask SendSparseAsync(

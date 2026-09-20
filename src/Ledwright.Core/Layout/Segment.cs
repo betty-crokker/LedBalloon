@@ -4,9 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace Ledwright.Core.Layout;
 
-/// <summary>A point in normalised photo coordinates, where (0,0) is top-left and (1,1) bottom-right.</summary>
+/// <summary>A point in normalized photo coordinates, where (0,0) is top-left and (1,1) bottom-right.</summary>
 /// <remarks>
-/// Normalised rather than pixel coordinates so that re-cropping, re-exporting or swapping in a
+/// Normalized rather than pixel coordinates so that re-cropping, re-exporting or swapping in a
 /// higher-resolution photo does not invalidate every segment you have drawn.
 /// </remarks>
 public readonly record struct LayoutPoint(double X, double Y);
@@ -144,7 +144,7 @@ public sealed class Segment : INotifyPropertyChanged
 
     /// <summary>
     /// Interpolates the position of one LED along <see cref="Path"/>, honouring <see cref="Reverse"/>.
-    /// Used to paint live colours onto the photo.
+    /// Used to paint live colors onto the photo.
     /// </summary>
     /// <param name="ledIndex">Zero-based index within this run, not the controller-wide index.</param>
     public LayoutPoint PositionOf(int ledIndex)
