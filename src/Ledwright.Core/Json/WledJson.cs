@@ -16,7 +16,12 @@ namespace Ledwright.Core.Json;
 [JsonSourceGenerationOptions(
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     PropertyNameCaseInsensitive = true,
-    NumberHandling = JsonNumberHandling.AllowReadingFromString)]
+    NumberHandling = JsonNumberHandling.AllowReadingFromString,
+
+    // Enums are written as names, not numbers. A number means "whatever is third in the enum
+    // today", so inserting a case would silently turn every saved downlight into something else.
+    // Numbers still read, so files written before this change still load.
+    UseStringEnumConverter = true)]
 [JsonSerializable(typeof(WledResponse))]
 [JsonSerializable(typeof(WledState))]
 [JsonSerializable(typeof(WledSegment))]

@@ -67,6 +67,11 @@
       <DockPanel>
         <TextBlock DockPanel.Dock="Right" Classes="hint" Margin="12,0,0,0"
                    Text="{Binding ControllerSummary}" />
+        <Border DockPanel.Dock="Right" Margin="12,0,0,0" Padding="7,1" CornerRadius="3"
+                Background="#C9821B"
+                IsVisible="{Binding HasUnsavedChanges}">
+          <TextBlock Text="Unsaved changes" FontSize="12" Foreground="White" />
+        </Border>
         <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
       </DockPanel>
     </Border>
@@ -175,8 +180,13 @@
 
           <Button Classes="block" Content="Save to controllers"
                   Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
+
+          <Button Classes="block" Content="Overwrite the newer version anyway"
+                  Command="{Binding OverwriteNewerRevisionCommand}"
+                  IsVisible="{Binding SaveBlockedByNewerRevision}" />
+
           <TextBlock Classes="hint"
-                     Text="Saving stores the layout on the controllers themselves, so anyone else on this network opens Ledwright and finds it already set up." />
+                     Text="Saving stores the layout on the controllers themselves, so anyone else on this network opens Ledwright and finds it already set up. Anything outstanding is saved when you close the window." />
         </StackPanel>
 
         </StackPanel>

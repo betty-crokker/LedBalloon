@@ -14,6 +14,18 @@ namespace Ledwright.Core.Layout;
 /// </summary>
 public sealed class LedwrightProject
 {
+    /// <summary>
+    /// The format this file was written in. Bumped only when a change would misread an older file.
+    /// <para>
+    /// Adding fields does not need a bump: unknown properties are ignored on read and missing ones
+    /// take their defaults. Renaming or repurposing one does, and then a project written by a newer
+    /// build is refused rather than quietly mangled by an older one.
+    /// </para>
+    /// </summary>
+    public const int CurrentSchema = 1;
+
+    [JsonPropertyName("schema")] public int Schema { get; set; } = CurrentSchema;
+
     [JsonPropertyName("name")] public string Name { get; set; } = "My House";
 
     /// <summary>
