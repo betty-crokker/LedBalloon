@@ -40,11 +40,65 @@ public sealed class HouseCanvas : Control
     public static readonly StyledProperty<bool> IsDrawingProperty =
         AvaloniaProperty.Register<HouseCanvas, bool>(nameof(IsDrawing));
 
+    /// <summary>
+    /// Bumped by the view model when segments are added or removed. Property changes on a segment
+    /// are watched directly, but the list itself is a plain list, so structural edits need a nudge.
+    /// </summary>
+    public static readonly StyledProperty<int> LayoutRevisionProperty =
+        AvaloniaProperty.Register<HouseCanvas, int>(nameof(LayoutRevision));
+
+    private readonly List<Segment> _watched = [];
+
     static HouseCanvas()
     {
         AffectsRender<HouseCanvas>(
-            PhotoProperty, ProjectProperty, SelectedSegmentProperty, DeviceStateProperty, IsDrawingProperty);
+            PhotoProperty, ProjectProperty, SelectedSegmentProperty, DeviceStateProperty,
+            IsDrawingProperty, LayoutRevisionProperty);
     }
+
+    public int LayoutRevision
+    {
+        get => GetValue(LayoutRevisionProperty);
+        set => SetValue(LayoutRevisionProperty, value);
+    }
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == ProjectProperty || change.Property == LayoutRevisionProperty)
+        {
+            WatchSegments();
+        }
+    }
+
+    /// <summary>
+    /// Re-subscribes to every segment, so correcting a run's length redraws its lights immediately
+    /// rather than after a save and reload.
+    /// </summary>
+    private void WatchSegments()
+    {
+        foreach (Segment segment in _watched)
+        {
+            segment.PropertyChanged -= OnSegmentChanged;
+        }
+
+        _watched.Clear();
+
+        if (Project is null)
+        {
+            return;
+        }
+
+        foreach (Segment segment in Project.Segments)
+        {
+            segment.PropertyChanged += OnSegmentChanged;
+            _watched.Add(segment);
+        }
+    }
+
+    private void OnSegmentChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
+        InvalidateVisual();
 
     public Bitmap? Photo
     {

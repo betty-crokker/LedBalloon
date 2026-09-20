@@ -16,6 +16,16 @@ public sealed class LedwrightProject
 {
     [JsonPropertyName("name")] public string Name { get; set; } = "My House";
 
+    /// <summary>
+    /// Bumped on every save. When copies of this project are found on several controllers, the
+    /// highest revision wins — which is how one person's setup reaches everyone else's machine
+    /// without anything being shared by hand.
+    /// </summary>
+    [JsonPropertyName("revision")] public int Revision { get; set; }
+
+    /// <summary>When this revision was written, for showing and for breaking revision ties.</summary>
+    [JsonPropertyName("savedUtc")] public DateTimeOffset? SavedUtc { get; set; }
+
     /// <summary>The controllers this house is wired to, keyed by MAC.</summary>
     [JsonPropertyName("controllers")] public List<ControllerRef> Controllers { get; set; } = [];
 

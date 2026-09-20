@@ -19,6 +19,29 @@ public static class Converters
     /// <summary>True when a collection has anything in it.</summary>
     public static readonly IValueConverter IsNotEmpty = new FuncValueConverter<int, bool>(count => count > 0);
 
+    /// <summary>
+    /// Decodes the stored photo for display. The bytes are what gets written to the controllers, so
+    /// what is drawn on screen is exactly what a second machine will see.
+    /// </summary>
+    public static readonly IValueConverter PhotoBitmap =
+        new FuncValueConverter<byte[]?, Avalonia.Media.Imaging.Bitmap?>(bytes =>
+        {
+            if (bytes is null or { Length: 0 })
+            {
+                return null;
+            }
+
+            try
+            {
+                using var stream = new System.IO.MemoryStream(bytes);
+                return new Avalonia.Media.Imaging.Bitmap(stream);
+            }
+            catch
+            {
+                return null;
+            }
+        });
+
     /// <summary>A colour swatch from a hex string, for previewing a saved look.</summary>
     public static readonly IValueConverter HexBrush =
         new FuncValueConverter<string?, IBrush>(hex =>

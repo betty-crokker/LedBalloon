@@ -79,11 +79,50 @@
 
         <TextBlock DockPanel.Dock="Top" Classes="panelTitle" Text="Segments" Margin="0,0,0,10" />
 
-        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,14,0,0"
+        <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0"
                     IsVisible="{Binding HasSegments}">
+
+          <!-- Editing the selected run. Correcting a length here is the whole point of the app,
+               so it updates the list and the drawn lights as you type. -->
+          <Border Classes="card"
+                  IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="6">
+              <TextBlock Classes="hint" Text="Name" />
+              <TextBox Text="{Binding SelectedSegment.Name}" />
+
+              <Grid ColumnDefinitions="*,8,*">
+                <StackPanel Grid.Column="0" Spacing="4">
+                  <TextBlock Classes="hint" Text="LEDs" />
+                  <TextBox Text="{Binding SelectedSegment.Count}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Spacing="4">
+                  <TextBlock Classes="hint" Text="Starts at" />
+                  <TextBox Text="{Binding SelectedSegment.Start}" />
+                </StackPanel>
+              </Grid>
+
+              <CheckBox Content="Hung in reverse" IsChecked="{Binding SelectedSegment.Reverse}" />
+
+              <TextBlock Classes="hint" Text="Driven by" />
+              <ComboBox ItemsSource="{Binding Devices}"
+                        SelectedItem="{Binding SegmentController}"
+                        DisplayMemberBinding="{Binding DisplayName}"
+                        PlaceholderText="Not assigned"
+                        HorizontalAlignment="Stretch" />
+
+              <Button Classes="block" Content="Remove this segment"
+                      Command="{Binding DeleteSegmentCommand}" Margin="0,4,0,0" />
+            </StackPanel>
+          </Border>
+
           <Button Classes="block" Content="Add a segment" Command="{Binding AddSegmentCommand}" />
           <Button Classes="block" Content="Re-lay end to end" Command="{Binding RepackSegmentsCommand}" />
           <Button Classes="block" Content="Push layout to controllers" Command="{Binding PushGeometryCommand}" />
+
+          <Button Classes="block" Content="Save to controllers"
+                  Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
+          <TextBlock Classes="hint"
+                     Text="Saving stores the layout on the controllers themselves, so anyone else on this network opens Ledwright and finds it already set up." />
         </StackPanel>
 
         <Grid>
@@ -129,8 +168,9 @@
           <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4,0,4,8"
                      Text="Load a photo of the house at dusk, pick a segment on the left, then click each end of that run on the photo. Extra clicks follow a corner. The live colours are painted back onto it." />
 
-          <ctrl:HouseCanvas Name="House"
-                            Project="{Binding Project}"
+          <ctrl:HouseCanvas Project="{Binding Project}"
+                            Photo="{Binding PhotoBytes, Converter={x:Static vm:Converters.PhotoBitmap}}"
+                            LayoutRevision="{Binding LayoutRevision}"
                             SelectedSegment="{Binding SelectedSegment}"
                             DeviceState="{Binding SelectedDevice.State}"
                             IsDrawing="{Binding IsDrawingSegment}"

@@ -43,6 +43,12 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private double _masterBrightness = 128;
     [ObservableProperty] private int _segmentEffectIndex = -1;
     [ObservableProperty] private int _segmentPaletteIndex = -1;
+    [ObservableProperty] private DeviceViewModel? _segmentController;
+    [ObservableProperty] private byte[]? _photoBytes;
+    [ObservableProperty] private bool _isBusy;
+
+    /// <summary>Bumped when segments are added or removed, so the canvas re-watches the list.</summary>
+    [ObservableProperty] private int _layoutRevision;
 
     private bool _suppressPush;
 
@@ -90,6 +96,114 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void GoToSetup() => ActiveTab = SetupTab;
 
+    // ---- The project lives on the controllers ---------------------------------------------------
+
+    /// <summary>
+    /// Writes the layout to every connected controller.
+    /// <para>
+    /// Mirrored rather than split, so any one controller is enough to rebuild the house — and so a
+    /// second person on the same network opens Ledwright and simply finds it, with nothing copied
+    /// between machines.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task SaveProjectAsync()
+    {
+        IReadOnlyList<SyncTarget> targets = SyncTargets();
+        if (targets.Count == 0)
+        {
+            Status = "No connected controller to save to.";
+            return;
+        }
+
+        IsBusy = true;
+        Status = "Saving the layout to the controllers...";
+
+        try
+        {
+            ProjectSaveResult result = await ProjectSync.SaveAsync(Project, targets, PhotoBytes);
+
+            if (!result.AnySucceeded)
+            {
+                Status = "Could not save to any controller. " + string.Join("  ", result.Failures);
+                return;
+            }
+
+            Status = result.Failures.Count == 0
+                ? $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}. " +
+                  "Any machine on this network will now find this layout."
+                : $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}, but " +
+                  string.Join("  ", result.Failures);
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not save: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>Reads the newest layout off the controllers and adopts it.</summary>
+    [RelayCommand]
+    private async Task LoadProjectAsync()
+    {
+        IReadOnlyList<SyncTarget> targets = SyncTargets();
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            ProjectLoadResult result = await ProjectSync.LoadAsync(targets);
+
+            foreach (string note in result.Notes)
+            {
+                LayoutConflicts.Add(note);
+            }
+
+            if (!result.Found)
+            {
+                return;
+            }
+
+            Project = result.Project!;
+            SelectedSegment = Project.Segments.FirstOrDefault();
+
+            // Names in the loaded project win over whatever the devices call themselves.
+            foreach (DeviceViewModel device in Devices)
+            {
+                if (device.DeviceKey is { } key)
+                {
+                    device.AssignedName = Project.FindController(key)?.Name;
+                }
+            }
+
+            byte[]? photo = await ProjectSync.LoadPhotoAsync(targets);
+            if (photo is { Length: > 0 })
+            {
+                PhotoBytes = photo;
+            }
+
+            AfterProjectChanged(
+                $"Loaded revision {Project.Revision} from {result.LoadedFrom} — " +
+                $"{Project.Segments.Count} segment(s), {Project.TotalLeds} LEDs.");
+
+            ActiveTab = HasSegments ? HouseTab : SetupTab;
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not read the layout from the controllers: {ex.Message}";
+        }
+    }
+
+    private IReadOnlyList<SyncTarget> SyncTargets() =>
+        [.. Devices
+            .Where(d => d.DeviceKey is not null)
+            .Select(d => new SyncTarget(d.DeviceKey!, d.Host, d.DisplayName))];
+
     // ---- Setup: finding and naming the hardware -------------------------------------------------
 
     [RelayCommand]
@@ -115,6 +229,9 @@ public sealed partial class MainViewModel : ViewModelBase
                 : ControllerSummary + ".";
 
             AfterDevicesChanged();
+
+            // The controllers hold the layout, so a fresh machine finds the house already described.
+            await LoadProjectAsync();
         }
         catch (Exception ex)
         {
@@ -348,6 +465,20 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void DeleteSegment()
+    {
+        if (SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        Project.Segments.Remove(segment);
+        SelectedSegment = Project.Segments.FirstOrDefault();
+
+        AfterProjectChanged($"Removed '{segment.Name}'. Re-lay end to end to close the gap it left.");
+    }
+
+    [RelayCommand]
     private void RepackSegments()
     {
         Project.RepackAll();
@@ -463,7 +594,42 @@ public sealed partial class MainViewModel : ViewModelBase
         DeviceFor(segment)?.Device.SetPalette(value, Project.WledSegmentIdFor(segment));
     }
 
-    partial void OnSelectedSegmentChanged(Segment? value) => RefreshSegmentPickers(value);
+    partial void OnSelectedSegmentChanged(Segment? value)
+    {
+        RefreshSegmentPickers(value);
+
+        _suppressPush = true;
+        try
+        {
+            SegmentController = value is null ? null : DeviceFor(value);
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+    }
+
+    /// <summary>Moves the selected run onto a different controller.</summary>
+    partial void OnSegmentControllerChanged(DeviceViewModel? value)
+    {
+        if (_suppressPush || SelectedSegment is not { } segment || value?.DeviceKey is not { } key)
+        {
+            return;
+        }
+
+        if (string.Equals(segment.ControllerKey, key, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        segment.ControllerKey = key;
+
+        // Its old address range means nothing on the new controller.
+        segment.SegmentId = null;
+        Project.Repack(key);
+
+        AfterProjectChanged($"Moved '{segment.Name}' to {value.DisplayName}.");
+    }
 
     partial void OnSelectedDeviceChanged(DeviceViewModel? value) =>
         ControllerNameEdit = value?.DisplayName ?? string.Empty;
@@ -586,7 +752,8 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSegment.Path.Add(new LayoutPoint(normalizedX, normalizedY));
-        OnPropertyChanged(nameof(Project));
+        SelectedSegment.NotifyPathChanged();
+        LayoutRevision++;
     }
 
     // ---- Plumbing -------------------------------------------------------------------------------
@@ -626,6 +793,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(Project));
         OnPropertyChanged(nameof(HasSegments));
+        LayoutRevision++;
         Status = status;
 
         SelectedSegment ??= Project.Segments.FirstOrDefault();
