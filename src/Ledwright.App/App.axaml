@@ -11,5 +11,9 @@
 
     <Application.Styles>
         <FluentTheme />
+
+        <!-- The colour controls ship their own theme; FluentTheme does not include it, and without
+             this the ColorView silently renders as nothing at all. -->
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml" />
     </Application.Styles>
 </Application>
