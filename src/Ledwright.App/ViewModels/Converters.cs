@@ -13,6 +13,12 @@ public static class Converters
             ? new SolidColorBrush(Color.FromRgb(82, 196, 122))
             : new SolidColorBrush(Color.FromRgb(110, 114, 124)));
 
+    /// <summary>True when a collection is empty, for showing an empty-state message in its place.</summary>
+    public static readonly IValueConverter IsEmpty = new FuncValueConverter<int, bool>(count => count == 0);
+
+    /// <summary>True when a collection has anything in it.</summary>
+    public static readonly IValueConverter IsNotEmpty = new FuncValueConverter<int, bool>(count => count > 0);
+
     /// <summary>A colour swatch from a hex string, for previewing a saved look.</summary>
     public static readonly IValueConverter HexBrush =
         new FuncValueConverter<string?, IBrush>(hex =>

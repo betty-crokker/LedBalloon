@@ -42,7 +42,7 @@ public partial class MainWindow : Window
             }
 
             await using Stream stream = await files[0].OpenReadAsync();
-            Canvas.Photo = new Bitmap(stream);
+            House.Photo = new Bitmap(stream);
 
             if (ViewModel is { } viewModel)
             {

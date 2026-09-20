@@ -75,6 +75,15 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                     DisplayName = _device.DisplayName;
                 }
 
+                // Re-apply the state now that the lists exist. The first push arrives while
+                // Effects and Palettes are still empty, and a ComboBox clamps a SelectedIndex
+                // it cannot satisfy back to -1 — which is why the pickers looked stuck on
+                // "loading" even though the device had already told us everything.
+                if (_device.State is { } current)
+                {
+                    ApplyRemoteState(current);
+                }
+
                 Status = Capabilities is null
                     ? "Connected."
                     : $"{Capabilities.LedCount} LEDs, {Effects.Count} effects, " +
@@ -138,8 +147,17 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
 
             if (state.MainOrFirstSegment() is { } segment)
             {
-                SelectedEffectIndex = segment.Effect ?? SelectedEffectIndex;
-                SelectedPaletteIndex = segment.Palette ?? SelectedPaletteIndex;
+                // Only take an index the list can actually satisfy, so the view model never
+                // holds a selection the picker would silently discard.
+                if (segment.Effect is { } effect && effect < Effects.Count)
+                {
+                    SelectedEffectIndex = effect;
+                }
+
+                if (segment.Palette is { } palette && palette < Palettes.Count)
+                {
+                    SelectedPaletteIndex = palette;
+                }
             }
         }
         finally
