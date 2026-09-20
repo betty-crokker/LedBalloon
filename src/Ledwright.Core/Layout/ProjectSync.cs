@@ -62,10 +62,24 @@ public static class ProjectSync
                 using var store = new DeviceProjectStore(target.Host);
                 LedwrightProject? project = await store.LoadAsync(cancellationToken).ConfigureAwait(false);
 
-                if (project is not null)
+                if (project is null)
                 {
-                    found.Add((target, project));
+                    continue;
                 }
+
+                // A file from a newer build may mean something different by the same field names.
+                // Refusing it keeps this build from rewriting it into a shape the newer one cannot
+                // read; the backup beside it is the way out either way.
+                if (project.Schema > LedwrightProject.CurrentSchema)
+                {
+                    notes.Add(
+                        $"{target.Name} holds a layout written by a newer version of Ledwright " +
+                        $"(format {project.Schema}, this build understands {LedwrightProject.CurrentSchema}). " +
+                        "Leaving it alone rather than risking it. Update Ledwright to open it.");
+                    continue;
+                }
+
+                found.Add((target, project));
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
@@ -111,13 +125,49 @@ public static class ProjectSync
         IEnumerable<SyncTarget> controllers,
         byte[]? photoJpeg = null,
         int photoBudgetBytes = 0,
+        bool force = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(controllers);
 
+        // Someone else may have saved since this copy was loaded. Overwriting them silently is the
+        // one failure that loses work nobody can get back, so check before writing rather than
+        // after. The check costs one read per controller.
+        var stale = new List<string>();
+        foreach (SyncTarget target in controllers)
+        {
+            try
+            {
+                using var probe = new DeviceProjectStore(target.Host);
+                int? storedRevision = await probe.ReadRevisionAsync(cancellationToken).ConfigureAwait(false);
+
+                if (storedRevision > project.Revision)
+                {
+                    stale.Add($"{target.Name} already holds revision {storedRevision}");
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // Unreachable now means it will simply fail the write below and be reported there.
+            }
+        }
+
+        if (stale.Count > 0 && !force)
+        {
+            return new ProjectSaveResult(
+                project.Revision,
+                [],
+                [
+                    $"Not saved: {string.Join(", ", stale)}, newer than the revision {project.Revision} " +
+                    "open here. Someone else has changed the layout since this copy was loaded. " +
+                    "Reload to pick up their version, or save again to overwrite it.",
+                ]);
+        }
+
         project.Revision++;
         project.SavedUtc = DateTimeOffset.UtcNow;
+        project.Schema = LedwrightProject.CurrentSchema;
 
         bool storePhoto = photoJpeg is { Length: > 0 } &&
                           photoBudgetBytes > 0 &&

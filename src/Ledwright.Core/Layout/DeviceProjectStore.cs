@@ -19,6 +19,12 @@ public sealed class DeviceProjectStore : IProjectStore, IDisposable
     public const string PhotoFile = "ledwright-photo.jpg";
 
     /// <summary>
+    /// The version each save replaces, kept beside it. A kilobyte of insurance against a bad save,
+    /// a half-finished edit, or a format change that reads an old file wrongly.
+    /// </summary>
+    public const string BackupFile = "ledwright.bak.json";
+
+    /// <summary>
     /// Refuse a photo larger than this. Leaves room for presets, config and a firmware update on a
     /// roughly one-megabyte filesystem.
     /// </summary>
@@ -47,18 +53,51 @@ public sealed class DeviceProjectStore : IProjectStore, IDisposable
         return ProjectSerialization.FromUtf8(content);
     }
 
-    public Task SaveAsync(LedwrightProject project, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(LedwrightProject project, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        // The photo is stored separately; the project just names it.
-        project.PhotoPath = PhotoFile;
+        await BackUpAsync(cancellationToken).ConfigureAwait(false);
 
-        return _files.UploadAsync(
+        await _files.UploadAsync(
             ProjectFile,
             ProjectSerialization.ToUtf8(project),
             "application/json",
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Copies the stored project aside before it is replaced.</summary>
+    private async Task BackUpAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            byte[]? previous = await _files.DownloadAsync(ProjectFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (previous is { Length: > 0 })
+            {
+                await _files.UploadAsync(BackupFile, previous, "application/json", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            // Nothing to back up, or the device would not take it. Never a reason to block the save.
+        }
+    }
+
+    /// <summary>Reads the version replaced by the most recent save, for undoing one.</summary>
+    public async Task<LedwrightProject?> LoadBackupAsync(CancellationToken cancellationToken = default)
+    {
+        byte[]? content = await _files.DownloadAsync(BackupFile, cancellationToken).ConfigureAwait(false);
+        return ProjectSerialization.FromUtf8(content);
+    }
+
+    /// <summary>The stored project's revision, without adopting it. Used to spot a stale write.</summary>
+    public async Task<int?> ReadRevisionAsync(CancellationToken cancellationToken = default)
+    {
+        LedwrightProject? stored = await LoadAsync(cancellationToken).ConfigureAwait(false);
+        return stored?.Revision;
     }
 
     public Task<byte[]?> LoadPhotoAsync(CancellationToken cancellationToken = default) =>

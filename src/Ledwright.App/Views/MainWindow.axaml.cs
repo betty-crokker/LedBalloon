@@ -17,7 +17,36 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
+    private bool _savedOnClose;
+
     private MainViewModel? ViewModel => DataContext as MainViewModel;
+
+    /// <summary>
+    /// Saves outstanding edits on the way out. Closing the window should never be the way a
+    /// morning's tracing gets lost, and there is nowhere else for it to go.
+    /// </summary>
+    protected override async void OnClosing(WindowClosingEventArgs e)
+    {
+        if (!_savedOnClose && ViewModel is { HasUnsavedChanges: true } viewModel)
+        {
+            e.Cancel = true;
+            _savedOnClose = true;
+
+            try
+            {
+                await viewModel.SaveBeforeClosingAsync();
+            }
+            catch
+            {
+                // Closing must not be blocked by a controller that has gone away.
+            }
+
+            Close();
+            return;
+        }
+
+        base.OnClosing(e);
+    }
 
     private async void OnLoadPhoto(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {

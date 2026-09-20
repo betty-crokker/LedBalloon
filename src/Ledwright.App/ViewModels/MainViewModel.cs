@@ -55,6 +55,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Set when the layout expects a photo this machine has never seen.</summary>
     [ObservableProperty] private string? _missingPhotoNotice;
+
+    /// <summary>True while there are edits the controllers have not been told about.</summary>
+    [ObservableProperty] private bool _hasUnsavedChanges;
+
+    /// <summary>
+    /// True when a save was refused because a controller already holds a newer revision. Surfaces
+    /// an explicit overwrite rather than deciding for the user whose work to discard.
+    /// </summary>
+    [ObservableProperty] private bool _saveBlockedByNewerRevision;
+
+    private readonly List<Segment> _watchedSegments = [];
     [ObservableProperty] private bool _isBusy;
 
     /// <summary>Bumped when segments are added or removed, so the canvas re-watches the list.</summary>
@@ -158,7 +169,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </summary>
     [RelayCommand]
-    private async Task SaveProjectAsync()
+    private Task SaveProjectAsync() => SaveAsync(force: false);
+
+    /// <summary>Saves over a newer revision, once the user has said that is what they want.</summary>
+    [RelayCommand]
+    private Task OverwriteNewerRevisionAsync() => SaveAsync(force: true);
+
+    private async Task SaveAsync(bool force)
     {
         IReadOnlyList<SyncTarget> targets = SyncTargets();
         if (targets.Count == 0)
@@ -179,13 +196,19 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             ProjectSaveResult result = await ProjectSync.SaveAsync(
-                Project, targets, PhotoBytes, PhotoBudgetBytes);
+                Project, targets, PhotoBytes, PhotoBudgetBytes, force);
 
             if (!result.AnySucceeded)
             {
-                Status = "Could not save to any controller. " + string.Join("  ", result.Failures);
+                SaveBlockedByNewerRevision = result.Failures.Any(f => f.StartsWith("Not saved:", StringComparison.Ordinal));
+                Status = result.Failures.Count > 0
+                    ? string.Join("  ", result.Failures)
+                    : "Could not save to any controller.";
                 return;
             }
+
+            SaveBlockedByNewerRevision = false;
+            HasUnsavedChanges = false;
 
             Status = result.Failures.Count == 0
                 ? $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}. " +
@@ -258,6 +281,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 $"Loaded revision {Project.Revision} from {result.LoadedFrom} — " +
                 $"{Project.Segments.Count} segment(s), {Project.TotalLeds} LEDs.");
 
+            // Freshly loaded is not unsaved.
+            HasUnsavedChanges = false;
             ActiveTab = HasSegments ? HouseTab : SetupTab;
         }
         catch (Exception ex)
@@ -377,7 +402,8 @@ public sealed partial class MainViewModel : ViewModelBase
         device.AssignedName = name;
 
         OnPropertyChanged(nameof(Project));
-        Status = $"Renamed to '{name}'. Stored in this project only — push it to the controller to make it stick everywhere.";
+        HasUnsavedChanges = true;
+        Status = $"Renamed to '{name}'. Save to keep it — or push it to the controller to make it stick everywhere.";
     }
 
     /// <summary>
@@ -661,6 +687,14 @@ public sealed partial class MainViewModel : ViewModelBase
         DeviceFor(segment)?.Device.SetPalette(value, Project.WledSegmentIdFor(segment));
     }
 
+    partial void OnPhotoBytesChanged(byte[]? value)
+    {
+        if (value is { Length: > 0 })
+        {
+            HasUnsavedChanges = true;
+        }
+    }
+
     partial void OnSelectedSegmentChanged(Segment? value)
     {
         RefreshSegmentPickers(value);
@@ -836,6 +870,7 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedSegment.Path.Add(new LayoutPoint(normalizedX, normalizedY));
         SelectedSegment.NotifyPathChanged();
         LayoutRevision++;
+        HasUnsavedChanges = true;
     }
 
     // ---- Plumbing -------------------------------------------------------------------------------
@@ -872,15 +907,58 @@ public sealed partial class MainViewModel : ViewModelBase
         ActiveTab = HasSegments ? HouseTab : SetupTab;
     }
 
-    private void AfterProjectChanged(string status)
+    private void AfterProjectChanged(string status, bool dirty = true)
     {
         OnPropertyChanged(nameof(Project));
         OnPropertyChanged(nameof(HasSegments));
         LayoutRevision++;
         Status = status;
 
+        if (dirty)
+        {
+            HasUnsavedChanges = true;
+        }
+
+        WatchProjectSegments();
         SelectedSegment ??= Project.Segments.FirstOrDefault();
         RefreshSegmentPickers(SelectedSegment);
+    }
+
+    /// <summary>
+    /// Watches every segment so that editing one counts as an unsaved change. Typing a new LED
+    /// count is an edit like any other; it should not be the thing that quietly goes missing.
+    /// </summary>
+    private void WatchProjectSegments()
+    {
+        foreach (Segment segment in _watchedSegments)
+        {
+            segment.PropertyChanged -= OnSegmentEdited;
+        }
+
+        _watchedSegments.Clear();
+
+        foreach (Segment segment in Project.Segments)
+        {
+            segment.PropertyChanged += OnSegmentEdited;
+            _watchedSegments.Add(segment);
+        }
+    }
+
+    private void OnSegmentEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
+        HasUnsavedChanges = true;
+
+    /// <summary>
+    /// Saves anything outstanding as the window closes, so shutting the app is never how a
+    /// morning's tracing gets lost.
+    /// </summary>
+    public async Task SaveBeforeClosingAsync()
+    {
+        if (!HasUnsavedChanges || SyncTargets().Count == 0)
+        {
+            return;
+        }
+
+        await SaveAsync(force: false);
     }
 
     private void RebuildPresetCatalog()
