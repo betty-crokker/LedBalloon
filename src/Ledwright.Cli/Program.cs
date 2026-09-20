@@ -57,6 +57,11 @@ async Task<int> RunAsync(string[] argv, CancellationToken ct)
         return await DiscoverAsync(ct);
     }
 
+    if (command is "photo")
+    {
+        return Photo(argv[1..]);
+    }
+
     if (argv.Length < 2)
     {
         Error($"'{command}' needs a device host, e.g. ledwright {command} 192.168.1.50");
@@ -351,6 +356,45 @@ async Task<int> ApplyAsync(WledClient client, WledState patch, string descriptio
     await client.ApplyAsync(patch, ct);
     Console.WriteLine($"Set {description}.");
     return 0;
+}
+
+int Photo(string[] rest)
+{
+    if (rest.Length == 0)
+    {
+        Error("Usage: ledwright photo <file> [budget KB]");
+        return 2;
+    }
+
+    string path = rest[0];
+    if (!File.Exists(path))
+    {
+        Error($"No such file: {path}");
+        return 1;
+    }
+
+    int budgetKb = rest.Length > 1 && int.TryParse(rest[1], out int kb) ? kb : 400;
+    byte[] source = File.ReadAllBytes(path);
+
+    PreparedPhoto prepared = PhotoPreparer.Prepare(source, budgetKb * 1024);
+
+    Console.WriteLine($"  Original   {source.Length / 1024} KB");
+    Console.WriteLine($"  Prepared   {prepared.Jpeg.Length / 1024} KB");
+    Console.WriteLine($"  Size       {prepared.Width} x {prepared.Height} at quality {prepared.Quality}");
+    Console.WriteLine($"  Budget     {budgetKb} KB");
+    Console.WriteLine($"  Hash       {prepared.Hash}");
+    Console.WriteLine();
+    Console.WriteLine(prepared.FitsBudget
+        ? "  Fits. This photo can live on the controllers with the layout."
+        : "  Too large even at the lowest setting. Crop it before using it.");
+
+    if (rest.Length > 2)
+    {
+        File.WriteAllBytes(rest[2], prepared.Jpeg);
+        Console.WriteLine($"  Written to {rest[2]}");
+    }
+
+    return prepared.FitsBudget ? 0 : 1;
 }
 
 int List(string[]? items, string label)

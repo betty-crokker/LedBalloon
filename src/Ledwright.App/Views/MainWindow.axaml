@@ -75,11 +75,41 @@
     <Border DockPanel.Dock="Left" Width="300" Padding="14"
             Background="{DynamicResource PanelBackground}"
             BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
-      <DockPanel>
+      <!-- Scrolled as one column: the editor is tall enough that docking it to the bottom starved
+           the list of space and left no way to pick a different segment. -->
+      <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Spacing="0">
 
-        <TextBlock DockPanel.Dock="Top" Classes="panelTitle" Text="Segments" Margin="0,0,0,10" />
+        <TextBlock Classes="panelTitle" Text="Segments" Margin="0,0,0,10" />
 
-        <StackPanel DockPanel.Dock="Bottom" Spacing="8" Margin="0,12,0,0"
+        <Border Classes="card" IsVisible="{Binding !HasSegments}">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Nothing described yet" FontWeight="SemiBold" />
+            <TextBlock Classes="hint"
+                       Text="A segment is one run of LEDs — the gable, the porch rail. Describe them once in Setup and you will not have to think about controllers again." />
+            <Button Classes="block" Content="Go to Setup" Command="{Binding GoToSetupCommand}" />
+          </StackPanel>
+        </Border>
+
+        <!-- Capped so the editor below it always stays reachable on a short window. -->
+        <ListBox ItemsSource="{Binding Project.Segments}"
+                 SelectedItem="{Binding SelectedSegment}"
+                 Background="Transparent"
+                 MaxHeight="190"
+                 IsVisible="{Binding HasSegments}">
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <StackPanel Margin="0,4" Spacing="2">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="hint">
+                  <Run Text="{Binding Count}" /><Run Text=" LEDs" /><Run Text="  ·  LED " /><Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" />
+                </TextBlock>
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Spacing="8" Margin="0,12,0,0"
                     IsVisible="{Binding HasSegments}">
 
           <!-- Editing the selected run. Correcting a length here is the whole point of the app,
@@ -101,7 +131,31 @@
                 </StackPanel>
               </Grid>
 
-              <CheckBox Content="Hung in reverse" IsChecked="{Binding SelectedSegment.Reverse}" />
+              <TextBlock Classes="hint" Text="What kind of light" />
+              <ComboBox ItemsSource="{Binding FixtureStyles}"
+                        SelectedItem="{Binding FixtureChoice}"
+                        PlaceholderText="Pick a fixture"
+                        HorizontalAlignment="Stretch" />
+
+              <!-- Only the aimed styles throw a cone worth shaping. -->
+              <StackPanel Spacing="4" IsVisible="{Binding SelectedSegment.Fixture.IsAimed}">
+                <TextBlock Classes="hint" Text="Beam spread" />
+                <Slider Minimum="10" Maximum="160"
+                        Value="{Binding SelectedSegment.Fixture.BeamAngleDegrees}" />
+                <TextBlock Classes="hint" Text="How far it reaches" />
+                <Slider Minimum="0.02" Maximum="0.6"
+                        Value="{Binding SelectedSegment.Fixture.ThrowLength}" />
+                <CheckBox Content="Aim the other way"
+                          IsChecked="{Binding SelectedSegment.Fixture.FlipAim}" />
+              </StackPanel>
+
+              <TextBlock Classes="hint" Text="A lens every N LEDs" />
+              <TextBox Text="{Binding SelectedSegment.Fixture.VisibleEvery}" />
+
+              <Button Classes="block" Content="Flip which end is LED 1"
+                      Command="{Binding FlipSegmentDirectionCommand}" />
+              <TextBlock Classes="hint"
+                         Text="The selected run shows a filled marker at LED 1 and a hollow one at its last LED." />
 
               <TextBlock Classes="hint" Text="Driven by" />
               <ComboBox ItemsSource="{Binding Devices}"
@@ -125,33 +179,8 @@
                      Text="Saving stores the layout on the controllers themselves, so anyone else on this network opens Ledwright and finds it already set up." />
         </StackPanel>
 
-        <Grid>
-          <Border Classes="card" VerticalAlignment="Top" IsVisible="{Binding !HasSegments}">
-            <StackPanel Spacing="8">
-              <TextBlock Text="Nothing described yet" FontWeight="SemiBold" />
-              <TextBlock Classes="hint"
-                         Text="A segment is one run of LEDs — the gable, the porch rail. Describe them once in Setup and you will not have to think about controllers again." />
-              <Button Classes="block" Content="Go to Setup" Command="{Binding GoToSetupCommand}" />
-            </StackPanel>
-          </Border>
-
-          <ListBox ItemsSource="{Binding Project.Segments}"
-                   SelectedItem="{Binding SelectedSegment}"
-                   Background="Transparent"
-                   IsVisible="{Binding HasSegments}">
-            <ListBox.ItemTemplate>
-              <DataTemplate>
-                <StackPanel Margin="0,4" Spacing="2">
-                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                  <TextBlock Classes="hint">
-                    <Run Text="{Binding Count}" /><Run Text=" LEDs" /><Run Text="  ·  LED " /><Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" />
-                  </TextBlock>
-                </StackPanel>
-              </DataTemplate>
-            </ListBox.ItemTemplate>
-          </ListBox>
-        </Grid>
-      </DockPanel>
+        </StackPanel>
+      </ScrollViewer>
     </Border>
 
     <TabControl Margin="14,8,14,8" SelectedIndex="{Binding ActiveTab}">
@@ -166,13 +195,13 @@
           </StackPanel>
 
           <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4,0,4,8"
-                     Text="Load a photo of the house at dusk, pick a segment on the left, then click each end of that run on the photo. Extra clicks follow a corner. The live colours are painted back onto it." />
+                     Text="Load a photo of the house at dusk, pick a segment on the left, then click along that run on the photo — starting at the end where LED 1 is. Extra clicks follow a corner. Tell it what kind of light it is on the left and the preview lights the wall accordingly." />
 
           <ctrl:HouseCanvas Project="{Binding Project}"
                             Photo="{Binding PhotoBytes, Converter={x:Static vm:Converters.PhotoBitmap}}"
                             LayoutRevision="{Binding LayoutRevision}"
                             SelectedSegment="{Binding SelectedSegment}"
-                            DeviceState="{Binding SelectedDevice.State}"
+                            ControllerStates="{Binding ControllerStates}"
                             IsDrawing="{Binding IsDrawingSegment}"
                             PointAdded="OnCanvasPointAdded" />
         </DockPanel>

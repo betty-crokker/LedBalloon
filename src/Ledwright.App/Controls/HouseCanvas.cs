@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -12,18 +14,24 @@ using Ledwright.Core.Models;
 namespace Ledwright.App.Controls;
 
 /// <summary>
-/// Draws the house photo with each segment painted on it in its current colour.
+/// Draws the house photo with each segment lit the way that kind of fixture actually lights it.
 /// <para>
 /// The point is to close the loop between picking a colour and knowing what it will look like from
-/// the street. Segment geometry is stored normalised, so the drawing survives swapping the photo for
-/// a better one, and LED positions are interpolated along the drawn path at render time from the
-/// segment's current length — correct a run from 100 to 105 and the painted dots re-space themselves.
+/// the street, which means the fixture matters as much as the position. A bare strip facing the road
+/// is a row of coloured pixels. The same LEDs under an eave aimed down the wall are barely visible
+/// themselves; what you see is the overlapping scallops they throw. Drawing both as dots on a line
+/// would make the preview confidently wrong.
+/// </para>
+/// <para>
+/// Geometry is stored normalised, so the drawing survives swapping the photo for a better one, and
+/// LED positions are interpolated from the segment's current length at render time — correct a run
+/// from 100 to 105 and the lights re-space themselves.
 /// </para>
 /// </summary>
 public sealed class HouseCanvas : Control
 {
-    /// <summary>Beyond this many dots per segment, draw a gradient line instead. Keeps long runs smooth.</summary>
-    private const int MaxDotsPerSegment = 300;
+    /// <summary>Cap on fixtures drawn per segment, so a 300-LED run still pans smoothly.</summary>
+    private const int MaxFixturesPerSegment = 160;
 
     public static readonly StyledProperty<Bitmap?> PhotoProperty =
         AvaloniaProperty.Register<HouseCanvas, Bitmap?>(nameof(Photo));
@@ -34,8 +42,15 @@ public sealed class HouseCanvas : Control
     public static readonly StyledProperty<Segment?> SelectedSegmentProperty =
         AvaloniaProperty.Register<HouseCanvas, Segment?>(nameof(SelectedSegment));
 
-    public static readonly StyledProperty<WledState?> DeviceStateProperty =
-        AvaloniaProperty.Register<HouseCanvas, WledState?>(nameof(DeviceState));
+    /// <summary>
+    /// Live state per controller, keyed by MAC.
+    /// <para>
+    /// Per controller rather than one state, because a house can span several and a run must be
+    /// coloured from the box that actually drives it.
+    /// </para>
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<string, WledState>?> ControllerStatesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, WledState>?>(nameof(ControllerStates));
 
     public static readonly StyledProperty<bool> IsDrawingProperty =
         AvaloniaProperty.Register<HouseCanvas, bool>(nameof(IsDrawing));
@@ -52,53 +67,9 @@ public sealed class HouseCanvas : Control
     static HouseCanvas()
     {
         AffectsRender<HouseCanvas>(
-            PhotoProperty, ProjectProperty, SelectedSegmentProperty, DeviceStateProperty,
+            PhotoProperty, ProjectProperty, SelectedSegmentProperty, ControllerStatesProperty,
             IsDrawingProperty, LayoutRevisionProperty);
     }
-
-    public int LayoutRevision
-    {
-        get => GetValue(LayoutRevisionProperty);
-        set => SetValue(LayoutRevisionProperty, value);
-    }
-
-    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
-    {
-        base.OnPropertyChanged(change);
-
-        if (change.Property == ProjectProperty || change.Property == LayoutRevisionProperty)
-        {
-            WatchSegments();
-        }
-    }
-
-    /// <summary>
-    /// Re-subscribes to every segment, so correcting a run's length redraws its lights immediately
-    /// rather than after a save and reload.
-    /// </summary>
-    private void WatchSegments()
-    {
-        foreach (Segment segment in _watched)
-        {
-            segment.PropertyChanged -= OnSegmentChanged;
-        }
-
-        _watched.Clear();
-
-        if (Project is null)
-        {
-            return;
-        }
-
-        foreach (Segment segment in Project.Segments)
-        {
-            segment.PropertyChanged += OnSegmentChanged;
-            _watched.Add(segment);
-        }
-    }
-
-    private void OnSegmentChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
-        InvalidateVisual();
 
     public Bitmap? Photo
     {
@@ -118,11 +89,11 @@ public sealed class HouseCanvas : Control
         set => SetValue(SelectedSegmentProperty, value);
     }
 
-    /// <summary>The controller's live state, used to colour each segment as it currently appears.</summary>
-    public WledState? DeviceState
+    /// <summary>Live state per controller, used to colour each segment as it currently appears.</summary>
+    public IReadOnlyDictionary<string, WledState>? ControllerStates
     {
-        get => GetValue(DeviceStateProperty);
-        set => SetValue(DeviceStateProperty, value);
+        get => GetValue(ControllerStatesProperty);
+        set => SetValue(ControllerStatesProperty, value);
     }
 
     public bool IsDrawing
@@ -131,8 +102,24 @@ public sealed class HouseCanvas : Control
         set => SetValue(IsDrawingProperty, value);
     }
 
+    public int LayoutRevision
+    {
+        get => GetValue(LayoutRevisionProperty);
+        set => SetValue(LayoutRevisionProperty, value);
+    }
+
     /// <summary>Raised with normalised (0-1) coordinates when the user clicks while drawing.</summary>
     public event EventHandler<LayoutPoint>? PointAdded;
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == ProjectProperty || change.Property == LayoutRevisionProperty)
+        {
+            WatchSegments();
+        }
+    }
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -185,62 +172,323 @@ public sealed class HouseCanvas : Control
             return;
         }
 
-        foreach (Segment segment in project.Segments)
+        // Aimed fixtures wash the wall, so they go down first and the emitters sit on top.
+        foreach (Segment segment in project.Segments.Where(s => s.HasGeometry && s.Fixture.IsAimed))
         {
-            if (segment.HasGeometry)
+            DrawAimedWash(context, image, project, segment);
+        }
+
+        foreach (Segment segment in project.Segments.Where(s => s.HasGeometry))
+        {
+            DrawEmitters(context, image, project, segment);
+        }
+    }
+
+    /// <summary>
+    /// Draws the light an aimed fixture throws onto the wall: one cone per fixture, overlapping.
+    /// The scalloped edge people recognise is what the overlap produces, not something drawn.
+    /// </summary>
+    private void DrawAimedWash(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
+    {
+        RgbColor colour = ResolveColor(project, segment);
+        if (colour is { R: 0, G: 0, B: 0 })
+        {
+            return;
+        }
+
+        Fixture fixture = segment.Fixture;
+        double throwPx = fixture.ThrowLength * image.Height;
+        double halfAngle = fixture.BeamAngleDegrees * Math.PI / 360;
+
+        // Softer beams read as dimmer per-cone because they spread the same light wider.
+        byte alpha = (byte)Math.Clamp(110 - (fixture.Diffusion * 45), 30, 130);
+
+        // A real beam has no edge, so a diffused one is drawn as a few nested cones: a narrow
+        // bright core inside a wider faint spill. One hard-edged triangle reads as a diagram.
+        double spread = fixture.Diffusion;
+        (double Angle, double Alpha)[] layers = spread <= 0.02
+            ? [(1.0, 1.0)]
+            : [(1.0 + (0.55 * spread), 0.40), (1.0, 0.70), (1.0 - (0.40 * spread), 0.55)];
+
+        foreach (int index in FixtureIndices(segment))
+        {
+            double t = PositionFraction(segment, index);
+            Point apex = ToControl(image, segment.PositionOf(index));
+            LayoutPoint aim = fixture.AimFrom(DirectionInPixels(image, segment, t));
+
+            foreach ((double angleScale, double alphaScale) in layers)
             {
-                DrawSegment(context, image, project, segment);
+                DrawCone(
+                    context,
+                    apex,
+                    aim,
+                    throwPx,
+                    halfAngle * angleScale,
+                    colour,
+                    (byte)Math.Clamp(alpha * alphaScale, 1, 255));
             }
         }
     }
 
-    private void DrawSegment(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
+    private static void DrawCone(
+        DrawingContext context,
+        Point apex,
+        LayoutPoint aim,
+        double length,
+        double halfAngle,
+        RgbColor colour,
+        byte alpha)
+    {
+        Point Rotate(double angle) => new(
+            (aim.X * Math.Cos(angle)) - (aim.Y * Math.Sin(angle)),
+            (aim.X * Math.Sin(angle)) + (aim.Y * Math.Cos(angle)));
+
+        Point left = Rotate(-halfAngle);
+        Point right = Rotate(halfAngle);
+
+        var cone = new StreamGeometry();
+        using (StreamGeometryContext geometry = cone.Open())
+        {
+            geometry.BeginFigure(apex, isFilled: true);
+            geometry.LineTo(new Point(apex.X + (left.X * length), apex.Y + (left.Y * length)));
+            geometry.LineTo(new Point(apex.X + (right.X * length), apex.Y + (right.Y * length)));
+            geometry.EndFigure(isClosed: true);
+        }
+
+        // Bright at the fixture, falling away down the throw, which is how a wall wash actually
+        // falls off and what makes overlapping cones read as scallops.
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(apex, RelativeUnit.Absolute),
+            EndPoint = new RelativePoint(
+                new Point(apex.X + (aim.X * length), apex.Y + (aim.Y * length)),
+                RelativeUnit.Absolute),
+            GradientStops =
+            {
+                new GradientStop(Color.FromArgb(alpha, colour.R, colour.G, colour.B), 0),
+                new GradientStop(Color.FromArgb((byte)(alpha * 0.45), colour.R, colour.G, colour.B), 0.45),
+                new GradientStop(Color.FromArgb(0, colour.R, colour.G, colour.B), 1),
+            },
+        };
+
+        context.DrawGeometry(brush, null, cone);
+    }
+
+    /// <summary>Draws the fixtures themselves, which is all you see of some kinds and all of others.</summary>
+    private void DrawEmitters(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
         RgbColor colour = ResolveColor(project, segment);
         bool isSelected = ReferenceEquals(segment, SelectedSegment);
 
-        Point ToControl(LayoutPoint p) =>
-            new(image.X + (p.X * image.Width), image.Y + (p.Y * image.Height));
-
-        // The run itself, so an unlit segment is still visible while you work on it.
-        var outline = new Pen(
-            new SolidColorBrush(isSelected ? Colors.White : Color.FromArgb(90, 255, 255, 255)),
-            isSelected ? 2.5 : 1.0);
-
-        for (int i = 0; i < segment.Path.Count - 1; i++)
-        {
-            context.DrawLine(outline, ToControl(segment.Path[i]), ToControl(segment.Path[i + 1]));
-        }
+        DrawRunOutline(context, image, segment, isSelected);
 
         if (segment.Count <= 0)
         {
             return;
         }
 
-        var core = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
-        var glow = new SolidColorBrush(Color.FromArgb(70, colour.R, colour.G, colour.B));
-
-        int step = Math.Max(1, segment.Count / MaxDotsPerSegment);
-        for (int i = 0; i < segment.Count; i += step)
+        switch (segment.Fixture.Style)
         {
-            Point at = ToControl(segment.PositionOf(i));
+            case FixtureStyle.DiffusedStrip:
+                DrawDiffusedRun(context, image, segment, colour);
+                break;
 
-            // Two passes: a soft halo, then the pixel itself. Reads like a light at night rather
-            // than a dot on a diagram.
-            context.DrawEllipse(glow, null, at, 5.5, 5.5);
-            context.DrawEllipse(core, null, at, 2.0, 2.0);
+            case FixtureStyle.Downlight:
+            case FixtureStyle.Uplight:
+                // The lens is a small bright point; the wall does the talking.
+                DrawPoints(context, image, segment, colour, coreRadius: 1.6, haloRadius: 3.5, haloAlpha: 60);
+                break;
+
+            default:
+                DrawPoints(context, image, segment, colour, coreRadius: 2.0, haloRadius: 5.5, haloAlpha: 70);
+                break;
         }
 
-        DrawLabel(context, ToControl(segment.PointAlongPath(0.5)), segment, isSelected);
+        DrawLabel(context, ToControl(image, segment.PointAlongPath(0.5)), segment, isSelected);
+
+        if (isSelected)
+        {
+            DrawRunEnds(context, image, segment);
+        }
     }
 
     /// <summary>
-    /// Finds the colour this segment is currently showing, by looking up the segment it drives in the
-    /// controller's live state.
+    /// Marks which end of the run LED 1 is at.
+    /// <para>
+    /// A line drawn on a photo says where a run is but not which way round it goes, and getting that
+    /// wrong runs every effect backwards. The marker follows <see cref="Segment.Reverse"/>, so
+    /// flipping the direction visibly moves the "1" to the other end.
+    /// </para>
+    /// </summary>
+    private static void DrawRunEnds(DrawingContext context, Rect image, Segment segment)
+    {
+        if (segment.Count <= 0)
+        {
+            return;
+        }
+
+        Point start = ToControl(image, segment.PositionOf(0));
+        Point end = ToControl(image, segment.PositionOf(segment.Count - 1));
+
+        // The first LED gets a filled ring; the last gets a hollow one.
+        context.DrawEllipse(
+            new SolidColorBrush(Color.FromArgb(230, 255, 255, 255)),
+            new Pen(new SolidColorBrush(Color.FromArgb(220, 20, 22, 26)), 1.5),
+            start,
+            8,
+            8);
+
+        context.DrawEllipse(
+            new SolidColorBrush(Color.FromArgb(70, 20, 22, 26)),
+            new Pen(new SolidColorBrush(Color.FromArgb(200, 255, 255, 255)), 1.5),
+            end,
+            6,
+            6);
+
+        DrawEndCaption(context, start, "1", Color.FromRgb(20, 22, 26));
+        DrawEndCaption(context, end, segment.Count.ToString(CultureInfo.CurrentCulture), Colors.White);
+    }
+
+    private static void DrawEndCaption(DrawingContext context, Point at, string caption, Color colour)
+    {
+        var text = new FormattedText(
+            caption,
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            9,
+            new SolidColorBrush(colour));
+
+        context.DrawText(text, new Point(at.X - (text.Width / 2), at.Y - (text.Height / 2)));
+    }
+
+    private void DrawPoints(
+        DrawingContext context,
+        Rect image,
+        Segment segment,
+        RgbColor colour,
+        double coreRadius,
+        double haloRadius,
+        byte haloAlpha)
+    {
+        var core = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
+        var halo = new SolidColorBrush(Color.FromArgb(haloAlpha, colour.R, colour.G, colour.B));
+
+        foreach (int index in FixtureIndices(segment))
+        {
+            Point at = ToControl(image, segment.PositionOf(index));
+
+            // Two passes: a soft halo, then the pixel itself. Reads like a light at night rather
+            // than a dot on a diagram.
+            context.DrawEllipse(halo, null, at, haloRadius, haloRadius);
+            context.DrawEllipse(core, null, at, coreRadius, coreRadius);
+        }
+    }
+
+    /// <summary>A continuous glowing line, for rope and diffused channel where no pixel is visible.</summary>
+    private void DrawDiffusedRun(DrawingContext context, Rect image, Segment segment, RgbColor colour)
+    {
+        // Sampled finely rather than per-LED: the whole point of diffusion is that you cannot see
+        // where one LED ends and the next begins.
+        const int Samples = 96;
+        var points = new Point[Samples + 1];
+        for (int i = 0; i <= Samples; i++)
+        {
+            points[i] = ToControl(image, segment.PointAlongPath(i / (double)Samples));
+        }
+
+        var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, colour.R, colour.G, colour.B)), 11)
+        {
+            LineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round,
+        };
+
+        var body = new Pen(new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B)), 3.5)
+        {
+            LineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round,
+        };
+
+        for (int i = 0; i < Samples; i++)
+        {
+            context.DrawLine(glow, points[i], points[i + 1]);
+        }
+
+        for (int i = 0; i < Samples; i++)
+        {
+            context.DrawLine(body, points[i], points[i + 1]);
+        }
+    }
+
+    private void DrawRunOutline(DrawingContext context, Rect image, Segment segment, bool isSelected)
+    {
+        // The run itself, so an unlit segment is still visible while you work on it.
+        var outline = new Pen(
+            new SolidColorBrush(isSelected ? Colors.White : Color.FromArgb(80, 255, 255, 255)),
+            isSelected ? 2.0 : 0.8);
+
+        for (int i = 0; i < segment.Path.Count - 1; i++)
+        {
+            context.DrawLine(outline, ToControl(image, segment.Path[i]), ToControl(image, segment.Path[i + 1]));
+        }
+    }
+
+    /// <summary>
+    /// Which LEDs to draw: every <see cref="Fixture.VisibleEvery"/>th, thinned further if the run is
+    /// long enough that drawing them all would cost more than it shows.
+    /// </summary>
+    private static IEnumerable<int> FixtureIndices(Segment segment)
+    {
+        int step = Math.Max(1, segment.Fixture.VisibleEvery);
+        int drawn = (segment.Count + step - 1) / step;
+
+        if (drawn > MaxFixturesPerSegment)
+        {
+            step *= (int)Math.Ceiling(drawn / (double)MaxFixturesPerSegment);
+        }
+
+        for (int i = 0; i < segment.Count; i += step)
+        {
+            yield return i;
+        }
+    }
+
+    private static double PositionFraction(Segment segment, int index) =>
+        segment.Count <= 1 ? 0 : Math.Clamp(index / (double)(segment.Count - 1), 0, 1);
+
+    /// <summary>
+    /// The run's direction in control pixels.
+    /// <para>
+    /// Computed here rather than in normalised space on purpose: normalised coordinates scale X and
+    /// Y independently, so a perpendicular taken there is not perpendicular on screen unless the
+    /// photo happens to be square.
+    /// </para>
+    /// </summary>
+    private static LayoutPoint DirectionInPixels(Rect image, Segment segment, double t)
+    {
+        const double Delta = 0.01;
+        Point before = ToControl(image, segment.PointAlongPath(Math.Max(0, t - Delta)));
+        Point after = ToControl(image, segment.PointAlongPath(Math.Min(1, t + Delta)));
+
+        double dx = after.X - before.X;
+        double dy = after.Y - before.Y;
+        double length = Math.Sqrt((dx * dx) + (dy * dy));
+
+        return length <= double.Epsilon
+            ? new LayoutPoint(1, 0)
+            : new LayoutPoint(dx / length, dy / length);
+    }
+
+    /// <summary>
+    /// Finds the colour this segment is currently showing, by looking up the WLED segment it drives
+    /// in the controller's live state.
     /// </summary>
     private RgbColor ResolveColor(LedwrightProject project, Segment segment)
     {
-        if (DeviceState?.Segments is not { } segments)
+        if (ControllerStates is not { } states ||
+            segment.ControllerKey is not { } key ||
+            !states.TryGetValue(key, out WledState? state) ||
+            state.Segments is not { } segments)
         {
             return new RgbColor(120, 120, 130);
         }
@@ -248,7 +496,7 @@ public sealed class HouseCanvas : Control
         int segmentId = project.WledSegmentIdFor(segment);
         WledSegment? wled = segments.FirstOrDefault(s => s.Id == segmentId);
 
-        if (wled is null || wled.On == false || DeviceState.On == false)
+        if (wled is null || wled.On == false || state.On == false)
         {
             return new RgbColor(40, 42, 48);
         }
@@ -256,7 +504,7 @@ public sealed class HouseCanvas : Control
         RgbColor colour = wled.PrimaryColor;
 
         // Fold master and segment brightness into the preview so a dimmed strip looks dimmed.
-        double scale = (DeviceState.Brightness ?? 255) / 255d * ((wled.Brightness ?? 255) / 255d);
+        double scale = (state.Brightness ?? 255) / 255d * ((wled.Brightness ?? 255) / 255d);
         return new RgbColor(
             (byte)(colour.R * scale),
             (byte)(colour.G * scale),
@@ -267,7 +515,7 @@ public sealed class HouseCanvas : Control
     {
         var text = new FormattedText(
             $"{segment.Name}  ({segment.Count})",
-            System.Globalization.CultureInfo.CurrentCulture,
+            CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             Typeface.Default,
             isSelected ? 13 : 11,
@@ -287,7 +535,7 @@ public sealed class HouseCanvas : Control
     {
         var text = new FormattedText(
             "Load a photo of the house at dusk, then draw each segment onto it.",
-            System.Globalization.CultureInfo.CurrentCulture,
+            CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             Typeface.Default,
             14,
@@ -297,6 +545,9 @@ public sealed class HouseCanvas : Control
             (bounds.Width - text.Width) / 2,
             (bounds.Height - text.Height) / 2));
     }
+
+    private static Point ToControl(Rect image, LayoutPoint p) =>
+        new(image.X + (p.X * image.Width), image.Y + (p.Y * image.Height));
 
     /// <summary>The letterboxed rectangle the photo occupies, which all normalised points map into.</summary>
     private Rect ImageRect()
@@ -314,4 +565,31 @@ public sealed class HouseCanvas : Control
 
         return new Rect((bounds.Width - width) / 2, (bounds.Height - height) / 2, width, height);
     }
+
+    /// <summary>
+    /// Re-subscribes to every segment, so correcting a run's length or changing its fixture redraws
+    /// immediately rather than after a save and reload.
+    /// </summary>
+    private void WatchSegments()
+    {
+        foreach (Segment segment in _watched)
+        {
+            segment.PropertyChanged -= OnSegmentChanged;
+        }
+
+        _watched.Clear();
+
+        if (Project is null)
+        {
+            return;
+        }
+
+        foreach (Segment segment in Project.Segments)
+        {
+            segment.PropertyChanged += OnSegmentChanged;
+            _watched.Add(segment);
+        }
+    }
+
+    private void OnSegmentChanged(object? sender, PropertyChangedEventArgs e) => InvalidateVisual();
 }

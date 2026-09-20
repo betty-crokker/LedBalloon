@@ -102,10 +102,15 @@ public static class ProjectSync
     /// Flash has a finite write budget, so this is meant for an explicit save, not for every edit.
     /// </para>
     /// </summary>
+    /// <param name="photoBudgetBytes">
+    /// How much room the controllers actually have for a photo, measured rather than assumed. Zero
+    /// or too small and the photo stays in each machine's local cache; the layout still syncs.
+    /// </param>
     public static async Task<ProjectSaveResult> SaveAsync(
         LedwrightProject project,
         IEnumerable<SyncTarget> controllers,
         byte[]? photoJpeg = null,
+        int photoBudgetBytes = 0,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -113,6 +118,17 @@ public static class ProjectSync
 
         project.Revision++;
         project.SavedUtc = DateTimeOffset.UtcNow;
+
+        bool storePhoto = photoJpeg is { Length: > 0 } &&
+                          photoBudgetBytes > 0 &&
+                          photoJpeg.Length <= photoBudgetBytes;
+
+        if (photoJpeg is { Length: > 0 })
+        {
+            project.PhotoHash = PhotoCache.HashOf(photoJpeg);
+            project.PhotoOnDevice = storePhoto;
+            project.PhotoPath = storePhoto ? DeviceProjectStore.PhotoFile : null;
+        }
 
         var savedTo = new List<string>();
         var failures = new List<string>();
@@ -124,9 +140,10 @@ public static class ProjectSync
                 using var store = new DeviceProjectStore(target.Host);
                 await store.SaveAsync(project, cancellationToken).ConfigureAwait(false);
 
-                if (photoJpeg is { Length: > 0 })
+                if (storePhoto)
                 {
-                    await store.SavePhotoAsync(photoJpeg, cancellationToken).ConfigureAwait(false);
+                    await store.SavePhotoAsync(photoJpeg!, photoBudgetBytes, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 savedTo.Add(target.Name);
@@ -135,6 +152,14 @@ public static class ProjectSync
             {
                 failures.Add($"{target.Name}: {ex.Message}");
             }
+        }
+
+        if (photoJpeg is { Length: > 0 } && !storePhoto)
+        {
+            failures.Add(
+                $"the photo ({photoJpeg.Length / 1024} KB) does not fit in the " +
+                $"{photoBudgetBytes / 1024} KB the controllers have spare, so it stays on this machine. " +
+                "Send the file to anyone else who wants the preview; they only have to pick it once.");
         }
 
         // A save that reached nothing must not look like it worked, so put the revision back.
