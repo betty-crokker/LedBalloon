@@ -64,15 +64,25 @@ public sealed class DeviceProjectStore : IProjectStore, IDisposable
     public Task<byte[]?> LoadPhotoAsync(CancellationToken cancellationToken = default) =>
         _files.DownloadAsync(PhotoFile, cancellationToken);
 
-    public Task SavePhotoAsync(byte[] jpeg, CancellationToken cancellationToken = default)
+    public Task SavePhotoAsync(byte[] jpeg, CancellationToken cancellationToken = default) =>
+        SavePhotoAsync(jpeg, MaxPhotoBytes, cancellationToken);
+
+    /// <summary>
+    /// Stores the photo, refusing one larger than this device can spare.
+    /// <para>
+    /// The ceiling is passed in rather than assumed: a roomy ESP32 has most of a megabyte free and
+    /// a cramped build has almost nothing, and guessing wrong either wastes the space or fills it.
+    /// </para>
+    /// </summary>
+    public Task SavePhotoAsync(byte[] jpeg, int budgetBytes, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(jpeg);
 
-        if (jpeg.Length > MaxPhotoBytes)
+        if (budgetBytes <= 0 || jpeg.Length > budgetBytes)
         {
             throw new WledException(
-                $"The photo is {jpeg.Length / 1024} KB. Downscale it below {MaxPhotoBytes / 1024} KB " +
-                "before storing it on the controller, or keep it in a local project instead.");
+                $"The photo is {jpeg.Length / 1024} KB and this controller has " +
+                $"{Math.Max(0, budgetBytes) / 1024} KB spare for one.");
         }
 
         return _files.UploadAsync(PhotoFile, jpeg, "image/jpeg", cancellationToken);

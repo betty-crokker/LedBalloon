@@ -23,6 +23,29 @@ place and every look follows.
 house at dusk, lets you draw each run onto it as a line, and paints the live colours back onto that
 photo as you work.
 
+### A line is not enough
+
+Where a run is does not tell you what it looks like. Bare addressable pixels facing the road read as
+a row of coloured points; the same LEDs under an eave aimed at the wall are barely visible
+themselves, and what you see from the street is the overlapping scallops they throw. Drawing the
+second as though it were the first would make the preview confidently wrong, so each segment also
+carries a **fixture**:
+
+| Fixture | Drawn as |
+| --- | --- |
+| Addressable strip, facing out | One visible point of colour per LED |
+| Rope or diffused channel | A continuous line of glow, no discrete pixels |
+| Downlights under an eave | Overlapping soft-edged cones washing down the wall |
+| Uplights from the ground | The same, aimed up |
+
+The aimed styles take a beam spread, a throw distance and an aim side — a line has two
+perpendiculars and only you know which one is the wall. Beams are drawn as a few nested cones rather
+than one triangle, because a real beam has no edge.
+
+A line also does not say which way round the run goes, and getting that wrong runs every effect
+backwards. The selected segment shows a filled marker at LED 1 and a hollow one at its last LED, and
+*Flip which end is LED 1* swaps them.
+
 ## Layout
 
 ```
@@ -143,10 +166,35 @@ report failure on every write that worked.
 decides. Flash has a finite write budget, so saving is an explicit action, not something that
 happens on every edit.
 
-The photo travels with the project. A phone photo is several megabytes and there is under a megabyte
-free, so `PhotoPreparer` scales it to 1600px and re-encodes it as JPEG, dropping quality before
-resolution, until it fits the budget. The preview shows the prepared version, so what you see is
-what the other machine gets.
+### The photo, and why no file path is ever stored
+
+The photo travels with the project, because a path does not. A path that works on one machine is
+meaningless on another, and asking two people to keep a file in the same place stops working the
+first time someone tidies their Downloads folder. So a photo is identified by a hash of its
+contents, never by where it sits.
+
+`PhotoPreparer` scales it to 1600px and re-encodes as JPEG, giving up quality before resolution
+until it fits. A 3.7 MB phone photo of the development house came out at **389 KB, 1600x1200**, and
+uploading it to a controller took about two seconds and read back byte for byte.
+
+The budget is **measured, not assumed**: `PhotoPreparer.BudgetFor` takes the free space each
+controller reports, uses the smallest, and leaves 250 KB of headroom for firmware and presets. A
+cramped ESP8266 build simply yields a budget of zero and no photo goes on the device — nothing here
+is tuned to the hardware it was developed on.
+
+When the photo will not fit, the layout still syncs and only the picture stays behind. Each machine
+keeps a `PhotoCache` under its local app data, filed by hash. Whoever has the file loads it once;
+anyone else is told the layout expects a photo and picks the same file once. Because the hash
+identifies it, picking the wrong picture is detected rather than silently drawn on.
+
+One caveat: the free-space figures in `/json/info` appear not to refresh immediately after a write,
+so the budget can be computed from slightly stale numbers. The headroom absorbs it.
+
+```bash
+ledwright photo "C:\path\to\house.jpg" 680
+```
+
+reports what a photo would shrink to and whether it fits, without touching anything.
 
 ## The layout problem, and why the app has to ask
 

@@ -13,6 +13,12 @@ using Ledwright.Core.Models;
 
 namespace Ledwright.App.ViewModels;
 
+/// <summary>A fixture style with wording that means something to whoever hung the lights.</summary>
+public sealed record FixtureChoice(FixtureStyle Style, string Name, string Description)
+{
+    public override string ToString() => Name;
+}
+
 /// <summary>
 /// The app is about a house, not about hardware.
 /// <para>
@@ -44,11 +50,22 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private int _segmentEffectIndex = -1;
     [ObservableProperty] private int _segmentPaletteIndex = -1;
     [ObservableProperty] private DeviceViewModel? _segmentController;
+    [ObservableProperty] private FixtureChoice? _fixtureChoice;
     [ObservableProperty] private byte[]? _photoBytes;
+
+    /// <summary>Set when the layout expects a photo this machine has never seen.</summary>
+    [ObservableProperty] private string? _missingPhotoNotice;
     [ObservableProperty] private bool _isBusy;
 
     /// <summary>Bumped when segments are added or removed, so the canvas re-watches the list.</summary>
     [ObservableProperty] private int _layoutRevision;
+
+    /// <summary>
+    /// Live state per controller, so the canvas colours each run from the box that drives it rather
+    /// than from whichever controller happens to be selected.
+    /// </summary>
+    [ObservableProperty] private IReadOnlyDictionary<string, WledState> _controllerStates =
+        new Dictionary<string, WledState>();
 
     private bool _suppressPush;
 
@@ -93,8 +110,42 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool HasSegments => Project.Segments.Count > 0;
 
+    /// <summary>
+    /// How many bytes the controllers can actually spare for a photo, read from what each one
+    /// reports free rather than assumed. A cramped build simply yields zero and the photo stays
+    /// local; nothing here is tuned to the hardware it was developed on.
+    /// </summary>
+    public int PhotoBudgetBytes => PhotoPreparer.BudgetFor(
+        Devices.Select(d => d.Info?.FileSystem?.FreeKb ?? 0).Where(kb => kb > 0));
+
     [RelayCommand]
     private void GoToSetup() => ActiveTab = SetupTab;
+
+    /// <summary>The kinds of light you can hang, in the words someone hanging them would use.</summary>
+    public IReadOnlyList<FixtureChoice> FixtureStyles { get; } =
+    [
+        new(FixtureStyle.PointSource, "Addressable strip, facing out",
+            "Bare pixels you can see. Each LED is a point of colour."),
+        new(FixtureStyle.DiffusedStrip, "Rope or diffused channel",
+            "A continuous line of glow with no visible pixels."),
+        new(FixtureStyle.Downlight, "Downlights under an eave",
+            "Aimed at the wall below. You see overlapping scallops, not the lights."),
+        new(FixtureStyle.Uplight, "Uplights from the ground",
+            "Aimed up the wall."),
+    ];
+
+    /// <summary>Swaps which end of the selected run LED 1 is at.</summary>
+    [RelayCommand]
+    private void FlipSegmentDirection()
+    {
+        if (SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        segment.Reverse = !segment.Reverse;
+        Status = $"'{segment.Name}' now starts at the {(segment.Reverse ? "far" : "first")} end you clicked.";
+    }
 
     // ---- The project lives on the controllers ---------------------------------------------------
 
@@ -121,7 +172,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
         try
         {
-            ProjectSaveResult result = await ProjectSync.SaveAsync(Project, targets, PhotoBytes);
+            // Cached locally either way: if the controllers cannot hold it, this machine still can.
+            if (PhotoBytes is { Length: > 0 })
+            {
+                PhotoCache.Save(PhotoBytes);
+            }
+
+            ProjectSaveResult result = await ProjectSync.SaveAsync(
+                Project, targets, PhotoBytes, PhotoBudgetBytes);
 
             if (!result.AnySucceeded)
             {
@@ -181,10 +239,19 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
             }
 
-            byte[]? photo = await ProjectSync.LoadPhotoAsync(targets);
+            // The controllers first, then this machine's cache, then ask. Never a file path.
+            byte[]? photo = await ProjectSync.LoadPhotoAsync(targets) ?? PhotoCache.Load(Project.PhotoHash);
+
             if (photo is { Length: > 0 })
             {
                 PhotoBytes = photo;
+                PhotoCache.Save(photo);
+            }
+            else if (!string.IsNullOrWhiteSpace(Project.PhotoHash))
+            {
+                MissingPhotoNotice =
+                    "This layout has a house photo that was too large for the controllers. " +
+                    "Load the same picture once and it will be remembered on this machine.";
             }
 
             AfterProjectChanged(
@@ -602,11 +669,25 @@ public sealed partial class MainViewModel : ViewModelBase
         try
         {
             SegmentController = value is null ? null : DeviceFor(value);
+            FixtureChoice = value is null
+                ? null
+                : FixtureStyles.FirstOrDefault(f => f.Style == value.Fixture.Style);
         }
         finally
         {
             _suppressPush = false;
         }
+    }
+
+    partial void OnFixtureChoiceChanged(FixtureChoice? value)
+    {
+        if (_suppressPush || value is null || SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        segment.Fixture.Style = value.Style;
+        Status = value.Description;
     }
 
     /// <summary>Moves the selected run onto a different controller.</summary>
@@ -731,7 +812,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
         SelectedSegment.Path.Clear();
         IsDrawingSegment = true;
-        Status = $"Click the two ends of '{SelectedSegment.Name}' on the photo. Click again to add bends.";
+        Status = $"Click along '{SelectedSegment.Name}', starting at the end where LED 1 is. " +
+                 "Extra clicks follow a corner. You can flip the direction afterwards.";
     }
 
     [RelayCommand]
@@ -769,6 +851,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void AfterDevicesChanged()
     {
         RebuildPresetCatalog();
+        RebuildControllerStates();
         OnPropertyChanged(nameof(ControllerSummary));
 
         SelectedSegment ??= Project.Segments.FirstOrDefault();
@@ -821,13 +904,36 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void OnDevicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(DeviceViewModel.IsConnected))
+        switch (e.PropertyName)
         {
-            OnPropertyChanged(nameof(ControllerSummary));
+            case nameof(DeviceViewModel.IsConnected):
+                OnPropertyChanged(nameof(ControllerSummary));
+                break;
+            case nameof(DeviceViewModel.Presets):
+                RebuildPresetCatalog();
+                break;
+            case nameof(DeviceViewModel.State):
+                RebuildControllerStates();
+                break;
         }
-        else if (e.PropertyName is nameof(DeviceViewModel.Presets))
+    }
+
+    /// <summary>
+    /// Rebuilds the state map as a new instance, because the canvas watches the property rather
+    /// than the dictionary's contents.
+    /// </summary>
+    private void RebuildControllerStates()
+    {
+        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (DeviceViewModel device in Devices)
         {
-            RebuildPresetCatalog();
+            if (device.DeviceKey is { } key && device.State is { } state)
+            {
+                states[key] = state;
+            }
         }
+
+        ControllerStates = states;
     }
 }

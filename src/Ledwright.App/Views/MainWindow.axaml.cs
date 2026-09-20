@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Platform.Storage;
 using Ledwright.App.ViewModels;
+using Ledwright.Core;
 using Ledwright.Core.Layout;
 
 namespace Ledwright.App.Views;
@@ -53,18 +54,23 @@ public partial class MainWindow : Window
                 original = buffer.ToArray();
             }
 
-            // Prepared on the way in, not on the way out: the photo has to fit on a controller's
-            // flash, and the preview should show what actually gets stored.
-            byte[] prepared = await Task.Run(() =>
-                PhotoPreparer.ToStoredJpeg(original, DeviceProjectStore.MaxPhotoBytes));
+            // Prepared on the way in, not on the way out: it has to fit whatever the controllers
+            // actually have spare, and the preview should show what really gets stored.
+            int budget = viewModel.PhotoBudgetBytes;
+            PreparedPhoto prepared = await Task.Run(() => PhotoPreparer.Prepare(original, budget));
 
-            viewModel.PhotoBytes = prepared;
-            viewModel.Project.PhotoPath = DeviceProjectStore.PhotoFile;
+            viewModel.PhotoBytes = prepared.Jpeg;
+            viewModel.MissingPhotoNotice = null;
 
-            string summary = $"{original.Length / 1024} KB down to {prepared.Length / 1024} KB";
-            viewModel.Status = prepared.Length > DeviceProjectStore.MaxPhotoBytes
-                ? $"Photo loaded ({summary}), still too large for the controllers. Crop it and try again."
-                : $"Photo loaded ({summary}). Pick a segment, then draw it onto the house.";
+            // Filed by content, never by path: where this file happens to live on this machine
+            // means nothing on anyone else's.
+            PhotoCache.Save(prepared.Jpeg);
+            viewModel.Project.PhotoHash = prepared.Hash;
+
+            viewModel.Status = prepared.FitsBudget
+                ? $"Photo ready: {prepared}. Save to put it on the controllers with the layout."
+                : $"Photo ready: {prepared}, but the controllers only have {budget / 1024} KB spare. " +
+                  "It stays on this machine; send the file to anyone else who wants the preview.";
         }
         catch (Exception ex)
         {

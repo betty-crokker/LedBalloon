@@ -32,6 +32,13 @@ public sealed class Segment : INotifyPropertyChanged
     private int _count;
     private int? _segmentId;
     private bool _reverse;
+    private Fixture _fixture = new();
+
+    public Segment()
+    {
+        // Fixture changes are segment changes as far as anything watching is concerned.
+        _fixture.PropertyChanged += OnFixtureChanged;
+    }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -101,6 +108,26 @@ public sealed class Segment : INotifyPropertyChanged
     {
         get => _reverse;
         set => Set(ref _reverse, value);
+    }
+
+    /// <summary>
+    /// What kind of light this is, which decides how the preview draws it. A strip facing the
+    /// street and a downlight tucked under an eave occupy the same line on the photo and look
+    /// nothing alike from the road.
+    /// </summary>
+    [JsonPropertyName("fixture")]
+    public Fixture Fixture
+    {
+        get => _fixture;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            _fixture.PropertyChanged -= OnFixtureChanged;
+            _fixture = value;
+            _fixture.PropertyChanged += OnFixtureChanged;
+            OnPropertyChanged(nameof(Fixture));
+        }
     }
 
     /// <summary>
@@ -188,6 +215,32 @@ public sealed class Segment : INotifyPropertyChanged
         return Path[^1];
     }
 
+    /// <summary>
+    /// The unit tangent of the drawn path at a fraction <paramref name="t"/> along it — the
+    /// direction the run travels, which is what an aimed fixture's cone is measured against.
+    /// </summary>
+    public LayoutPoint DirectionAt(double t)
+    {
+        if (Path.Count < 2)
+        {
+            return new LayoutPoint(1, 0);
+        }
+
+        // Sample either side of the point rather than differentiating the polyline, so a corner
+        // gives a sensible average instead of an undefined normal.
+        const double Delta = 0.01;
+        LayoutPoint before = PointAlongPath(Math.Max(0, t - Delta));
+        LayoutPoint after = PointAlongPath(Math.Min(1, t + Delta));
+
+        double dx = after.X - before.X;
+        double dy = after.Y - before.Y;
+        double length = Math.Sqrt((dx * dx) + (dy * dy));
+
+        return length <= double.Epsilon
+            ? new LayoutPoint(1, 0)
+            : new LayoutPoint(dx / length, dy / length);
+    }
+
     /// <summary>Tells anything watching that the drawn path changed; it is a list, not a property.</summary>
     public void NotifyPathChanged()
     {
@@ -211,4 +264,7 @@ public sealed class Segment : INotifyPropertyChanged
 
     private void OnPropertyChanged(string? propertyName) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private void OnFixtureChanged(object? sender, PropertyChangedEventArgs e) =>
+        OnPropertyChanged(nameof(Fixture));
 }

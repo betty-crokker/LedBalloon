@@ -35,6 +35,18 @@ public sealed class LedwrightProject
     /// </summary>
     [JsonPropertyName("photoPath")] public string? PhotoPath { get; set; }
 
+    /// <summary>
+    /// Content hash of the house photo. The photo is identified by what it is, never by where it
+    /// lives, so a layout can move between machines without anyone agreeing on a file path.
+    /// </summary>
+    [JsonPropertyName("photoHash")] public string? PhotoHash { get; set; }
+
+    /// <summary>
+    /// False when the photo was too large for the controllers and lives only in each machine's
+    /// local cache. The layout still syncs; the picture has to be shared once.
+    /// </summary>
+    [JsonPropertyName("photoOnDevice")] public bool PhotoOnDevice { get; set; }
+
     [JsonPropertyName("segments")] public List<Segment> Segments { get; set; } = [];
 
     [JsonPropertyName("looks")] public List<Look> Looks { get; set; } = [];

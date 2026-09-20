@@ -16,6 +16,9 @@
   <ItemGroup>
     <!-- Managed mDNS, so discovery behaves the same without Bonjour on Windows or Avahi on Linux. -->
     <PackageReference Include="Zeroconf" Version="3.7.16" />
+
+    <!-- Image decode and JPEG encode, so a photo can be shrunk to fit a controller's flash. -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
 </Project>
