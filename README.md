@@ -78,6 +78,38 @@ which is a binary WebSocket stream rather than REST.
 post can leave a controller needing a factory reset. Use `WledConfigClient.GetRawAsync`, edit, and
 post it back yourself once you have a backup.
 
+## Giving it to someone else
+
+`publish.ps1` produces a single self-contained executable with the .NET runtime bundled inside it.
+The other machine needs nothing installed — no SDK, no runtime, no Visual Studio.
+
+```powershell
+.\publish.ps1
+```
+
+That writes `publish/win-x64/Ledwright.App.exe`, about 48 MB. Copy that one file anywhere and run
+it. Pass `-Runtime linux-x64` or `-Runtime osx-arm64` to build for the other platforms; you can
+cross-publish all of them from Windows.
+
+Two things to expect: Windows SmartScreen warns the first time because the file is not code-signed
+(More info → Run anyway), and the machine has to be on the same network segment as the controllers,
+since mDNS does not cross subnets.
+
+## The app is about the house, not the hardware
+
+Controllers are a setup concern. You find them once, give each one a name, describe the runs of LED
+hanging off them, and then they get out of the way:
+
+- **Segments** are the permanent left-hand panel — the gable, the porch rail, whatever you hung.
+- **Presets** from every controller are merged into one list, de-duplicated by name. If both boxes
+  store "Winter both" it appears once and recalling it sends the right slot number to each, even
+  when the slot numbers differ. A preset only one controller has is still listed, and applying it
+  says so rather than silently lighting half the house.
+- **Controllers** live in a Setup tab and a quiet "2 of 2 controllers connected" in the status bar.
+
+A house is not a controller: segments carry the MAC of the box that drives them, so a project spans
+as many controllers as the wiring needs, each with its own LED address space.
+
 ## Identifying controllers
 
 Controllers are filed by **MAC address**, not IP. The MAC survives a DHCP lease moving the device,

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -9,7 +10,7 @@ using Ledwright.Core.Models;
 namespace Ledwright.App.ViewModels;
 
 /// <summary>
-/// One controller, as the UI sees it.
+/// One controller, as Setup sees it.
 /// <para>
 /// <see cref="WledDevice"/> raises its events on background threads, so everything that touches an
 /// observable property is marshalled onto the UI thread here. Doing it once, at the boundary, keeps
@@ -19,26 +20,25 @@ namespace Ledwright.App.ViewModels;
 public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
 {
     private readonly WledDevice _device;
+    private readonly string? _discoveredName;
 
-    [ObservableProperty] private string _displayName;
     [ObservableProperty] private string _host;
     [ObservableProperty] private bool _isConnected;
     [ObservableProperty] private bool _isOn;
     [ObservableProperty] private double _brightness = 128;
-    [ObservableProperty] private int _selectedEffectIndex = -1;
-    [ObservableProperty] private int _selectedPaletteIndex = -1;
     [ObservableProperty] private string _status = "Connecting...";
     [ObservableProperty] private WledCapabilities? _capabilities;
-
-    /// <summary>The device's live state, which the house canvas paints from.</summary>
     [ObservableProperty] private WledState? _state;
+
+    /// <summary>The name the user gave this controller, held in the project.</summary>
+    [ObservableProperty] private string? _assignedName;
 
     private bool _applyingRemoteState;
 
-    public DeviceViewModel(string host, string? name = null)
+    public DeviceViewModel(string host, string? discoveredName = null)
     {
         _host = host;
-        _displayName = name ?? host;
+        _discoveredName = discoveredName;
         _device = new WledDevice(host);
 
         _device.StateChanged += (_, state) => OnUi(() => ApplyRemoteState(state));
@@ -50,6 +50,18 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
     public string? DeviceKey => _device.Info?.DeviceKey;
 
     public WledDevice Device => _device;
+
+    public WledInfo? Info => _device.Info;
+
+    /// <summary>
+    /// What to call this controller: the name the user chose, else whatever the device calls itself.
+    /// The factory name is not unique — two Gledopto boxes are both "WLED-Gledopto" — which is why
+    /// the assigned name wins.
+    /// </summary>
+    public string DisplayName =>
+        !string.IsNullOrWhiteSpace(AssignedName) ? AssignedName!
+        : _device.Info?.Name is { Length: > 0 } reported ? reported
+        : _discoveredName ?? Host;
 
     public ObservableCollection<string> Effects { get; } = [];
 
@@ -68,17 +80,16 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                 Replace(Effects, _device.Effects);
                 Replace(Palettes, _device.Palettes);
                 Replace(Presets, _device.Presets);
+                OnPropertyChanged(nameof(Presets));
 
                 if (_device.Info is { } info)
                 {
                     Capabilities = WledCapabilities.From(info);
-                    DisplayName = _device.DisplayName;
+                    OnPropertyChanged(nameof(DisplayName));
+                    OnPropertyChanged(nameof(DeviceKey));
+                    OnPropertyChanged(nameof(Info));
                 }
 
-                // Re-apply the state now that the lists exist. The first push arrives while
-                // Effects and Palettes are still empty, and a ComboBox clamps a SelectedIndex
-                // it cannot satisfy back to -1 — which is why the pickers looked stuck on
-                // "loading" even though the device had already told us everything.
                 if (_device.State is { } current)
                 {
                     ApplyRemoteState(current);
@@ -95,6 +106,8 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
             OnUi(() => Status = $"Could not connect: {ex.Message}");
         }
     }
+
+    partial void OnAssignedNameChanged(string? value) => OnPropertyChanged(nameof(DisplayName));
 
     partial void OnIsOnChanged(bool value)
     {
@@ -113,28 +126,6 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
-    partial void OnSelectedEffectIndexChanged(int value)
-    {
-        if (!_applyingRemoteState && value >= 0)
-        {
-            _device.SetEffect(value);
-        }
-    }
-
-    partial void OnSelectedPaletteIndexChanged(int value)
-    {
-        if (!_applyingRemoteState && value >= 0)
-        {
-            _device.SetPalette(value);
-        }
-    }
-
-    public Task ApplyPresetAsync(WledPreset preset) => _device.ApplyPresetAsync(preset.Id);
-
-    public void SetPrimaryColor(RgbColor color, int segmentId) => _device.SetPrimaryColor(color, segmentId);
-
-    public Task FlushAsync() => _device.FlushAsync();
-
     /// <summary>Pushes state that came from the device into the UI without echoing it straight back.</summary>
     private void ApplyRemoteState(WledState state)
     {
@@ -144,21 +135,6 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
             State = state;
             IsOn = state.On ?? IsOn;
             Brightness = state.Brightness ?? Brightness;
-
-            if (state.MainOrFirstSegment() is { } segment)
-            {
-                // Only take an index the list can actually satisfy, so the view model never
-                // holds a selection the picker would silently discard.
-                if (segment.Effect is { } effect && effect < Effects.Count)
-                {
-                    SelectedEffectIndex = effect;
-                }
-
-                if (segment.Palette is { } palette && palette < Palettes.Count)
-                {
-                    SelectedPaletteIndex = palette;
-                }
-            }
         }
         finally
         {
@@ -174,15 +150,16 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                 IsConnected = _device.IsConnected;
                 break;
             case nameof(WledDevice.DisplayName):
-                DisplayName = _device.DisplayName;
+                OnPropertyChanged(nameof(DisplayName));
                 break;
             case nameof(WledDevice.Presets):
                 Replace(Presets, _device.Presets);
+                OnPropertyChanged(nameof(Presets));
                 break;
         }
     }
 
-    private static void Replace<T>(ObservableCollection<T> target, System.Collections.Generic.IReadOnlyList<T> source)
+    private static void Replace<T>(ObservableCollection<T> target, IReadOnlyList<T> source)
     {
         target.Clear();
         foreach (T item in source)

@@ -1,5 +1,6 @@
-using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Ledwright.Core;
 
@@ -107,6 +108,57 @@ public sealed class WledConfigClient
     {
         IReadOnlyList<LedBus> buses = await GetLedBusesAsync(cancellationToken).ConfigureAwait(false);
         return buses.Count == 0 ? 0 : buses.Max(b => b.StopExclusive);
+    }
+
+    /// <summary>
+    /// Renames the device on the controller itself, so the name follows it everywhere — the WLED
+    /// app, the web UI, and any other client.
+    /// <para>
+    /// This is the one configuration write wrapped here, and it is safe for a specific reason: it
+    /// reads the whole document, changes one leaf, and writes the document back unchanged in every
+    /// other respect. That is the only pattern that should ever be used against <c>/cfg.json</c>;
+    /// posting a hand-built document can leave a controller needing a factory reset.
+    /// </para>
+    /// <para>The device may briefly drop its connections while it applies the change.</para>
+    /// </summary>
+    public async Task SetDeviceNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        string body;
+        using (HttpResponseMessage read = await _http.GetAsync("cfg.json", cancellationToken).ConfigureAwait(false))
+        {
+            if (!read.IsSuccessStatusCode)
+            {
+                throw new WledHttpException(
+                    read.StatusCode,
+                    $"Could not read the configuration before renaming ({(int)read.StatusCode}).");
+            }
+
+            body = await read.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        JsonNode root = JsonNode.Parse(body)
+            ?? throw new WledException("The controller returned a configuration that could not be parsed.");
+
+        if (root["id"] is not JsonObject id)
+        {
+            id = [];
+            root["id"] = id;
+        }
+
+        id["name"] = name;
+
+        using var content = new StringContent(root.ToJsonString(), Encoding.UTF8, "application/json");
+        using HttpResponseMessage write = await _http.PostAsync("cfg.json", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!write.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                write.StatusCode,
+                $"The controller rejected the rename ({(int)write.StatusCode}). A settings PIN will block this.");
+        }
     }
 
     private static bool TryGetLedSection(JsonElement root, out JsonElement led)

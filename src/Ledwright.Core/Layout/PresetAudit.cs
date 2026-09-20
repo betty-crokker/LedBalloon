@@ -82,10 +82,11 @@ public static class PresetAudit
     /// how WLED expects a preset to be rewritten.
     /// </para>
     /// </summary>
-    public static WledState BuildRefit(LedwrightProject project, WledPreset preset)
+    public static WledState BuildRefit(LedwrightProject project, string controllerKey, WledPreset preset)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(preset);
+        ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
 
         var state = new WledState
         {
@@ -96,7 +97,7 @@ public static class PresetAudit
             PresetName = preset.DisplayName,
         };
 
-        foreach (Segment segment in project.Segments)
+        foreach (Segment segment in project.SegmentsOn(controllerKey))
         {
             int segmentId = project.WledSegmentIdFor(segment);
             WledSegment? original = preset.Segments?.FirstOrDefault(s => s.Id == segmentId);
