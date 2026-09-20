@@ -20,10 +20,16 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private DeviceViewModel? _selectedDevice;
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private bool _isScanning;
-    [ObservableProperty] private string _status = "Scan to find your controllers.";
+    [ObservableProperty] private string _status = "Looking for controllers on the network...";
     [ObservableProperty] private string _manualHost = string.Empty;
     [ObservableProperty] private LedwrightProject _project = new();
     [ObservableProperty] private bool _isDrawingSegment;
+
+    public MainViewModel()
+    {
+        // Finding the controllers is the app's first job, so do it without being asked.
+        Dispatcher.UIThread.Post(async void () => await ScanAsync());
+    }
 
     public ObservableCollection<DeviceViewModel> Devices { get; } = [];
 
@@ -118,17 +124,24 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
 
                 var device = new DeviceViewModel(found.ConnectHost, found.Name);
+
+                // Listed straight away so the scan visibly progresses...
                 Devices.Add(device);
 
                 await device.ConnectAsync();
+
+                // ...but only selected once it has its effect and palette lists. Selecting it
+                // earlier builds the pickers against empty lists, and a ComboBox that cannot
+                // satisfy its SelectedIndex drops to -1 and never re-reads it.
+                SelectedDevice ??= device;
 
                 // Now that info has arrived, drop anything already filed under the same MAC.
                 DeduplicateByDeviceKey(device);
             }
 
             Status = Devices.Count == 0
-                ? "Nothing found. mDNS does not cross subnets; add the address by hand below."
-                : $"{Devices.Count} device(s).";
+                ? "Nothing found. mDNS does not cross subnets or most VPNs; add the address by hand on the left."
+                : $"{Devices.Count} controller(s) found. Pick one on the left to control it.";
 
             SelectedDevice ??= Devices.FirstOrDefault();
         }

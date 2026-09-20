@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:conv="using:Avalonia.Data.Converters"
         xmlns:vm="using:Ledwright.App.ViewModels"
         xmlns:ctrl="using:Ledwright.App.Controls"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
@@ -9,168 +10,248 @@
         x:DataType="vm:MainViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="Ledwright"
-        Width="1280" Height="800"
-        MinWidth="960" MinHeight="600">
+        Width="1280" Height="820"
+        MinWidth="1040" MinHeight="620">
+
+  <Window.Resources>
+    <ResourceDictionary>
+      <!-- Defined per theme rather than hardcoded, so the app is legible whether the
+           system is set to light or dark. -->
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackground" Color="#F4F5F7" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#DFE1E5" />
+          <SolidColorBrush x:Key="StatusBackground" Color="#E9EBEF" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackground" Color="#16181C" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#2A2E35" />
+          <SolidColorBrush x:Key="StatusBackground" Color="#1A1D22" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
 
   <Window.Styles>
+    <Style Selector="TextBlock.panelTitle">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
     <Style Selector="TextBlock.heading">
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Margin" Value="0,12,0,6" />
+      <Setter Property="Margin" Value="0,16,0,6" />
     </Style>
     <Style Selector="TextBlock.hint">
-      <Setter Property="Opacity" Value="0.65" />
+      <Setter Property="Opacity" Value="0.7" />
       <Setter Property="TextWrapping" Value="Wrap" />
       <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.step">
+      <Setter Property="Opacity" Value="0.7" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Margin" Value="0,0,0,2" />
+    </Style>
+    <Style Selector="Button.block">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.emptyState">
+      <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="4" />
+      <Setter Property="Padding" Value="12" />
     </Style>
   </Window.Styles>
 
   <DockPanel>
 
-    <!-- Status bar -->
-    <Border DockPanel.Dock="Bottom" Padding="12,6" Background="#1A1D22">
+    <!-- Status bar: always says what just happened and what to do next -->
+    <Border DockPanel.Dock="Bottom" Padding="12,7"
+            Background="{DynamicResource StatusBackground}"
+            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,1,0,0">
       <TextBlock Text="{Binding Status}" TextTrimming="CharacterEllipsis" />
     </Border>
 
-    <!-- Devices -->
-    <Border DockPanel.Dock="Left" Width="260" Padding="12" Background="#16181C">
+    <!-- Step 1: the controllers -->
+    <Border DockPanel.Dock="Left" Width="280" Padding="14"
+            Background="{DynamicResource PanelBackground}"
+            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
       <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Controllers" Margin="0,0,0,6" />
 
-        <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <Button Content="Scan the network"
-                  HorizontalAlignment="Stretch"
-                  HorizontalContentAlignment="Center"
+        <StackPanel DockPanel.Dock="Top" Spacing="8">
+          <TextBlock Classes="panelTitle" Text="Controllers" />
+          <Button Classes="block" Content="Scan the network"
                   Command="{Binding ScanCommand}"
                   IsEnabled="{Binding !IsScanning}" />
-          <TextBlock Classes="hint"
-                     Text="Found over mDNS and filed by MAC, so a controller that comes back on a new IP is still recognised." />
         </StackPanel>
 
-        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
-          <TextBox Watermark="192.168.0.102" Text="{Binding ManualHost}" />
-          <Button Content="Add by address"
-                  HorizontalAlignment="Stretch"
-                  HorizontalContentAlignment="Center"
-                  Command="{Binding AddManualCommand}" />
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,14,0,0">
+          <TextBlock Classes="hint" Text="Not on this subnet? Add it directly." />
+          <TextBox PlaceholderText="192.168.0.102" Text="{Binding ManualHost}" />
+          <Button Classes="block" Content="Add by address" Command="{Binding AddManualCommand}" />
         </StackPanel>
 
-        <ListBox ItemsSource="{Binding Devices}"
-                 SelectedItem="{Binding SelectedDevice}"
-                 Margin="0,12,0,0">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:DeviceViewModel">
-              <StackPanel Spacing="2" Margin="0,4">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                  <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                           Fill="{Binding IsConnected, Converter={x:Static vm:Converters.ConnectionBrush}}" />
-                  <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+        <Grid Margin="0,12,0,0">
+          <Border Classes="emptyState" VerticalAlignment="Top"
+                  IsVisible="{Binding Devices.Count, Converter={x:Static vm:Converters.IsEmpty}}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="No controllers yet" FontWeight="SemiBold" />
+              <TextBlock Classes="hint"
+                         Text="Scanning looks for WLED devices over mDNS and files each one by its MAC address, so a controller that returns on a new IP is still recognised." />
+            </StackPanel>
+          </Border>
+
+          <ListBox ItemsSource="{Binding Devices}"
+                   SelectedItem="{Binding SelectedDevice}"
+                   Background="Transparent"
+                   IsVisible="{Binding Devices.Count, Converter={x:Static vm:Converters.IsNotEmpty}}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DeviceViewModel">
+                <StackPanel Spacing="2" Margin="0,4">
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                             Fill="{Binding IsConnected, Converter={x:Static vm:Converters.ConnectionBrush}}" />
+                    <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                  </StackPanel>
+                  <TextBlock Text="{Binding Host}" Classes="hint" />
+                  <TextBlock Text="{Binding Status}" Classes="hint" />
                 </StackPanel>
-                <TextBlock Text="{Binding Host}" Classes="hint" />
-                <TextBlock Text="{Binding Status}" Classes="hint" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
       </DockPanel>
     </Border>
 
-    <!-- Segments -->
-    <Border DockPanel.Dock="Right" Width="330" Padding="12" Background="#16181C">
-      <DockPanel>
-        <TextBlock DockPanel.Dock="Top" Classes="heading" Text="Segments" Margin="0,0,0,6" />
+    <!-- Step 3: the segments -->
+    <Border DockPanel.Dock="Right" Width="330" Padding="14"
+            Background="{DynamicResource PanelBackground}"
+            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
+      <DockPanel IsEnabled="{Binding SelectedDevice, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
 
-        <StackPanel DockPanel.Dock="Top" Spacing="6">
-          <Button Content="Import from controller"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  Command="{Binding ImportSegmentsFromDeviceCommand}" />
-          <Button Content="Work out layout from presets"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  Command="{Binding ProposeLayoutCommand}" />
+        <StackPanel DockPanel.Dock="Top" Spacing="8">
+          <TextBlock Classes="panelTitle" Text="Segments" />
           <TextBlock Classes="hint"
-                     Text="Each preset stores its own copy of the segment bounds, so they can disagree. This weighs them against the hardware and asks about the rest." />
+                     Text="A segment is one addressable run of LEDs — WLED's own word for it." />
+          <Button Classes="block" Content="Import outputs from controller"
+                  Command="{Binding ImportSegmentsFromDeviceCommand}" />
+          <Button Classes="block" Content="Work out layout from presets"
+                  Command="{Binding ProposeLayoutCommand}" />
         </StackPanel>
 
-        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,12,0,0">
-          <Button Content="Add a segment"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  Command="{Binding AddSegmentCommand}" />
-          <Button Content="Re-lay end to end"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  Command="{Binding RepackSegmentsCommand}" />
-          <Button Content="Push layout to controller"
-                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                  Command="{Binding PushGeometryCommand}" />
+        <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,14,0,0">
+          <Button Classes="block" Content="Add a segment" Command="{Binding AddSegmentCommand}" />
+          <Button Classes="block" Content="Re-lay end to end" Command="{Binding RepackSegmentsCommand}" />
+          <Button Classes="block" Content="Push layout to controller" Command="{Binding PushGeometryCommand}" />
         </StackPanel>
 
-        <ListBox ItemsSource="{Binding Project.Segments}"
-                 SelectedItem="{Binding SelectedSegment}"
-                 Margin="0,12,0,0">
-          <ListBox.ItemTemplate>
-            <DataTemplate>
-              <StackPanel Margin="0,4" Spacing="2">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                <TextBlock Classes="hint">
-                  <Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" />
-                  <Run Text="  ·  " /><Run Text="{Binding Count}" /><Run Text=" LEDs" />
-                </TextBlock>
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+        <Grid Margin="0,12,0,0">
+          <Border Classes="emptyState" VerticalAlignment="Top"
+                  IsVisible="{Binding Project.Segments.Count, Converter={x:Static vm:Converters.IsEmpty}}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="No segments yet" FontWeight="SemiBold" />
+              <TextBlock Classes="hint"
+                         Text="Import the controller's physical outputs to start, then split them into the runs you actually hung." />
+              <TextBlock Classes="hint"
+                         Text="Each preset on the device stores its own copy of the segment bounds, so they can disagree with each other. Working the layout out from presets weighs them against the hardware and asks you about the rest." />
+            </StackPanel>
+          </Border>
+
+          <ListBox ItemsSource="{Binding Project.Segments}"
+                   SelectedItem="{Binding SelectedSegment}"
+                   Background="Transparent"
+                   IsVisible="{Binding Project.Segments.Count, Converter={x:Static vm:Converters.IsNotEmpty}}">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Margin="0,4" Spacing="2">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <TextBlock Classes="hint">
+                    <Run Text="LED" /><Run Text=" " /><Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" /><Run Text="  ·  " /><Run Text="{Binding Count}" /><Run Text=" LEDs" />
+                  </TextBlock>
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
       </DockPanel>
     </Border>
 
-    <!-- Main area -->
-    <TabControl Margin="12">
+    <!-- Step 2: the lights themselves -->
+    <TabControl Margin="14,8,14,8">
 
       <TabItem Header="Lights">
-        <ScrollViewer>
-          <StackPanel Margin="8" Spacing="4" DataContext="{Binding SelectedDevice}">
+        <Grid>
 
-            <TextBlock Classes="heading" Text="Power and brightness" />
-            <ToggleSwitch IsChecked="{Binding IsOn}" OnContent="On" OffContent="Off" />
-            <Slider Minimum="0" Maximum="255" Value="{Binding Brightness}" />
-            <TextBlock Classes="hint"
-                       Text="Drag freely: updates are merged and paced before they reach the controller." />
+          <!-- Nothing selected: say so, rather than showing dead controls -->
+          <Border Classes="emptyState" VerticalAlignment="Center" HorizontalAlignment="Center"
+                  MaxWidth="440"
+                  IsVisible="{Binding SelectedDevice, Converter={x:Static conv:ObjectConverters.IsNull}}">
+            <StackPanel Spacing="10">
+              <TextBlock Text="No controller selected" FontWeight="SemiBold" FontSize="16" />
+              <TextBlock Classes="hint"
+                         Text="Scan the network on the left, or type a controller's address underneath it. Once one is connected its effects, palettes and stored presets appear here." />
+              <Button Classes="block" Content="Scan the network"
+                      Command="{Binding ScanCommand}" IsEnabled="{Binding !IsScanning}" />
+            </StackPanel>
+          </Border>
 
-            <TextBlock Classes="heading" Text="Effect" />
-            <ComboBox ItemsSource="{Binding Effects}"
-                      SelectedIndex="{Binding SelectedEffectIndex}"
-                      HorizontalAlignment="Stretch" />
+          <ScrollViewer IsVisible="{Binding SelectedDevice, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+            <StackPanel Margin="8,0,8,8" Spacing="4" DataContext="{Binding SelectedDevice}">
 
-            <TextBlock Classes="heading" Text="Palette" />
-            <ComboBox ItemsSource="{Binding Palettes}"
-                      SelectedIndex="{Binding SelectedPaletteIndex}"
-                      HorizontalAlignment="Stretch" />
+              <TextBlock Classes="heading" Text="Power and brightness" Margin="0,8,0,6" />
+              <ToggleSwitch IsChecked="{Binding IsOn}" OnContent="On" OffContent="Off" />
+              <Slider Minimum="0" Maximum="255" Value="{Binding Brightness}" />
+              <TextBlock Classes="hint"
+                         Text="Drag freely: updates are merged and paced before they reach the controller." />
 
-            <TextBlock Classes="heading" Text="Presets stored on the controller" />
-            <ItemsControl ItemsSource="{Binding Presets}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                  <Button Margin="0,2" HorizontalAlignment="Stretch"
-                          HorizontalContentAlignment="Left"
-                          Content="{Binding DisplayName}"
-                          Command="{Binding $parent[TabControl].((vm:MainViewModel)DataContext).ApplyPresetCommand}"
-                          CommandParameter="{Binding}" />
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
+              <TextBlock Classes="heading" Text="Effect" />
+              <ComboBox ItemsSource="{Binding Effects}"
+                        SelectedIndex="{Binding SelectedEffectIndex}"
+                        PlaceholderText="Loading from the controller..."
+                        HorizontalAlignment="Stretch" />
 
-          </StackPanel>
-        </ScrollViewer>
+
+              <TextBlock Classes="heading" Text="Palette" />
+              <ComboBox ItemsSource="{Binding Palettes}"
+                        SelectedIndex="{Binding SelectedPaletteIndex}"
+                        PlaceholderText="Loading from the controller..."
+                        HorizontalAlignment="Stretch" />
+
+              <TextBlock Classes="heading" Text="Presets stored on the controller" />
+              <TextBlock Classes="hint"
+                         IsVisible="{Binding Presets.Count, Converter={x:Static vm:Converters.IsEmpty}}"
+                         Text="This controller has no presets saved." />
+              <ItemsControl ItemsSource="{Binding Presets}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <Button Margin="0,2" HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Left"
+                            Content="{Binding DisplayName}"
+                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ApplyPresetCommand}"
+                            CommandParameter="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
       </TabItem>
 
       <TabItem Header="House">
         <DockPanel>
-          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="8">
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="4,8">
             <Button Content="Load photo" Click="OnLoadPhoto" />
             <Button Content="Draw selected segment" Command="{Binding StartDrawingSegmentCommand}" />
             <Button Content="Done drawing" Command="{Binding FinishDrawingSegmentCommand}" />
-            <TextBlock VerticalAlignment="Center" Classes="hint"
-                       Text="Click each end of the run on the photo. Add more clicks to follow a corner." />
           </StackPanel>
 
-          <ctrl:HouseCanvas Name="Canvas"
+          <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4,0,4,8"
+                     Text="Load a photo of the house at dusk, pick a segment on the right, then click each end of that run on the photo. Extra clicks follow a corner. The live colours are painted back onto it." />
+
+          <ctrl:HouseCanvas Name="House"
                             Project="{Binding Project}"
                             SelectedSegment="{Binding SelectedSegment}"
                             DeviceState="{Binding SelectedDevice.State}"
@@ -182,9 +263,16 @@
       <TabItem Header="Health">
         <ScrollViewer>
           <StackPanel Margin="8" Spacing="6">
-            <Button Content="Check presets against the strip" Command="{Binding AuditCommand}" />
+            <TextBlock Classes="hint" Margin="0,8,0,0"
+                       Text="Checks the controller's stored presets against the strip it actually drives. A preset saved before you corrected a run's length will leave the tail of that run dark." />
+            <Button Content="Check presets against the strip"
+                    Command="{Binding AuditCommand}"
+                    HorizontalAlignment="Left" />
 
             <TextBlock Classes="heading" Text="Presets that would leave LEDs dark" />
+            <TextBlock Classes="hint"
+                       IsVisible="{Binding PresetGaps.Count, Converter={x:Static vm:Converters.IsEmpty}}"
+                       Text="Nothing reported yet." />
             <ItemsControl ItemsSource="{Binding PresetGaps}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -194,6 +282,9 @@
             </ItemsControl>
 
             <TextBlock Classes="heading" Text="Layout problems" />
+            <TextBlock Classes="hint"
+                       IsVisible="{Binding LayoutProblems.Count, Converter={x:Static vm:Converters.IsEmpty}}"
+                       Text="Nothing reported yet." />
             <ItemsControl ItemsSource="{Binding LayoutProblems}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
@@ -203,6 +294,9 @@
             </ItemsControl>
 
             <TextBlock Classes="heading" Text="Disagreements between presets" />
+            <TextBlock Classes="hint"
+                       IsVisible="{Binding LayoutConflicts.Count, Converter={x:Static vm:Converters.IsEmpty}}"
+                       Text="Nothing reported yet." />
             <ItemsControl ItemsSource="{Binding LayoutConflicts}">
               <ItemsControl.ItemTemplate>
                 <DataTemplate>
