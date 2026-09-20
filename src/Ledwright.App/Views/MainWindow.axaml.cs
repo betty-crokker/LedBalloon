@@ -109,4 +109,7 @@ public partial class MainWindow : Window
 
     private void OnCanvasPointAdded(object? sender, LayoutPoint point) =>
         ViewModel?.AddPointToSelectedSegment(point.X, point.Y);
+
+    /// <summary>A run was clicked on the photo, which is how you pick one once setup is done.</summary>
+    private void OnSegmentPicked(object? sender, Segment segment) => ViewModel?.PickSegment(segment);
 }

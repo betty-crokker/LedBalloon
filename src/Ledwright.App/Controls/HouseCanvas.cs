@@ -111,6 +111,18 @@ public sealed class HouseCanvas : Control
     /// <summary>Raised with normalised (0-1) coordinates when the user clicks while drawing.</summary>
     public event EventHandler<LayoutPoint>? PointAdded;
 
+    /// <summary>
+    /// Raised when a run is clicked on the photo.
+    /// <para>
+    /// Once the house is described, the runs are things on a building rather than rows in a list.
+    /// Picking the porch by clicking the porch is the whole point of having a photo.
+    /// </para>
+    /// </summary>
+    public event EventHandler<Segment>? SegmentPicked;
+
+    /// <summary>How near a click has to land, in pixels, to count as picking a run.</summary>
+    private const double PickRadius = 26;
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -125,11 +137,6 @@ public sealed class HouseCanvas : Control
     {
         base.OnPointerPressed(e);
 
-        if (!IsDrawing)
-        {
-            return;
-        }
-
         Rect image = ImageRect();
         if (image.Width <= 0 || image.Height <= 0)
         {
@@ -137,6 +144,18 @@ public sealed class HouseCanvas : Control
         }
 
         Point position = e.GetPosition(this);
+
+        if (!IsDrawing)
+        {
+            if (NearestSegment(image, position) is { } picked)
+            {
+                SegmentPicked?.Invoke(this, picked);
+                InvalidateVisual();
+            }
+
+            return;
+        }
+
         double x = (position.X - image.X) / image.Width;
         double y = (position.Y - image.Y) / image.Height;
 
@@ -544,6 +563,56 @@ public sealed class HouseCanvas : Control
         context.DrawText(text, new Point(
             (bounds.Width - text.Width) / 2,
             (bounds.Height - text.Height) / 2));
+    }
+
+    /// <summary>The drawn run nearest a click, or null when the click was not near one.</summary>
+    private Segment? NearestSegment(Rect image, Point click)
+    {
+        if (Project is not { } project)
+        {
+            return null;
+        }
+
+        Segment? best = null;
+        double bestDistance = PickRadius;
+
+        foreach (Segment segment in project.Segments.Where(s => s.HasGeometry))
+        {
+            for (int i = 0; i < segment.Path.Count - 1; i++)
+            {
+                double distance = DistanceToLine(
+                    click,
+                    ToControl(image, segment.Path[i]),
+                    ToControl(image, segment.Path[i + 1]));
+
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = segment;
+                }
+            }
+        }
+
+        return best;
+    }
+
+    private static double DistanceToLine(Point p, Point a, Point b)
+    {
+        double dx = b.X - a.X;
+        double dy = b.Y - a.Y;
+        double lengthSquared = (dx * dx) + (dy * dy);
+
+        if (lengthSquared <= double.Epsilon)
+        {
+            return Math.Sqrt(Math.Pow(p.X - a.X, 2) + Math.Pow(p.Y - a.Y, 2));
+        }
+
+        // Project the click onto the line, clamped to the piece that actually exists.
+        double t = Math.Clamp((((p.X - a.X) * dx) + ((p.Y - a.Y) * dy)) / lengthSquared, 0, 1);
+        double nx = a.X + (t * dx);
+        double ny = a.Y + (t * dy);
+
+        return Math.Sqrt(Math.Pow(p.X - nx, 2) + Math.Pow(p.Y - ny, 2));
     }
 
     private static Point ToControl(Rect image, LayoutPoint p) =>
