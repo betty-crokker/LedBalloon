@@ -104,6 +104,40 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<string> LayoutConflicts { get; } = [];
 
+    /// <summary>The segment list, each row knowing which controller drives it.</summary>
+    public ObservableCollection<SegmentRow> SegmentRows { get; } = [];
+
+    /// <summary>Per-controller coverage, so it is obvious what has not been described yet.</summary>
+    public ObservableCollection<ControllerCoverage> Coverage { get; } = [];
+
+    /// <summary>The row selected in the list. Drives <see cref="SelectedSegment"/>.</summary>
+    public SegmentRow? SelectedRow
+    {
+        get => _selectedRow;
+        set
+        {
+            if (SetProperty(ref _selectedRow, value))
+            {
+                SelectedSegment = value?.Segment;
+            }
+        }
+    }
+
+    private SegmentRow? _selectedRow;
+
+    /// <summary>Brings in one controller's outputs as segments, named after it.</summary>
+    [RelayCommand]
+    private async Task ImportFromControllerAsync(ControllerCoverage? coverage)
+    {
+        if (coverage is null || DeviceFor(coverage.Key) is not { } device)
+        {
+            return;
+        }
+
+        SelectedDevice = device;
+        await ImportSegmentsFromDeviceAsync();
+    }
+
     /// <summary>A one-line summary of the hardware, so it can sit quietly in the status bar.</summary>
     public string ControllerSummary
     {
@@ -835,6 +869,20 @@ public sealed partial class MainViewModel : ViewModelBase
 
     // ---- Drawing --------------------------------------------------------------------------------
 
+    /// <summary>Jumps to the photo and starts tracing the selected run again, wherever you were.</summary>
+    [RelayCommand]
+    private void RedrawSegment()
+    {
+        if (SelectedSegment is null)
+        {
+            Status = "Pick a segment first.";
+            return;
+        }
+
+        ActiveTab = HouseTab;
+        StartDrawingSegment();
+    }
+
     [RelayCommand]
     private void StartDrawingSegment()
     {
@@ -887,6 +935,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         RebuildPresetCatalog();
         RebuildControllerStates();
+        RebuildSegmentRows();
         OnPropertyChanged(nameof(ControllerSummary));
 
         SelectedSegment ??= Project.Segments.FirstOrDefault();
@@ -920,9 +969,49 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         WatchProjectSegments();
+        RebuildSegmentRows();
         SelectedSegment ??= Project.Segments.FirstOrDefault();
         RefreshSegmentPickers(SelectedSegment);
     }
+
+    /// <summary>
+    /// Rebuilds the list and the per-controller coverage, keeping whatever was selected selected.
+    /// </summary>
+    private void RebuildSegmentRows()
+    {
+        Segment? keep = SelectedSegment;
+
+        SegmentRows.Clear();
+        foreach (Segment segment in Project.Segments)
+        {
+            SegmentRows.Add(new SegmentRow(segment, ControllerNameFor(segment.ControllerKey)));
+        }
+
+        Coverage.Clear();
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            IReadOnlyList<Segment> mine = Project.SegmentsOn(key);
+            Coverage.Add(new ControllerCoverage(
+                key,
+                device.DisplayName,
+                mine.Count,
+                mine.Sum(s => s.Count),
+                device.Capabilities?.LedCount ?? 0));
+        }
+
+        _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep));
+        OnPropertyChanged(nameof(SelectedRow));
+    }
+
+    private string ControllerNameFor(string? key) =>
+        DeviceFor(key)?.DisplayName
+        ?? Project.FindController(key)?.DisplayName()
+        ?? "not assigned";
 
     /// <summary>
     /// Watches every segment so that editing one counts as an unsaved change. Typing a new LED
