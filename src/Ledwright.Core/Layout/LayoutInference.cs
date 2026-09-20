@@ -33,17 +33,28 @@ public sealed record LayoutProposal(
 {
     public int TotalLeds => Segments.Count == 0 ? 0 : Segments.Max(s => s.StopExclusive);
 
-    /// <summary>Turns the proposal into a project the user can then correct and name.</summary>
-    public LedwrightProject ToProject(string name, string? deviceHost = null)
+    /// <summary>
+    /// Adds the proposed segments to a project, assigned to one controller. Existing segments on
+    /// other controllers are left alone, so a second controller can be worked out separately and
+    /// the two halves of the house end up in the same project.
+    /// </summary>
+    public void AddTo(LedwrightProject project, string controllerKey, string? namePrefix = null)
     {
-        var project = new LedwrightProject { Name = name, DeviceHost = deviceHost };
+        ArgumentNullException.ThrowIfNull(project);
+        ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
+
+        project.Segments.RemoveAll(s =>
+            string.Equals(s.ControllerKey, controllerKey, StringComparison.OrdinalIgnoreCase));
+
+        string prefix = string.IsNullOrWhiteSpace(namePrefix) ? "Segment" : namePrefix;
 
         int index = 0;
         foreach (SegmentCandidate candidate in Segments)
         {
             project.Segments.Add(new Segment
             {
-                Name = $"Segment {index + 1}",
+                Name = $"{prefix} {index + 1}",
+                ControllerKey = controllerKey,
                 Start = candidate.Start,
                 Count = candidate.Count,
                 SegmentId = index,
@@ -51,8 +62,6 @@ public sealed record LayoutProposal(
 
             index++;
         }
-
-        return project;
     }
 }
 

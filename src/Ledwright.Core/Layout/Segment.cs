@@ -26,6 +26,12 @@ public sealed class Segment
     /// <summary>What you call it: "Front gable", "Porch rail".</summary>
     [JsonPropertyName("name")] public string Name { get; set; } = "Segment";
 
+    /// <summary>
+    /// MAC of the controller driving this run. Which box a run is plugged into is a wiring detail,
+    /// recorded here so nothing above this layer has to think about it.
+    /// </summary>
+    [JsonPropertyName("controllerKey")] public string? ControllerKey { get; set; }
+
     /// <summary>Index of this run's first LED in the controller's continuous address space.</summary>
     [JsonPropertyName("start")] public int Start { get; set; }
 

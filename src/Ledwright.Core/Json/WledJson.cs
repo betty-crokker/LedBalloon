@@ -30,6 +30,7 @@ namespace Ledwright.Core.Json;
 [JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(LedwrightProject))]
 [JsonSerializable(typeof(Segment))]
+[JsonSerializable(typeof(ControllerRef))]
 [JsonSerializable(typeof(Look))]
 [JsonSerializable(typeof(SegmentLook))]
 public sealed partial class WledJson : JsonSerializerContext

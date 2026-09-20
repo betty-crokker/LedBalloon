@@ -7,114 +7,138 @@ namespace Ledwright.Core.Layout;
 /// the project's current segment geometry.
 /// <para>
 /// Every LED index WLED ever sees is produced here, at apply time, from
-/// <see cref="Segment.Start"/> and <see cref="Segment.Count"/>. That is what makes a corrected segment
+/// <see cref="Segment.Start"/> and <see cref="Segment.Count"/>. That is what makes a corrected run
 /// length take effect everywhere at once instead of leaving old presets pointing at the old range.
+/// </para>
+/// <para>
+/// Results are keyed by controller, because a look describes a house and a house may be wired to
+/// more than one box. Callers send each patch to its own controller.
 /// </para>
 /// </summary>
 public static class LookResolver
 {
-    /// <summary>Builds the state patch that puts <paramref name="look"/> on the wall right now.</summary>
-    public static WledState Resolve(LedwrightProject project, Look look)
+    /// <summary>Builds the per-controller patches that put <paramref name="look"/> on the wall now.</summary>
+    public static IReadOnlyDictionary<string, WledState> Resolve(LedwrightProject project, Look look)
     {
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(look);
 
-        var state = new WledState
-        {
-            On = look.On,
-            Brightness = look.Brightness,
-            TransitionOnce = look.Transition,
-            Segments = [],
-        };
+        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Segment segment in project.Segments)
+        foreach (string controllerKey in project.ActiveControllerKeys())
         {
-            var wled = new WledSegment
+            var state = new WledState
             {
-                Id = project.WledSegmentIdFor(segment),
-
-                // Resolved now, from the layout, rather than recalled from whenever the look was saved.
-                Start = segment.Start,
-                Stop = segment.StopExclusive,
-                Reverse = segment.Reverse,
+                On = look.On,
+                Brightness = look.Brightness,
+                TransitionOnce = look.Transition,
+                Segments = [],
             };
 
-            if (look.Segments.TryGetValue(segment.Id, out SegmentLook? appearance))
+            foreach (Segment segment in project.SegmentsOn(controllerKey))
             {
-                Apply(wled, appearance);
-            }
-            else if (look.UnlistedSegmentsOff)
-            {
-                wled.On = false;
+                var wled = new WledSegment
+                {
+                    Id = project.WledSegmentIdFor(segment),
+
+                    // Resolved now, from the layout, not recalled from whenever the look was saved.
+                    Start = segment.Start,
+                    Stop = segment.StopExclusive,
+                    Reverse = segment.Reverse,
+                };
+
+                if (look.Segments.TryGetValue(segment.Id, out SegmentLook? appearance))
+                {
+                    Apply(wled, appearance);
+                }
+                else if (look.UnlistedSegmentsOff)
+                {
+                    wled.On = false;
+                }
+
+                state.Segments.Add(wled);
             }
 
-            state.Segments.Add(wled);
+            states[controllerKey] = state;
         }
 
-        return state;
+        return states;
     }
 
     /// <summary>
-    /// Builds the patch that makes the device's segments match the project layout, without touching
-    /// colours. Send this after correcting a segment length to re-cut the segments on the controller.
+    /// Builds the per-controller patches that make each device's segments match the project layout,
+    /// without touching colours. Send these after correcting a run length to re-cut the segments.
     /// </summary>
-    public static WledState ResolveGeometry(LedwrightProject project)
+    public static IReadOnlyDictionary<string, WledState> ResolveGeometry(LedwrightProject project)
     {
         ArgumentNullException.ThrowIfNull(project);
 
-        var state = new WledState { Segments = [] };
+        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Segment segment in project.Segments)
+        foreach (string controllerKey in project.ActiveControllerKeys())
         {
-            state.Segments.Add(new WledSegment
+            var state = new WledState { Segments = [] };
+
+            foreach (Segment segment in project.SegmentsOn(controllerKey))
             {
-                Id = project.WledSegmentIdFor(segment),
-                Start = segment.Start,
-                Stop = segment.StopExclusive,
-                Reverse = segment.Reverse,
-                Name = segment.Name,
-            });
+                state.Segments.Add(new WledSegment
+                {
+                    Id = project.WledSegmentIdFor(segment),
+                    Start = segment.Start,
+                    Stop = segment.StopExclusive,
+                    Reverse = segment.Reverse,
+                    Name = segment.Name,
+                });
+            }
+
+            states[controllerKey] = state;
         }
 
-        return state;
+        return states;
     }
 
     /// <summary>
-    /// Captures the device's current appearance as a look, mapping segments back onto segments by id.
+    /// Captures what the house currently looks like as a look, given each controller's state.
     /// The geometry is deliberately dropped: that is what the project already knows.
     /// </summary>
-    public static Look Capture(LedwrightProject project, WledState state, string name)
+    public static Look Capture(
+        LedwrightProject project,
+        IReadOnlyDictionary<string, WledState> states,
+        string name)
     {
         ArgumentNullException.ThrowIfNull(project);
-        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(states);
 
-        var look = new Look
-        {
-            Name = name,
-            On = state.On,
-            Brightness = state.Brightness,
-        };
+        var look = new Look { Name = name };
 
-        foreach (Segment segment in project.Segments)
+        foreach ((string controllerKey, WledState state) in states)
         {
-            int segmentId = project.WledSegmentIdFor(segment);
-            WledSegment? wled = state.Segments?.FirstOrDefault(s => s.Id == segmentId);
-            if (wled is null)
+            // Master power and brightness are per-controller on the wire but one idea to the user,
+            // so the first controller that reports them wins.
+            look.On ??= state.On;
+            look.Brightness ??= state.Brightness;
+
+            foreach (Segment segment in project.SegmentsOn(controllerKey))
             {
-                continue;
+                int segmentId = project.WledSegmentIdFor(segment);
+                WledSegment? wled = state.Segments?.FirstOrDefault(s => s.Id == segmentId);
+                if (wled is null)
+                {
+                    continue;
+                }
+
+                look.Segments[segment.Id] = new SegmentLook
+                {
+                    On = wled.On,
+                    Brightness = wled.Brightness,
+                    Primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : null,
+                    Secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : null,
+                    Effect = wled.Effect,
+                    Palette = wled.Palette,
+                    Speed = wled.Speed,
+                    Intensity = wled.Intensity,
+                };
             }
-
-            look.Segments[segment.Id] = new SegmentLook
-            {
-                On = wled.On,
-                Brightness = wled.Brightness,
-                Primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : null,
-                Secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : null,
-                Effect = wled.Effect,
-                Palette = wled.Palette,
-                Speed = wled.Speed,
-                Intensity = wled.Intensity,
-            };
         }
 
         return look;
