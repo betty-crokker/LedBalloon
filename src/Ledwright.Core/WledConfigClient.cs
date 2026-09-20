@@ -28,9 +28,11 @@ public sealed record LedBus(int Start, int Length, int[] Pins, int ColorOrder, b
 /// really are.
 /// </para>
 /// <para>
-/// Reads are safe. Writes are deliberately not wrapped here: a malformed <c>/cfg.json</c> post can
-/// leave a controller needing a factory reset, and it generally forces a reboot. Use
-/// <see cref="GetRawAsync"/>, change what you need, and post it back yourself once you have a backup.
+/// Reading it is safe. Writing it back is not wrapped here, for two reasons: a malformed post can
+/// leave a controller needing a factory reset, and on 0.15.3 posting a modified configuration
+/// document back does not work at all — it answers 200 and changes nothing, verified by reading it
+/// back afterwards. Settings that need changing go through the same form endpoints WLED's own
+/// settings pages use; see <see cref="SetDeviceNameAsync"/>.
 /// </para>
 /// </summary>
 public sealed class WledConfigClient
@@ -111,46 +113,37 @@ public sealed class WledConfigClient
     }
 
     /// <summary>
-    /// Renames the device on the controller itself, so the name follows it everywhere — the WLED
-    /// app, the web UI, and any other client.
+    /// Renames the device on the controller itself, so the name follows it into the WLED app, the
+    /// web UI and anything else that talks to it.
     /// <para>
-    /// This is the one configuration write wrapped here, and it is safe for a specific reason: it
-    /// reads the whole document, changes one leaf, and writes the document back unchanged in every
-    /// other respect. That is the only pattern that should ever be used against <c>/cfg.json</c>;
-    /// posting a hand-built document can leave a controller needing a factory reset.
+    /// This goes through the settings form at <c>/settings/ui</c> rather than <c>/cfg.json</c>.
+    /// Posting a modified configuration document back is the obvious approach and it does not work:
+    /// on 0.15.3 it answers 200 and changes nothing, which is worse than failing. The form endpoint
+    /// is what WLED's own settings page uses and it does take effect.
     /// </para>
-    /// <para>The device may briefly drop its connections while it applies the change.</para>
+    /// <para>
+    /// The form carries the whole page, so a field left out is a field cleared. The simplified-UI
+    /// checkbox that shares this page is read first and sent back untouched.
+    /// </para>
     /// </summary>
     public async Task SetDeviceNameAsync(string name, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
-        string body;
-        using (HttpResponseMessage read = await _http.GetAsync("cfg.json", cancellationToken).ConfigureAwait(false))
-        {
-            if (!read.IsSuccessStatusCode)
-            {
-                throw new WledHttpException(
-                    read.StatusCode,
-                    $"Could not read the configuration before renaming ({(int)read.StatusCode}).");
-            }
+        bool simplifiedUi = await ReadSimplifiedUiAsync(cancellationToken).ConfigureAwait(false);
 
-            body = await read.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("DS", name.Trim()),
+        };
+
+        if (simplifiedUi)
+        {
+            fields.Add(new KeyValuePair<string, string>("SU", "on"));
         }
 
-        JsonNode root = JsonNode.Parse(body)
-            ?? throw new WledException("The controller returned a configuration that could not be parsed.");
-
-        if (root["id"] is not JsonObject id)
-        {
-            id = [];
-            root["id"] = id;
-        }
-
-        id["name"] = name;
-
-        using var content = new StringContent(root.ToJsonString(), Encoding.UTF8, "application/json");
-        using HttpResponseMessage write = await _http.PostAsync("cfg.json", content, cancellationToken)
+        using var form = new FormUrlEncodedContent(fields);
+        using HttpResponseMessage write = await _http.PostAsync("settings/ui", form, cancellationToken)
             .ConfigureAwait(false);
 
         if (!write.IsSuccessStatusCode)
@@ -159,6 +152,36 @@ public sealed class WledConfigClient
                 write.StatusCode,
                 $"The controller rejected the rename ({(int)write.StatusCode}). A settings PIN will block this.");
         }
+
+        // The status code is not proof, as /cfg.json demonstrated. Read the name back.
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+
+        string? applied = await ReadDeviceNameAsync(cancellationToken).ConfigureAwait(false);
+        if (!string.Equals(applied, name.Trim(), StringComparison.Ordinal))
+        {
+            throw new WledException(
+                $"The controller still calls itself '{applied}'. The rename did not take.");
+        }
+    }
+
+    /// <summary>The name the device reports for itself.</summary>
+    public async Task<string?> ReadDeviceNameAsync(CancellationToken cancellationToken = default)
+    {
+        using JsonDocument config = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+
+        return config.RootElement.TryGetProperty("id", out JsonElement id) &&
+               id.TryGetProperty("name", out JsonElement name)
+            ? name.GetString()
+            : null;
+    }
+
+    private async Task<bool> ReadSimplifiedUiAsync(CancellationToken cancellationToken)
+    {
+        using JsonDocument config = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+
+        return config.RootElement.TryGetProperty("id", out JsonElement id) &&
+               id.TryGetProperty("sui", out JsonElement sui) &&
+               sui.ValueKind == JsonValueKind.True;
     }
 
     private static bool TryGetLedSection(JsonElement root, out JsonElement led)
