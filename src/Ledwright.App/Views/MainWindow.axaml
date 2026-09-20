@@ -192,6 +192,10 @@
                               IsVisible="{Binding NeedsAttention}"
                               Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ImportFromControllerCommand}"
                               CommandParameter="{Binding}" />
+                      <Button Classes="block" FontSize="12" Padding="6,3"
+                              Content="Add a run here by hand"
+                              Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).AddSegmentOnCommand}"
+                              CommandParameter="{Binding}" />
                     </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -216,6 +220,31 @@
               </ListBox>
 
               <StackPanel Spacing="8" Margin="0,12,0,0" IsVisible="{Binding HasSegments}">
+
+                <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
+                     reported here as it is typed rather than behind a button elsewhere. -->
+                <Border Classes="card" Background="#33C9821B"
+                        IsVisible="{Binding HasLayoutWarnings}">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="Needs re-laying" FontWeight="SemiBold" FontSize="12" />
+                    <ItemsControl ItemsSource="{Binding LayoutWarnings}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                          <TextBlock Classes="hint" Margin="0,1" Text="{Binding}" />
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Classes="block" FontSize="12" Padding="6,3" Margin="0,4,0,0"
+                            Content="Re-lay end to end"
+                            Command="{Binding RepackSegmentsCommand}" />
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="card"
+                        IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNull}}">
+                  <TextBlock Classes="hint"
+                             Text="Pick a run in the list above to rename it, change its length, or remove it." />
+                </Border>
 
                 <Border Classes="card"
                         IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">

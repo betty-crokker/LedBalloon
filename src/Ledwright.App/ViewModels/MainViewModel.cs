@@ -134,6 +134,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Per-controller coverage, so it is obvious what has not been described yet.</summary>
     public ObservableCollection<ControllerCoverage> Coverage { get; } = [];
 
+    /// <summary>Overlaps and gaps, kept up to date as lengths are typed.</summary>
+    public ObservableCollection<string> LayoutWarnings { get; } = [];
+
+    public bool HasLayoutWarnings => LayoutWarnings.Count > 0;
+
     /// <summary>The row selected in the list. Drives <see cref="SelectedSegment"/>.</summary>
     public SegmentRow? SelectedRow
     {
@@ -612,6 +617,16 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>Adds a run to a named controller, for building one up by hand.</summary>
+    [RelayCommand]
+    private void AddSegmentOn(ControllerCoverage? coverage)
+    {
+        if (coverage is not null)
+        {
+            AddSegmentTo(coverage.Key);
+        }
+    }
+
     [RelayCommand]
     private void AddSegment()
     {
@@ -622,9 +637,15 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        AddSegmentTo(key);
+    }
+
+    private void AddSegmentTo(string key)
+    {
+        // Named after its controller, because "Segment 1" on two controllers is two "Segment 1"s.
         var segment = new Segment
         {
-            Name = $"Segment {Project.SegmentsOn(key).Count + 1}",
+            Name = $"{ControllerNameFor(key)} {Project.SegmentsOn(key).Count + 1}",
             ControllerKey = key,
             Start = Project.SegmentsOn(key).Sum(s => s.Count),
             Count = 50,
@@ -1074,6 +1095,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private void RebuildSegmentRows()
     {
+        // A selection pointing at a segment that has since been removed leaves the list looking
+        // selected with nothing to edit, which reads as the editor being broken.
+        if (SelectedSegment is { } current && !Project.Segments.Contains(current))
+        {
+            SelectedSegment = Project.Segments.FirstOrDefault();
+        }
+
         Segment? keep = SelectedSegment;
 
         SegmentRows.Clear();
@@ -1098,6 +1126,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 mine.Sum(s => s.Count),
                 device.Capabilities?.LedCount ?? 0));
         }
+
+        RefreshLayoutWarnings();
 
         _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep));
         OnPropertyChanged(nameof(SelectedRow));
@@ -1128,8 +1158,38 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    private void OnSegmentEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e) =>
+    private void OnSegmentEdited(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
         HasUnsavedChanges = true;
+
+        // Lengths and starts are exactly what create overlaps, so say so while it is being typed
+        // rather than waiting for someone to go looking under Health.
+        if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Start) or nameof(Segment.ControllerKey))
+        {
+            RefreshLayoutWarnings();
+        }
+    }
+
+    /// <summary>Recomputes the overlap and gap warnings shown beside the segment list.</summary>
+    private void RefreshLayoutWarnings()
+    {
+        var ledCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is { } key)
+            {
+                ledCounts[key] = device.Capabilities?.LedCount ?? 0;
+            }
+        }
+
+        LayoutWarnings.Clear();
+        foreach (string problem in Project.Validate(ledCounts))
+        {
+            LayoutWarnings.Add(problem);
+        }
+
+        OnPropertyChanged(nameof(HasLayoutWarnings));
+    }
 
     /// <summary>
     /// Saves anything outstanding as the window closes, so shutting the app is never how a
