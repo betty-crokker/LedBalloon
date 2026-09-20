@@ -85,7 +85,9 @@
       <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <StackPanel Spacing="0">
 
-        <TextBlock Classes="panelTitle" Text="Segments" Margin="0,0,0,10" />
+        <TextBlock Classes="panelTitle" Text="Segments" Margin="0,0,0,2" />
+        <TextBlock Classes="hint" Margin="0,0,0,10"
+                   Text="This list stays put. The tabs above switch what fills the rest of the window." />
 
         <Border Classes="card" IsVisible="{Binding !HasSegments}">
           <StackPanel Spacing="8">
@@ -96,18 +98,37 @@
           </StackPanel>
         </Border>
 
+        <!-- What each controller has described, and what it has not. This is where a controller
+             with outputs nobody has named yet becomes visible. -->
+        <ItemsControl ItemsSource="{Binding Coverage}" Margin="0,0,0,10">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ControllerCoverage">
+              <StackPanel Margin="0,0,0,8" Spacing="3">
+                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12" />
+                <TextBlock Classes="hint" Text="{Binding Summary}" />
+                <Button Classes="block" FontSize="12" Padding="6,3"
+                        Content="Bring in its outputs as segments"
+                        IsVisible="{Binding NeedsAttention}"
+                        Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ImportFromControllerCommand}"
+                        CommandParameter="{Binding}" />
+              </StackPanel>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
         <!-- Capped so the editor below it always stays reachable on a short window. -->
-        <ListBox ItemsSource="{Binding Project.Segments}"
-                 SelectedItem="{Binding SelectedSegment}"
+        <ListBox ItemsSource="{Binding SegmentRows}"
+                 SelectedItem="{Binding SelectedRow}"
                  Background="Transparent"
                  MaxHeight="190"
                  IsVisible="{Binding HasSegments}">
           <ListBox.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate x:DataType="vm:SegmentRow">
               <StackPanel Margin="0,4" Spacing="2">
-                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
                 <TextBlock Classes="hint">
-                  <Run Text="{Binding Count}" /><Run Text=" LEDs" /><Run Text="  ·  LED " /><Run Text="{Binding Start}" /><Run Text=" to " /><Run Text="{Binding StopExclusive}" />
+                  <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs  ·  on " /><Run Text="{Binding ControllerName}" />
                 </TextBlock>
               </StackPanel>
             </DataTemplate>
@@ -122,6 +143,12 @@
           <Border Classes="card"
                   IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
             <StackPanel Spacing="6">
+              <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                <Run Text="Editing:" /><Run Text=" " /><Run Text="{Binding SelectedSegment.Name}" />
+              </TextBlock>
+              <TextBlock Classes="hint" Margin="0,0,0,4"
+                         Text="Everything below changes the run selected above. Type to rename it or correct its length; the list and the photo update as you go." />
+
               <TextBlock Classes="hint" Text="Name" />
               <TextBox Text="{Binding SelectedSegment.Name}" />
 
@@ -161,6 +188,9 @@
                       Command="{Binding FlipSegmentDirectionCommand}" />
               <TextBlock Classes="hint"
                          Text="The selected run shows a filled marker at LED 1 and a hollow one at its last LED." />
+
+              <Button Classes="block" Content="Redraw it on the photo"
+                      Command="{Binding RedrawSegmentCommand}" Margin="0,4,0,0" />
 
               <TextBlock Classes="hint" Text="Driven by" />
               <ComboBox ItemsSource="{Binding Devices}"
