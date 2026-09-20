@@ -1,12 +1,12 @@
 namespace Ledwright.Core.Models;
 
-/// <summary>An 8-bit-per-channel colour, with the optional white channel WLED uses for RGBW strips.</summary>
+/// <summary>An 8-bit-per-channel color, with the optional white channel WLED uses for RGBW strips.</summary>
 public readonly record struct RgbColor(byte R, byte G, byte B, byte W = 0)
 {
     public static RgbColor Black => new(0, 0, 0);
     public static RgbColor White => new(255, 255, 255);
 
-    /// <summary>True when this colour carries a non-zero dedicated white channel.</summary>
+    /// <summary>True when this color carries a non-zero dedicated white channel.</summary>
     public bool HasWhite => W != 0;
 
     /// <summary>Parses "#RRGGBB", "RRGGBB", "#RRGGBBWW" or "RRGGBBWW".</summary>

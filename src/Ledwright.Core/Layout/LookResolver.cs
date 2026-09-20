@@ -67,7 +67,7 @@ public static class LookResolver
 
     /// <summary>
     /// Builds the per-controller patches that make each device's segments match the project layout,
-    /// without touching colours. Send these after correcting a run length to re-cut the segments.
+    /// without touching colors. Send these after correcting a run length to re-cut the segments.
     /// </summary>
     public static IReadOnlyDictionary<string, WledState> ResolveGeometry(LedwrightProject project)
     {

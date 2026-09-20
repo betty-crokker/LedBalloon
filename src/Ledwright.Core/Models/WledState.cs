@@ -4,7 +4,7 @@ namespace Ledwright.Core.Models;
 
 /// <summary>
 /// The mutable WLED state, as returned by <c>GET /json/state</c> and accepted by <c>POST /json/state</c>.
-/// Null properties are omitted when serialised, so the same type serves as both a full snapshot and a
+/// Null properties are omitted when serialized, so the same type serves as both a full snapshot and a
 /// sparse patch. See <see href="https://kno.wled.ge/interfaces/json-api/"/>.
 /// </summary>
 public sealed class WledState
@@ -57,7 +57,7 @@ public sealed class WledState
     /// with this false and the preset applies to whatever the segments currently span.
     /// </para>
     /// <para>
-    /// Verify the behaviour against your own firmware before relying on it; it corresponds to the
+    /// Verify the behavior against your own firmware before relying on it; it corresponds to the
     /// "save segment bounds" checkbox in WLED's preset dialog.
     /// </para>
     /// </summary>

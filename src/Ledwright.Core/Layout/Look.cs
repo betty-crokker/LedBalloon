@@ -3,7 +3,7 @@ using Ledwright.Core.Models;
 
 namespace Ledwright.Core.Layout;
 
-/// <summary>How one segment should appear. Colours and effects only — never LED indices.</summary>
+/// <summary>How one segment should appear. Colors and effects only — never LED indices.</summary>
 public sealed class SegmentLook
 {
     [JsonPropertyName("on")] public bool? On { get; set; }

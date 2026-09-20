@@ -125,7 +125,7 @@ public sealed class WledLedInfo
     /// <summary>White channel handling mode.</summary>
     [JsonPropertyName("wv")] public int? WhiteValue { get; set; }
 
-    /// <summary>Non-zero when the device supports colour temperature.</summary>
+    /// <summary>Non-zero when the device supports color temperature.</summary>
     [JsonPropertyName("cct")] public int? Cct { get; set; }
 
     /// <summary>True when the device is configured as a 2D matrix.</summary>

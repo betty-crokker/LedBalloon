@@ -32,10 +32,10 @@ public sealed class WledCapabilities
     /// </summary>
     public bool HasWebSocket => Info.WebSocketClients is not (null or -1);
 
-    /// <summary>True when the strip has a dedicated white channel, so colours should offer one.</summary>
+    /// <summary>True when the strip has a dedicated white channel, so colors should offer one.</summary>
     public bool IsRgbw => Info.Leds?.Rgbw == true;
 
-    /// <summary>True when the device supports colour temperature control.</summary>
+    /// <summary>True when the device supports color temperature control.</summary>
     public bool HasCct => Info.Leds?.Cct is > 0;
 
     /// <summary>True when the device has a 2D pixel map, where a segment polyline is the wrong model.</summary>

@@ -16,14 +16,14 @@ namespace Ledwright.App.Controls;
 /// <summary>
 /// Draws the house photo with each segment lit the way that kind of fixture actually lights it.
 /// <para>
-/// The point is to close the loop between picking a colour and knowing what it will look like from
+/// The point is to close the loop between picking a color and knowing what it will look like from
 /// the street, which means the fixture matters as much as the position. A bare strip facing the road
-/// is a row of coloured pixels. The same LEDs under an eave aimed down the wall are barely visible
+/// is a row of colored pixels. The same LEDs under an eave aimed down the wall are barely visible
 /// themselves; what you see is the overlapping scallops they throw. Drawing both as dots on a line
 /// would make the preview confidently wrong.
 /// </para>
 /// <para>
-/// Geometry is stored normalised, so the drawing survives swapping the photo for a better one, and
+/// Geometry is stored normalized, so the drawing survives swapping the photo for a better one, and
 /// LED positions are interpolated from the segment's current length at render time — correct a run
 /// from 100 to 105 and the lights re-space themselves.
 /// </para>
@@ -46,7 +46,7 @@ public sealed class HouseCanvas : Control
     /// Live state per controller, keyed by MAC.
     /// <para>
     /// Per controller rather than one state, because a house can span several and a run must be
-    /// coloured from the box that actually drives it.
+    /// colored from the box that actually drives it.
     /// </para>
     /// </summary>
     public static readonly StyledProperty<IReadOnlyDictionary<string, WledState>?> ControllerStatesProperty =
@@ -63,6 +63,9 @@ public sealed class HouseCanvas : Control
         AvaloniaProperty.Register<HouseCanvas, int>(nameof(LayoutRevision));
 
     private readonly List<Segment> _watched = [];
+
+    /// <summary>Where the pointer is, so a run being drawn can follow it.</summary>
+    private Point? _cursor;
 
     static HouseCanvas()
     {
@@ -89,7 +92,7 @@ public sealed class HouseCanvas : Control
         set => SetValue(SelectedSegmentProperty, value);
     }
 
-    /// <summary>Live state per controller, used to colour each segment as it currently appears.</summary>
+    /// <summary>Live state per controller, used to color each segment as it currently appears.</summary>
     public IReadOnlyDictionary<string, WledState>? ControllerStates
     {
         get => GetValue(ControllerStatesProperty);
@@ -108,7 +111,7 @@ public sealed class HouseCanvas : Control
         set => SetValue(LayoutRevisionProperty, value);
     }
 
-    /// <summary>Raised with normalised (0-1) coordinates when the user clicks while drawing.</summary>
+    /// <summary>Raised with normalized (0-1) coordinates when the user clicks while drawing.</summary>
     public event EventHandler<LayoutPoint>? PointAdded;
 
     /// <summary>
@@ -168,6 +171,30 @@ public sealed class HouseCanvas : Control
         InvalidateVisual();
     }
 
+    protected override void OnPointerMoved(PointerEventArgs e)
+    {
+        base.OnPointerMoved(e);
+
+        if (!IsDrawing)
+        {
+            return;
+        }
+
+        _cursor = e.GetPosition(this);
+        InvalidateVisual();
+    }
+
+    protected override void OnPointerExited(PointerEventArgs e)
+    {
+        base.OnPointerExited(e);
+
+        if (_cursor is not null)
+        {
+            _cursor = null;
+            InvalidateVisual();
+        }
+    }
+
     public override void Render(DrawingContext context)
     {
         base.Render(context);
@@ -201,16 +228,89 @@ public sealed class HouseCanvas : Control
         {
             DrawEmitters(context, image, project, segment);
         }
+
+        if (IsDrawing && SelectedSegment is { } drawing)
+        {
+            DrawInProgress(context, image, drawing);
+        }
+    }
+
+    /// <summary>
+    /// Shows the run being traced: the points placed so far, and a line from the last one to the
+    /// pointer.
+    /// <para>
+    /// Without it you are clicking into nothing and only find out where the run went after you
+    /// finish, which makes tracing a roofline guesswork.
+    /// </para>
+    /// </summary>
+    private void DrawInProgress(DrawingContext context, Rect image, Segment segment)
+    {
+        var placed = new Pen(new SolidColorBrush(Color.FromArgb(235, 90, 190, 255)), 2.5)
+        {
+            LineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round,
+        };
+
+        for (int i = 0; i < segment.Path.Count - 1; i++)
+        {
+            context.DrawLine(placed, ToControl(image, segment.Path[i]), ToControl(image, segment.Path[i + 1]));
+        }
+
+        var handle = new SolidColorBrush(Color.FromArgb(255, 90, 190, 255));
+        var outline = new Pen(new SolidColorBrush(Color.FromArgb(220, 10, 12, 16)), 1.5);
+
+        foreach (LayoutPoint point in segment.Path)
+        {
+            context.DrawEllipse(handle, outline, ToControl(image, point), 4.5, 4.5);
+        }
+
+        if (segment.Path.Count == 0 || _cursor is not { } cursor)
+        {
+            return;
+        }
+
+        // Dashed, so the piece that is not committed yet is obviously different from the rest.
+        var rubber = new Pen(new SolidColorBrush(Color.FromArgb(190, 90, 190, 255)), 2)
+        {
+            DashStyle = new DashStyle([4, 3], 0),
+            LineCap = PenLineCap.Round,
+        };
+
+        Point last = ToControl(image, segment.Path[^1]);
+        context.DrawLine(rubber, last, cursor);
+
+        DrawLengthHint(context, last, cursor, segment);
+    }
+
+    /// <summary>Reports how far the run has been traced, beside the pointer.</summary>
+    private static void DrawLengthHint(DrawingContext context, Point from, Point to, Segment segment)
+    {
+        var text = new FormattedText(
+            $"{segment.Path.Count} point(s) · {segment.Count} LEDs",
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            11,
+            new SolidColorBrush(Colors.White));
+
+        var origin = new Point(to.X + 12, to.Y + 10);
+
+        context.FillRectangle(
+            new SolidColorBrush(Color.FromArgb(185, 0, 0, 0)),
+            new Rect(origin.X - 4, origin.Y - 2, text.Width + 8, text.Height + 4),
+            3);
+
+        context.DrawText(text, origin);
     }
 
     /// <summary>
     /// Draws the light an aimed fixture throws onto the wall: one cone per fixture, overlapping.
-    /// The scalloped edge people recognise is what the overlap produces, not something drawn.
+    /// The scalloped edge people recognize is what the overlap produces, not something drawn.
     /// </summary>
     private void DrawAimedWash(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        RgbColor colour = ResolveColor(project, segment);
-        if (colour is { R: 0, G: 0, B: 0 })
+        RgbColor color = ResolveColor(project, segment);
+        if (color is { R: 0, G: 0, B: 0 })
         {
             return;
         }
@@ -243,7 +343,7 @@ public sealed class HouseCanvas : Control
                     aim,
                     throwPx,
                     halfAngle * angleScale,
-                    colour,
+                    color,
                     (byte)Math.Clamp(alpha * alphaScale, 1, 255));
             }
         }
@@ -255,7 +355,7 @@ public sealed class HouseCanvas : Control
         LayoutPoint aim,
         double length,
         double halfAngle,
-        RgbColor colour,
+        RgbColor color,
         byte alpha)
     {
         Point Rotate(double angle) => new(
@@ -284,9 +384,9 @@ public sealed class HouseCanvas : Control
                 RelativeUnit.Absolute),
             GradientStops =
             {
-                new GradientStop(Color.FromArgb(alpha, colour.R, colour.G, colour.B), 0),
-                new GradientStop(Color.FromArgb((byte)(alpha * 0.45), colour.R, colour.G, colour.B), 0.45),
-                new GradientStop(Color.FromArgb(0, colour.R, colour.G, colour.B), 1),
+                new GradientStop(Color.FromArgb(alpha, color.R, color.G, color.B), 0),
+                new GradientStop(Color.FromArgb((byte)(alpha * 0.45), color.R, color.G, color.B), 0.45),
+                new GradientStop(Color.FromArgb(0, color.R, color.G, color.B), 1),
             },
         };
 
@@ -296,7 +396,7 @@ public sealed class HouseCanvas : Control
     /// <summary>Draws the fixtures themselves, which is all you see of some kinds and all of others.</summary>
     private void DrawEmitters(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        RgbColor colour = ResolveColor(project, segment);
+        RgbColor color = ResolveColor(project, segment);
         bool isSelected = ReferenceEquals(segment, SelectedSegment);
 
         DrawRunOutline(context, image, segment, isSelected);
@@ -309,17 +409,17 @@ public sealed class HouseCanvas : Control
         switch (segment.Fixture.Style)
         {
             case FixtureStyle.DiffusedStrip:
-                DrawDiffusedRun(context, image, segment, colour);
+                DrawDiffusedRun(context, image, segment, color);
                 break;
 
             case FixtureStyle.Downlight:
             case FixtureStyle.Uplight:
                 // The lens is a small bright point; the wall does the talking.
-                DrawPoints(context, image, segment, colour, coreRadius: 1.6, haloRadius: 3.5, haloAlpha: 60);
+                DrawPoints(context, image, segment, color, coreRadius: 1.6, haloRadius: 3.5, haloAlpha: 60);
                 break;
 
             default:
-                DrawPoints(context, image, segment, colour, coreRadius: 2.0, haloRadius: 5.5, haloAlpha: 70);
+                DrawPoints(context, image, segment, color, coreRadius: 2.0, haloRadius: 5.5, haloAlpha: 70);
                 break;
         }
 
@@ -368,7 +468,7 @@ public sealed class HouseCanvas : Control
         DrawEndCaption(context, end, segment.Count.ToString(CultureInfo.CurrentCulture), Colors.White);
     }
 
-    private static void DrawEndCaption(DrawingContext context, Point at, string caption, Color colour)
+    private static void DrawEndCaption(DrawingContext context, Point at, string caption, Color color)
     {
         var text = new FormattedText(
             caption,
@@ -376,7 +476,7 @@ public sealed class HouseCanvas : Control
             FlowDirection.LeftToRight,
             Typeface.Default,
             9,
-            new SolidColorBrush(colour));
+            new SolidColorBrush(color));
 
         context.DrawText(text, new Point(at.X - (text.Width / 2), at.Y - (text.Height / 2)));
     }
@@ -385,13 +485,13 @@ public sealed class HouseCanvas : Control
         DrawingContext context,
         Rect image,
         Segment segment,
-        RgbColor colour,
+        RgbColor color,
         double coreRadius,
         double haloRadius,
         byte haloAlpha)
     {
-        var core = new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
-        var halo = new SolidColorBrush(Color.FromArgb(haloAlpha, colour.R, colour.G, colour.B));
+        var core = new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B));
+        var halo = new SolidColorBrush(Color.FromArgb(haloAlpha, color.R, color.G, color.B));
 
         foreach (int index in FixtureIndices(segment))
         {
@@ -405,7 +505,7 @@ public sealed class HouseCanvas : Control
     }
 
     /// <summary>A continuous glowing line, for rope and diffused channel where no pixel is visible.</summary>
-    private void DrawDiffusedRun(DrawingContext context, Rect image, Segment segment, RgbColor colour)
+    private void DrawDiffusedRun(DrawingContext context, Rect image, Segment segment, RgbColor color)
     {
         // Sampled finely rather than per-LED: the whole point of diffusion is that you cannot see
         // where one LED ends and the next begins.
@@ -416,13 +516,13 @@ public sealed class HouseCanvas : Control
             points[i] = ToControl(image, segment.PointAlongPath(i / (double)Samples));
         }
 
-        var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, colour.R, colour.G, colour.B)), 11)
+        var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
         {
             LineCap = PenLineCap.Round,
             LineJoin = PenLineJoin.Round,
         };
 
-        var body = new Pen(new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B)), 3.5)
+        var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
         {
             LineCap = PenLineCap.Round,
             LineJoin = PenLineJoin.Round,
@@ -478,7 +578,7 @@ public sealed class HouseCanvas : Control
     /// <summary>
     /// The run's direction in control pixels.
     /// <para>
-    /// Computed here rather than in normalised space on purpose: normalised coordinates scale X and
+    /// Computed here rather than in normalized space on purpose: normalized coordinates scale X and
     /// Y independently, so a perpendicular taken there is not perpendicular on screen unless the
     /// photo happens to be square.
     /// </para>
@@ -499,7 +599,7 @@ public sealed class HouseCanvas : Control
     }
 
     /// <summary>
-    /// Finds the colour this segment is currently showing, by looking up the WLED segment it drives
+    /// Finds the color this segment is currently showing, by looking up the WLED segment it drives
     /// in the controller's live state.
     /// </summary>
     private RgbColor ResolveColor(LedwrightProject project, Segment segment)
@@ -520,14 +620,14 @@ public sealed class HouseCanvas : Control
             return new RgbColor(40, 42, 48);
         }
 
-        RgbColor colour = wled.PrimaryColor;
+        RgbColor color = wled.PrimaryColor;
 
         // Fold master and segment brightness into the preview so a dimmed strip looks dimmed.
         double scale = (state.Brightness ?? 255) / 255d * ((wled.Brightness ?? 255) / 255d);
         return new RgbColor(
-            (byte)(colour.R * scale),
-            (byte)(colour.G * scale),
-            (byte)(colour.B * scale));
+            (byte)(color.R * scale),
+            (byte)(color.G * scale),
+            (byte)(color.B * scale));
     }
 
     private static void DrawLabel(DrawingContext context, Point at, Segment segment, bool isSelected)
@@ -618,7 +718,7 @@ public sealed class HouseCanvas : Control
     private static Point ToControl(Rect image, LayoutPoint p) =>
         new(image.X + (p.X * image.Width), image.Y + (p.Y * image.Height));
 
-    /// <summary>The letterboxed rectangle the photo occupies, which all normalised points map into.</summary>
+    /// <summary>The letterboxed rectangle the photo occupies, which all normalized points map into.</summary>
     private Rect ImageRect()
     {
         Rect bounds = new(Bounds.Size);

@@ -92,22 +92,20 @@ public static class ProjectSync
             return new ProjectLoadResult(null, null, notes);
         }
 
-        (SyncTarget Target, LedwrightProject Project) newest = found
-            .OrderByDescending(f => f.Project.Revision)
-            .ThenByDescending(f => f.Project.SavedUtc ?? DateTimeOffset.MinValue)
-            .First();
+        // Each controller holds only its own runs, so the house is what they add up to rather than
+        // whichever copy happens to be newest.
+        LedwrightProject house = LedwrightProject.Assemble(found.Select(f => f.Project));
 
-        foreach ((SyncTarget target, LedwrightProject project) in found)
+        foreach ((SyncTarget target, LedwrightProject slice) in found)
         {
-            if (project.Revision != newest.Project.Revision)
+            if (slice.Segments.Count == 0)
             {
-                notes.Add(
-                    $"{target.Name} has revision {project.Revision}, older than revision " +
-                    $"{newest.Project.Revision} on {newest.Target.Name}. Saving will bring it up to date.");
+                notes.Add($"{target.Name} has no runs described on it yet.");
             }
         }
 
-        return new ProjectLoadResult(newest.Project, newest.Target.Name, notes);
+        string from = string.Join(" and ", found.Select(f => f.Target.Name));
+        return new ProjectLoadResult(house, from, notes);
     }
 
     /// <summary>
@@ -188,7 +186,10 @@ public static class ProjectSync
             try
             {
                 using var store = new DeviceProjectStore(target.Host);
-                await store.SaveAsync(project, cancellationToken).ConfigureAwait(false);
+
+                // Only this controller's own runs, name and looks. It has no business holding
+                // another box's.
+                await store.SaveAsync(project.SliceFor(target.Key), cancellationToken).ConfigureAwait(false);
 
                 if (storePhoto)
                 {

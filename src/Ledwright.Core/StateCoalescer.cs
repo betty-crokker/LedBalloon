@@ -5,7 +5,7 @@ namespace Ledwright.Core;
 /// <summary>
 /// Absorbs a fast stream of UI changes and forwards them to the device at a sane rate.
 /// <para>
-/// This is the piece that keeps a colour wheel or a brightness slider from melting an ESP8266.
+/// This is the piece that keeps a color wheel or a brightness slider from melting an ESP8266.
 /// Patches posted while a send is in flight are merged field by field rather than queued, so the
 /// device always receives the newest intent and never works through a backlog of stale frames.
 /// </para>

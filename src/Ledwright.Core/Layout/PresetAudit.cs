@@ -63,7 +63,7 @@ public static class PresetAudit
             }
 
             // No bounds saved means the preset adapts to whatever the segments currently span,
-            // which is exactly the behaviour we want and nothing to warn about.
+            // which is exactly the behavior we want and nothing to warn about.
             if (sawBounds && highest < deviceLedCount)
             {
                 gaps.Add(new PresetGap(preset, highest, deviceLedCount));
@@ -76,7 +76,7 @@ public static class PresetAudit
 
     /// <summary>
     /// Builds the patch that rewrites a preset in place so its segments span the project's current
-    /// segments, keeping its colours and effects.
+    /// segments, keeping its colors and effects.
     /// <para>
     /// Applies the corrected look and re-saves it over the same slot under the same name, which is
     /// how WLED expects a preset to be rewritten.
@@ -131,7 +131,7 @@ public static class PresetAudit
     /// Builds a save that deliberately omits segment bounds, so the preset follows whatever the
     /// segments span at recall time instead of pinning them.
     /// <para>
-    /// The cleaner long-term fix for presets you keep on the device. Confirm the behaviour on your
+    /// The cleaner long-term fix for presets you keep on the device. Confirm the behavior on your
     /// own firmware — see <see cref="WledState.SaveSegmentBounds"/>.
     /// </para>
     /// </summary>

@@ -7,7 +7,7 @@ namespace Ledwright.App.ViewModels;
 
 public static class Converters
 {
-    /// <summary>Green when the live connection is up, grey when it is not.</summary>
+    /// <summary>Green when the live connection is up, gray when it is not.</summary>
     public static readonly IValueConverter ConnectionBrush =
         new FuncValueConverter<bool, IBrush>(connected => connected
             ? new SolidColorBrush(Color.FromRgb(82, 196, 122))
@@ -42,13 +42,13 @@ public static class Converters
             }
         });
 
-    /// <summary>A colour swatch from a hex string, for previewing a saved look.</summary>
+    /// <summary>A color swatch from a hex string, for previewing a saved look.</summary>
     public static readonly IValueConverter HexBrush =
         new FuncValueConverter<string?, IBrush>(hex =>
         {
-            if (Ledwright.Core.Models.RgbColor.TryParse(hex, out var colour))
+            if (Ledwright.Core.Models.RgbColor.TryParse(hex, out var color))
             {
-                return new SolidColorBrush(Color.FromRgb(colour.R, colour.G, colour.B));
+                return new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B));
             }
 
             return new SolidColorBrush(Color.FromRgb(60, 62, 70));

@@ -5,7 +5,7 @@ using Xunit;
 namespace Ledwright.Core.Tests;
 
 /// <summary>
-/// The layout tests are the important ones: they pin down the behaviour Ledwright exists to provide,
+/// The layout tests are the important ones: they pin down the behavior Ledwright exists to provide,
 /// which is that correcting a run's length fixes every saved look at once.
 /// </summary>
 public class LayoutTests
