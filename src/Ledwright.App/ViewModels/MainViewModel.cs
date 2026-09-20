@@ -476,9 +476,16 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedDevice ??= device;
     }
 
-    /// <summary>Applies the name typed in Setup to the selected controller, in the project only.</summary>
+    /// <summary>
+    /// Names the controller, everywhere it has a name.
+    /// <para>
+    /// One action, because there is only one idea here. The name goes into the project — which
+    /// lives on the controllers — and into WLED's own device name, so the WLED app agrees with
+    /// Ledwright. If the device refuses its half, the project half still stands and says so.
+    /// </para>
+    /// </summary>
     [RelayCommand]
-    private void RenameController()
+    private async Task RenameControllerAsync()
     {
         if (SelectedDevice is not { DeviceKey: { } key } device || string.IsNullOrWhiteSpace(ControllerNameEdit))
         {
@@ -486,43 +493,25 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         string name = ControllerNameEdit.Trim();
+
         ControllerRef stored = Project.RegisterController(key, device.Host, device.Info?.MdnsHostName, null);
         stored.Name = name;
         device.AssignedName = name;
 
         OnPropertyChanged(nameof(Project));
+        RebuildSegmentRows();
         HasUnsavedChanges = true;
-        Status = $"Renamed to '{name}'. Save to keep it — or push it to the controller to make it stick everywhere.";
-    }
-
-    /// <summary>
-    /// Writes the name onto the controller itself, so it shows in the WLED app and web UI too.
-    /// Separate from <see cref="RenameControllerCommand"/> because it changes the device.
-    /// </summary>
-    [RelayCommand]
-    private async Task PushControllerNameAsync()
-    {
-        if (SelectedDevice is not { DeviceKey: { } key } device)
-        {
-            return;
-        }
-
-        string? name = Project.FindController(key)?.Name;
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            Status = "Give the controller a name first.";
-            return;
-        }
 
         try
         {
-            Status = $"Writing '{name}' to the controller...";
+            Status = $"Naming it '{name}'...";
             await new WledConfigClient(device.Host).SetDeviceNameAsync(name);
-            Status = $"The controller now calls itself '{name}'. It may drop its connection briefly.";
+            Status = $"Called '{name}' here and by the controller itself. Save to keep it.";
         }
         catch (Exception ex)
         {
-            Status = $"Could not rename the controller: {ex.Message}";
+            Status = $"Called '{name}' in Ledwright, but the controller kept its own name ({ex.Message}). " +
+                     "Everything here still works; only the WLED app will disagree.";
         }
     }
 

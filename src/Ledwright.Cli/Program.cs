@@ -103,6 +103,8 @@ async Task<int> RunAsync(string[] argv, CancellationToken ct)
             return await AuditAsync(client, host, ct);
         case "config":
             return await ConfigAsync(host, ct);
+        case "rename":
+            return await RenameAsync(host, rest, ct);
         case "watch":
             return await WatchAsync(host, ct);
         default:
@@ -324,6 +326,24 @@ async Task<int> ConfigAsync(string host, CancellationToken ct)
 
     Console.WriteLine();
     Console.WriteLine($"  Total configured: {buses.Max(b => b.StopExclusive)} LEDs");
+
+    return 0;
+}
+
+async Task<int> RenameAsync(string host, string[] rest, CancellationToken ct)
+{
+    if (rest.Length == 0)
+    {
+        Error("Usage: ledwright rename <host> <new name>");
+        return 2;
+    }
+
+    var config = new WledConfigClient(host);
+    string name = string.Join(' ', rest);
+
+    Console.WriteLine($"  Was  {await config.ReadDeviceNameAsync(ct)}");
+    await config.SetDeviceNameAsync(name, ct);
+    Console.WriteLine($"  Now  {await config.ReadDeviceNameAsync(ct)}");
 
     return 0;
 }

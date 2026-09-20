@@ -354,10 +354,9 @@
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <TextBox Width="240" Text="{Binding ControllerNameEdit}" PlaceholderText="Front of house" />
                     <Button Content="Rename" Command="{Binding RenameControllerCommand}" />
-                    <Button Content="Also rename on the controller" Command="{Binding PushControllerNameCommand}" />
                   </StackPanel>
                   <TextBlock Classes="hint"
-                             Text="Renaming stores the name in this project. Writing it to the controller makes it show in the WLED app too, and briefly interrupts the device." />
+                             Text="The name is stored in the layout on the controllers, and written to the controller's own settings so the WLED app agrees. If the device will not accept it — a settings PIN blocks this — Ledwright keeps the name anyway and says so." />
                 </StackPanel>
 
                 <TextBlock Classes="heading" Text="Work the layout out from presets" />
