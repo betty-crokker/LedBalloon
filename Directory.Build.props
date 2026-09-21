@@ -11,12 +11,12 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <Product>Ledwright</Product>
+    <Product>LedBalloon</Product>
     <Company>betty-crokker</Company>
     <Authors>Chris Cooper</Authors>
     <Copyright>Copyright (c) 2026 Chris Cooper</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/betty-crokker/Ledwright</RepositoryUrl>
+    <RepositoryUrl>https://github.com/betty-crokker/LedBalloon</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <Version>0.1.0</Version>
   </PropertyGroup>

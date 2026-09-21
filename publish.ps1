@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds a standalone Ledwright you can copy to a machine with nothing installed on it.
+  Builds a standalone LedBalloon you can copy to a machine with nothing installed on it.
 
 .DESCRIPTION
   Produces a single self-contained executable. The .NET runtime is bundled inside it, so the
@@ -24,9 +24,9 @@ $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $outDir = Join-Path $root "publish/$Runtime"
 
-Write-Host "Publishing Ledwright for $Runtime..." -ForegroundColor Cyan
+Write-Host "Publishing LedBalloon for $Runtime..." -ForegroundColor Cyan
 
-dotnet publish (Join-Path $root 'src/Ledwright.App/Ledwright.App.csproj') `
+dotnet publish (Join-Path $root 'src/LedBalloon.App/LedBalloon.App.csproj') `
     --configuration Release `
     --runtime $Runtime `
     --self-contained true `
@@ -39,7 +39,7 @@ dotnet publish (Join-Path $root 'src/Ledwright.App/Ledwright.App.csproj') `
 if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
 
 $exe = Get-ChildItem $outDir -File |
-    Where-Object { $_.Name -like 'Ledwright.App*' -and $_.Extension -in @('.exe', '') } |
+    Where-Object { $_.Name -like 'LedBalloon.App*' -and $_.Extension -in @('.exe', '') } |
     Select-Object -First 1
 
 Write-Host ''

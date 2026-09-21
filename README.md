@@ -1,4 +1,4 @@
-# Ledwright
+# LedBalloon
 
 A cross-platform desktop app and library for [WLED](https://kno.wled.ge) controllers, in C# on .NET 10.
 Runs on Windows, Linux and macOS from one codebase.
@@ -12,10 +12,10 @@ Two annoyances with the stock web UI, both of which shape the design:
 
 **Presets forget how long your runs are.** A WLED preset bakes in the segment `start`/`stop` that
 were current when you saved it. Correct a run from 100 LEDs to 105 and the preset still says
-`stop: 100`, so the last five stay dark. This is real and measurable — `ledwright audit` against the
+`stop: 100`, so the last five stay dark. This is real and measurable — `ledballoon audit` against the
 development hardware found the boot preset covering 257 of 356 LEDs, leaving 99 unlit on every power-up.
 
-Ledwright's own saved appearances, called **looks**, store no LED indices at all. They name segments;
+LedBalloon's own saved appearances, called **looks**, store no LED indices at all. They name segments;
 the indices are resolved from the project at the moment the look is applied. Fix a length in one
 place and every look follows.
 
@@ -49,9 +49,9 @@ backwards. The selected segment shows a filled marker at LED 1 and a hollow one 
 ## Layout
 
 ```
-src/Ledwright.Core    the library: HTTP, WebSocket, UDP, mDNS, layout model
-src/Ledwright.Cli     a small console client, for proving things against real hardware
-src/Ledwright.App     the Avalonia desktop app
+src/LedBalloon.Core    the library: HTTP, WebSocket, UDP, mDNS, layout model
+src/LedBalloon.Cli     a small console client, for proving things against real hardware
+src/LedBalloon.App     the Avalonia desktop app
 tests/                xUnit tests, with sample documents captured from a real controller
 ```
 
@@ -63,7 +63,7 @@ dotnet test
 ```
 
 ```bash
-dotnet run --project src/Ledwright.Cli -- discover
+dotnet run --project src/LedBalloon.Cli -- discover
 ```
 
 The CLI is the fastest way to see what your controller actually reports:
@@ -97,7 +97,7 @@ readable and writable whole as `/cfg.json` — that is what WLED's own backup an
 Genuinely outside JSON: firmware upload (`/update`), wifi scanning, and the live per-pixel preview,
 which is a binary WebSocket stream rather than REST.
 
-`Ledwright.Core` reads `/cfg.json`; it deliberately does not wrap writing it, because a malformed
+`LedBalloon.Core` reads `/cfg.json`; it deliberately does not wrap writing it, because a malformed
 post can leave a controller needing a factory reset. Use `WledConfigClient.GetRawAsync`, edit, and
 post it back yourself once you have a backup.
 
@@ -110,7 +110,7 @@ The other machine needs nothing installed — no SDK, no runtime, no Visual Stud
 .\publish.ps1
 ```
 
-That writes `publish/win-x64/Ledwright.App.exe`, about 48 MB. Copy that one file anywhere and run
+That writes `publish/win-x64/LedBalloon.App.exe`, about 48 MB. Copy that one file anywhere and run
 it. Pass `-Runtime linux-x64` or `-Runtime osx-arm64` to build for the other platforms; you can
 cross-publish all of them from Windows.
 
@@ -142,9 +142,9 @@ finds the same device at whatever address it landed on.
 
 ## Where settings live: on the controllers
 
-The layout is stored on the controllers themselves, as `ledwright.json` on their flash, **mirrored
+The layout is stored on the controllers themselves, as `ledballoon.json` on their flash, **mirrored
 to every one of them**. Describe the house once on one machine, press *Save to controllers*, and
-anyone else on the same network opens Ledwright and finds it already set up. Nothing is copied
+anyone else on the same network opens LedBalloon and finds it already set up. Nothing is copied
 between machines, nothing lives on anyone's disk, and there is no file to keep in sync.
 
 Mirroring rather than splitting means any single controller is enough to rebuild the house, so one
@@ -191,7 +191,7 @@ One caveat: the free-space figures in `/json/info` appear not to refresh immedia
 so the budget can be computed from slightly stale numbers. The headroom absorbs it.
 
 ```bash
-ledwright photo "C:\path\to\house.jpg" 680
+ledballoon photo "C:\path\to\house.jpg" 680
 ```
 
 reports what a photo would shrink to and whether it fits, without touching anything.
@@ -230,8 +230,8 @@ stays correct when the lights are changed from the phone app or a wall button. W
 socket, falling back to HTTP while it reconnects.
 
 **Terminology.** *Segment* is WLED's own word for an addressable run, and this app uses it too.
-*Output* or *bus* is a physical IO port. In code, `Ledwright.Core.Layout.Segment` is the durable
-definition with geometry; `Ledwright.Core.Models.WledSegment` is the wire format it resolves into.
+*Output* or *bus* is a physical IO port. In code, `LedBalloon.Core.Layout.Segment` is the durable
+definition with geometry; `LedBalloon.Core.Models.WledSegment` is the wire format it resolves into.
 
 ## Not done yet
 
