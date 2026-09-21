@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -155,8 +156,17 @@ public sealed class WledClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(patch);
 
+        // Serialized up front and sent as a byte array on purpose. PostAsJsonAsync streams the
+        // content, which leaves HttpClient unable to compute a Content-Length, so it falls back to
+        // Transfer-Encoding: chunked — and WLED's embedded server answers 400 to a chunked request
+        // body. Verified against 0.15.3: the identical JSON with an explicit length is accepted.
+        byte[] payload = JsonSerializer.SerializeToUtf8Bytes(patch, WledJson.Default.WledState);
+
+        using var content = new ByteArrayContent(payload);
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+
         using HttpResponseMessage response = await _http
-            .PostAsJsonAsync("json/state", patch, WledJson.Default.WledState, cancellationToken)
+            .PostAsync("json/state", content, cancellationToken)
             .ConfigureAwait(false);
 
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
