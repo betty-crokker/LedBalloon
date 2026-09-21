@@ -123,11 +123,29 @@
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
           <DockPanel>
             <Button DockPanel.Dock="Right" Content="Setup" Command="{Binding GoToSetupCommand}" />
-            <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
+
+            <!-- Sync is what makes the rest of this row readable. The switch and the slider always
+                 went straight to the hardware while a preset did not, and nothing said which was
+                 which; now one control decides it for all of them. -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
+                        Margin="12,0" VerticalAlignment="Center">
+              <Button Content="Send to the lights"
+                      Command="{Binding SendPendingCommand}"
+                      IsVisible="{Binding HasPendingChanges}"
+                      IsEnabled="{Binding !IsBusy}" />
+              <Button Content="Discard"
+                      Command="{Binding DiscardPendingCommand}"
+                      IsVisible="{Binding HasPendingChanges}" />
+              <CheckBox Content="Sync" IsChecked="{Binding LiveSync}" VerticalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
               <ToggleSwitch IsChecked="{Binding MasterOn}" OnContent="On" OffContent="Off" />
               <TextBlock Text="Brightness" VerticalAlignment="Center" Classes="hint" />
-              <Slider Width="240" Minimum="0" Maximum="255"
+              <Slider Width="170" Minimum="0" Maximum="255"
                       Value="{Binding MasterBrightness}" VerticalAlignment="Center" />
+              <TextBlock Classes="hint" VerticalAlignment="Center"
+                         Text="{Binding SyncHint}" TextTrimming="CharacterEllipsis" />
             </StackPanel>
           </DockPanel>
         </Border>
@@ -150,31 +168,24 @@
 
               <TextBlock Classes="heading" Text="Presets" />
               <TextBlock Classes="hint"
-                         Text="Every preset on every controller, in one list — it does not matter which one stores it. Choosing one shows it on the photo; the lights do not change until you apply it." />
+                         Text="Every preset on every controller, in one list — it does not matter which one stores it. A preset is a whole controller's worth of settings: every run's colors, effect and palette, saved together." />
 
               <ComboBox ItemsSource="{Binding Presets}"
-                        SelectedItem="{Binding PreviewPreset}"
+                        SelectedItem="{Binding SelectedPreset}"
                         DisplayMemberBinding="{Binding Name}"
                         PlaceholderText="Pick a preset to look at"
                         HorizontalAlignment="Stretch"
                         Margin="0,4,0,0" />
 
-              <StackPanel Spacing="8" IsVisible="{Binding IsPreviewing}">
+              <!-- No banner and no buttons: whether this has reached the lights is what the Sync
+                   switch says, in one place, for everything on this panel. -->
+              <StackPanel Spacing="8"
+                          IsVisible="{Binding SelectedPreset, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
 
-                <Border Classes="card" Background="#332F7BD6">
-                  <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" FontSize="12"
-                               Text="Previewing — the lights have not changed" />
-                    <TextBlock Classes="hint" Text="{Binding PreviewCoverage}" />
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                      <Button Content="Apply to the house" Command="{Binding ApplyPreviewCommand}" />
-                      <Button Content="Stop previewing" Command="{Binding StopPreviewCommand}" />
-                    </StackPanel>
-                  </StackPanel>
-                </Border>
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding PresetCoverage}" />
 
                 <!-- What the preset actually does, which its name does not tell you. -->
-                <ItemsControl ItemsSource="{Binding PreviewDetails}">
+                <ItemsControl ItemsSource="{Binding PresetDetails}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:PresetDetail">
                       <Border Classes="card" Margin="0,0,0,6" Padding="10">
@@ -191,7 +202,9 @@
                                     BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
                                     IsVisible="{Binding HasSecondary}" />
                             <TextBlock Classes="hint" VerticalAlignment="Center"
-                                       Text="{Binding Pattern}" TextTrimming="CharacterEllipsis" />
+                                       TextTrimming="CharacterEllipsis">
+                              <Run Text="effect " /><Run Text="{Binding Effect}" FontWeight="SemiBold" />
+                            </TextBlock>
                           </StackPanel>
 
                           <TextBlock Classes="hint">
@@ -202,6 +215,9 @@
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <TextBlock Classes="hint" TextWrapping="Wrap"
+                           Text="The photo scrolls each run's palette so the motion is visible. Speed in WLED is a 0-255 dial that every effect reads its own way rather than a rate, so the pace here is only relative. The effect itself runs on the controller." />
               </StackPanel>
 
               <!-- Tuning one run by hand is the less common job, so it folds away. -->
@@ -232,14 +248,14 @@
                           IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Effect" />
                 <ComboBox ItemsSource="{Binding SegmentEffects}"
-                          SelectedIndex="{Binding SegmentEffectIndex}"
-                          PlaceholderText="Not connected"
+                          SelectedItem="{Binding SegmentEffectChoice}"
+                          PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
 
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Palette" />
                 <ComboBox ItemsSource="{Binding SegmentPalettes}"
-                          SelectedIndex="{Binding SegmentPaletteIndex}"
-                          PlaceholderText="Not connected"
+                          SelectedItem="{Binding SegmentPaletteChoice}"
+                          PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
               </StackPanel>
 

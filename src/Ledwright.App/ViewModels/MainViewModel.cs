@@ -49,12 +49,26 @@ public enum AppMode
 /// </summary>
 public sealed record PresetDetail(
     string RunName,
-    string Pattern,
+    string Effect,
     string Palette,
     string Motion,
     IBrush PrimarySwatch,
     IBrush SecondarySwatch,
     bool HasSecondary);
+
+/// <summary>
+/// One choice in the effect or palette picker, carrying the number WLED knows it by.
+/// <para>
+/// The number is kept rather than assumed from the position in the list, because they are not the
+/// same thing. A controller's own uploaded palettes are numbered down from 255 and do not appear
+/// in its name list at all, so a segment on palette 254 sat past the end of a 71-entry picker and
+/// the picker showed nothing - which read as "not connected" when it was connected fine.
+/// </para>
+/// </summary>
+public sealed record PickerOption(int Id, string Name)
+{
+    public override string ToString() => Name;
+}
 
 /// <summary>A fixture style with wording that means something to whoever hung the lights.</summary>
 public sealed record FixtureChoice(FixtureStyle Style, string Name, string Description)
@@ -90,8 +104,8 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private int _activeTab = SetupTab;
     [ObservableProperty] private bool _masterOn;
     [ObservableProperty] private double _masterBrightness = 128;
-    [ObservableProperty] private int _segmentEffectIndex = -1;
-    [ObservableProperty] private int _segmentPaletteIndex = -1;
+    [ObservableProperty] private PickerOption? _segmentEffectChoice;
+    [ObservableProperty] private PickerOption? _segmentPaletteChoice;
     [ObservableProperty] private DeviceViewModel? _segmentController;
     [ObservableProperty] private FixtureChoice? _fixtureChoice;
 
@@ -104,9 +118,35 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>The color of whatever is selected, or of the whole house when nothing is.</summary>
     [ObservableProperty] private Color _pickedColor = Colors.White;
 
-    /// <summary>The preset being looked at, which is not the same as one being used.</summary>
-    [ObservableProperty] private HousePreset? _previewPreset;
     [ObservableProperty] private byte[]? _photoBytes;
+
+    /// <summary>
+    /// Whether the lights follow along as things are picked, or wait to be told.
+    /// <para>
+    /// On is the normal way to work: you are standing where you can see the house, and the point of
+    /// the app is to change it. Off is for choosing something while the family is sitting under the
+    /// current look - everything picked lands on the photo, the house keeps doing what it was
+    /// doing, and one button sends it.
+    /// </para>
+    /// <para>
+    /// It governs the whole panel, not just the preset list. Before it existed the brightness
+    /// slider went straight to the hardware while a preset did not, and nothing said so.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private bool _liveSync = true;
+
+    /// <summary>
+    /// Changes made while sync was off, merged per controller rather than queued: the house only
+    /// ever needs telling where to end up, not every step of getting there.
+    /// </summary>
+    private readonly Dictionary<string, WledState> _heldPatches =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>True when the chosen preset is on the photo but has not been sent.</summary>
+    private bool _presetIsPending;
+
+    /// <summary>Guards the preset list re-pointing itself mid-apply from starting another apply.</summary>
+    private bool _applyingPreset;
 
     /// <summary>Set when the layout expects a photo this machine has never seen.</summary>
     [ObservableProperty] private string? _missingPhotoNotice;
@@ -148,11 +188,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Every preset on every controller, merged into one list and de-duplicated by name.</summary>
     public ObservableCollection<HousePreset> Presets { get; } = [];
 
-    /// <summary>Effect names for the selected segment's controller.</summary>
-    public ObservableCollection<string> SegmentEffects { get; } = [];
+    /// <summary>Effects the selected segment's controller can run.</summary>
+    public ObservableCollection<PickerOption> SegmentEffects { get; } = [];
 
-    /// <summary>Palette names for the selected segment's controller.</summary>
-    public ObservableCollection<string> SegmentPalettes { get; } = [];
+    /// <summary>Palettes the selected segment's controller holds.</summary>
+    public ObservableCollection<PickerOption> SegmentPalettes { get; } = [];
 
     public ObservableCollection<PresetGap> PresetGaps { get; } = [];
 
@@ -900,30 +940,64 @@ public sealed partial class MainViewModel : ViewModelBase
     // ---- Lights ---------------------------------------------------------------------------------
 
     /// <summary>
-    /// Shows what a preset would look like, without touching the lights.
+    /// Sends everything the photo is showing that the lights have not been told about.
     /// <para>
-    /// Picking one from a list is browsing, not committing. Sending it immediately means you
-    /// cannot look through what you have while the family is sitting under it, and it makes
-    /// choosing a preset for later use impossible.
+    /// One button for both kinds of held-back change, because from the outside they are the same
+    /// thing: the photo is ahead of the house, and this catches the house up.
     /// </para>
     /// </summary>
     [RelayCommand]
-    private void PreviewPresetOnPhoto(HousePreset? preset)
+    private async Task SendPendingAsync()
     {
-        PreviewPreset = preset;
+        if (_presetIsPending && SelectedPreset is { } preset)
+        {
+            await ApplyPresetAsync(preset);
+        }
 
-        Status = preset is null
-            ? "Showing what the lights are actually doing."
-            : $"Previewing '{preset.Name}' on the photo. The lights have not changed — press Apply to send it.";
+        if (_heldPatches.Count > 0)
+        {
+            // Taken before sending so a failure part way through does not leave half of them
+            // still pending and half already gone.
+            var held = new Dictionary<string, WledState>(_heldPatches, StringComparer.OrdinalIgnoreCase);
+            _heldPatches.Clear();
+
+            foreach (KeyValuePair<string, WledState> patch in held)
+            {
+                DeviceFor(patch.Key)?.Device.Post(patch.Value);
+            }
+
+            Status = "Sent.";
+        }
+
+        RebuildPendingStates();
     }
 
-    /// <summary>Stops previewing and goes back to showing what the lights are really doing.</summary>
+    /// <summary>Throws away what has not been sent, so the photo goes back to showing the house.</summary>
     [RelayCommand]
-    private void StopPreview() => PreviewPresetOnPhoto(null);
+    private void DiscardPending()
+    {
+        _heldPatches.Clear();
+        _presetIsPending = false;
 
-    /// <summary>Recalls the previewed preset on every controller that stores it.</summary>
-    [RelayCommand]
-    private Task ApplyPreviewAsync() => ApplyPresetAsync(PreviewPreset);
+        _applyingPreset = true;
+        try
+        {
+            SelectedPreset = null;
+        }
+        finally
+        {
+            _applyingPreset = false;
+        }
+
+        // The master controls were moved while sync was off, so put them back where the hardware
+        // actually is rather than leaving them reading a value nobody sent.
+        ReadMasterFromDevices();
+
+        RebuildPresetDetails(null);
+        RebuildPendingStates();
+
+        Status = "Showing what the lights are actually doing.";
+    }
 
     /// <summary>Recalls a preset on every controller that stores it.</summary>
     private async Task ApplyPresetAsync(HousePreset? preset)
@@ -934,6 +1008,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         IsBusy = true;
+        _applyingPreset = true;
 
         try
         {
@@ -954,8 +1029,10 @@ public sealed partial class MainViewModel : ViewModelBase
                 RefreshPresetSelection(preset.Name);
             }
 
-            // Back to showing reality now that reality is what was asked for.
-            PreviewPreset = null;
+            // Reality is what was asked for now, so there is nothing left held back.
+            _presetIsPending = false;
+            _heldPatches.Clear();
+            RebuildPendingStates();
 
             Status = copied.Count == 0
                 ? $"Applied '{preset.Name}'."
@@ -968,6 +1045,7 @@ public sealed partial class MainViewModel : ViewModelBase
         finally
         {
             IsBusy = false;
+            _applyingPreset = false;
         }
     }
 
@@ -1039,11 +1117,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Which controllers store the previewed preset, said in terms of the house rather than of
     /// hardware.
     /// </summary>
-    public string PreviewCoverage
+    public string PresetCoverage
     {
         get
         {
-            if (PreviewPreset is not { } preset)
+            if (SelectedPreset is not { } preset)
             {
                 return string.Empty;
             }
@@ -1075,6 +1153,39 @@ public sealed partial class MainViewModel : ViewModelBase
             !preset.Placements.Any(p => string.Equals(p.ControllerKey, key, StringComparison.OrdinalIgnoreCase)) &&
             Project.SegmentsOn(key).Count > 0)];
 
+    /// <summary>
+    /// Sends one change to one controller, or holds it back when sync is off.
+    /// <para>
+    /// Every hand edit goes through here, so that "Sync" means the same thing for the brightness
+    /// slider as it does for the preset list. A held change is merged into whatever is already
+    /// waiting for that controller, which is also exactly the patch to post when it is sent.
+    /// </para>
+    /// </summary>
+    private void Send(DeviceViewModel? device, WledState patch)
+    {
+        if (device?.DeviceKey is not { } key)
+        {
+            return;
+        }
+
+        if (LiveSync)
+        {
+            device.Device.Post(patch);
+            return;
+        }
+
+        if (_heldPatches.TryGetValue(key, out WledState? held))
+        {
+            held.MergeFrom(patch);
+        }
+        else
+        {
+            _heldPatches[key] = patch;
+        }
+
+        RebuildPendingStates();
+    }
+
     partial void OnMasterOnChanged(bool value)
     {
         if (_suppressPush)
@@ -1084,7 +1195,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         foreach (DeviceViewModel device in Devices)
         {
-            device.Device.SetPower(value);
+            Send(device, new WledState { On = value });
         }
     }
 
@@ -1098,28 +1209,55 @@ public sealed partial class MainViewModel : ViewModelBase
         var brightness = (byte)Math.Clamp(value, 0, 255);
         foreach (DeviceViewModel device in Devices)
         {
-            device.Device.SetBrightness(brightness);
+            Send(device, new WledState { Brightness = brightness });
         }
     }
 
-    partial void OnSegmentEffectIndexChanged(int value)
+    partial void OnSegmentEffectChoiceChanged(PickerOption? value)
     {
-        if (_suppressPush || value < 0 || SelectedSegment is not { } segment)
+        if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
             return;
         }
 
-        DeviceFor(segment)?.Device.SetEffect(value, Project.WledSegmentIdFor(segment));
+        Send(
+            DeviceFor(segment),
+            WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Effect = value.Id));
     }
 
-    partial void OnSegmentPaletteIndexChanged(int value)
+    partial void OnSegmentPaletteChoiceChanged(PickerOption? value)
     {
-        if (_suppressPush || value < 0 || SelectedSegment is not { } segment)
+        if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
             return;
         }
 
-        DeviceFor(segment)?.Device.SetPalette(value, Project.WledSegmentIdFor(segment));
+        Send(
+            DeviceFor(segment),
+            WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Palette = value.Id));
+    }
+
+    /// <summary>Whether the panel has anything the lights have not been told about.</summary>
+    public bool HasPendingChanges => _pendingStates is not null;
+
+    /// <summary>Says out loud which way the switch is pointing, so no control is a guess.</summary>
+    public string SyncHint => LiveSync
+        ? "The lights are following along."
+        : "The lights are holding \u2014 nothing reaches them until you send it.";
+
+    partial void OnLiveSyncChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SyncHint));
+
+        if (!value)
+        {
+            Status = "Sync is off. Colors and presets land on the photo; the lights wait to be sent.";
+            return;
+        }
+
+        // Switching it on means the house should catch up with whatever is on the photo, which is
+        // the only reading of "the lights do what the preview is showing" that is not a surprise.
+        Dispatcher.UIThread.Post(async void () => await SendPendingAsync());
     }
 
     /// <summary>
@@ -1145,13 +1283,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (SelectedSegment is { } segment)
         {
-            DeviceFor(segment)?.Device.SetPrimaryColor(color, Project.WledSegmentIdFor(segment));
+            Send(
+                DeviceFor(segment),
+                WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.PrimaryColor = color));
             return;
         }
 
         foreach (Segment each in Project.Segments)
         {
-            DeviceFor(each)?.Device.SetPrimaryColor(color, Project.WledSegmentIdFor(each));
+            Send(
+                DeviceFor(each),
+                WledState.ForSegment(Project.WledSegmentIdFor(each), seg => seg.PrimaryColor = color));
         }
     }
 
@@ -1239,7 +1381,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>
     /// Repoints the effect and palette pickers at the selected segment's controller. The lists are
-    /// filled before the indices are set, because a picker that cannot satisfy its index drops it.
+    /// filled before the choices are set, because a picker that cannot satisfy its choice drops it.
     /// </summary>
     private void RefreshSegmentPickers(Segment? segment)
     {
@@ -1250,35 +1392,45 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             SegmentEffects.Clear();
             SegmentPalettes.Clear();
-            SegmentEffectIndex = -1;
-            SegmentPaletteIndex = -1;
+            SegmentEffectChoice = null;
+            SegmentPaletteChoice = null;
 
             if (segment is null || DeviceFor(segment) is not { } device)
             {
                 return;
             }
 
-            foreach (string effect in device.Effects)
+            for (int i = 0; i < device.Effects.Count; i++)
             {
-                SegmentEffects.Add(effect);
+                SegmentEffects.Add(new PickerOption(i, device.Effects[i]));
             }
 
-            foreach (string palette in device.Palettes)
+            for (int i = 0; i < device.Palettes.Count; i++)
             {
-                SegmentPalettes.Add(palette);
+                SegmentPalettes.Add(new PickerOption(i, device.Palettes[i]));
+            }
+
+            // The controller's own uploaded palettes, which its name list leaves out. They are
+            // known only because the gradients were read separately, so that is what names them.
+            if (PalettesOn(segment.ControllerKey) is { } gradients)
+            {
+                foreach (int id in gradients.Keys.Where(id => id >= device.Palettes.Count).Order())
+                {
+                    SegmentPalettes.Add(new PickerOption(id, device.Device.PaletteName(id)));
+                }
             }
 
             int segmentId = Project.WledSegmentIdFor(segment);
             WledSegment? live = device.State?.Segments?.FirstOrDefault(s => s.Id == segmentId);
 
-            if (live?.Effect is { } effectIndex && effectIndex < SegmentEffects.Count)
+            if (live?.Effect is { } effect)
             {
-                SegmentEffectIndex = effectIndex;
+                SegmentEffectChoice = SegmentEffects.FirstOrDefault(o => o.Id == effect);
             }
 
-            if (live?.Palette is { } paletteIndex && paletteIndex < SegmentPalettes.Count)
+            if (live?.Palette is { } palette)
             {
-                SegmentPaletteIndex = paletteIndex;
+                SegmentPaletteChoice = SegmentPalettes.FirstOrDefault(o => o.Id == palette);
             }
 
             if (live?.Colors is { Length: > 0 })
@@ -1407,17 +1559,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         SelectedSegment ??= Project.Segments.FirstOrDefault();
 
-        _suppressPush = true;
-        try
-        {
-            DeviceViewModel? first = Devices.FirstOrDefault();
-            MasterOn = first?.IsOn ?? false;
-            MasterBrightness = first?.Brightness ?? 128;
-        }
-        finally
-        {
-            _suppressPush = false;
-        }
+        ReadMasterFromDevices();
 
         // Once the house is described, the hardware stops being the interesting thing.
         // While starting, the last step decides; switching here would flash a half-built window.
@@ -1706,35 +1848,71 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         ControllerStates = states;
-        OnPropertyChanged(nameof(DisplayStates));
+
+        // The overlay is drawn over these, so a fresh report has to flow through it too.
+        RebuildPendingStates();
     }
 
     /// <summary>
-    /// What the photo draws: the preset being previewed if there is one, otherwise the lights as
-    /// they actually are.
+    /// What the photo draws: the house plus anything picked but not sent, or the house as it is.
     /// </summary>
-    public IReadOnlyDictionary<string, WledState> DisplayStates => _previewStates ?? ControllerStates;
+    public IReadOnlyDictionary<string, WledState> DisplayStates => _pendingStates ?? ControllerStates;
 
-    public bool IsPreviewing => PreviewPreset is not null;
+    /// <summary>What the chosen preset does, run by run.</summary>
+    public ObservableCollection<PresetDetail> PresetDetails { get; } = [];
 
-    /// <summary>What the previewed preset does, run by run.</summary>
-    public ObservableCollection<PresetDetail> PreviewDetails { get; } = [];
+    /// <summary>Puts the master switch and slider back where the hardware actually is.</summary>
+    private void ReadMasterFromDevices()
+    {
+        _suppressPush = true;
+        try
+        {
+            DeviceViewModel? first = Devices.FirstOrDefault();
+            MasterOn = first?.IsOn ?? false;
+            MasterBrightness = first?.Brightness ?? 128;
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+    }
 
     /// <summary>
-    /// Palette gradients read off a controller, so the photo can draw a run that uses one.
+    /// Palette gradients per controller, so the photo can draw a run that uses one.
     /// </summary>
-    [ObservableProperty] private IReadOnlyDictionary<int, WledPalette>? _palettes;
+    [ObservableProperty]
+    private IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>? _palettes;
+
+    /// <summary>The gradients the controller behind a run holds, or nothing if it has not answered.</summary>
+    public IReadOnlyDictionary<int, WledPalette>? PalettesOn(string? controllerKey) =>
+        controllerKey is not null && Palettes is { } all &&
+        all.TryGetValue(controllerKey, out IReadOnlyDictionary<int, WledPalette>? found)
+            ? found
+            : null;
 
     /// <summary>
-    /// Reads the palette gradients once, from whichever controller answers.
+    /// Reads the palette gradients from every controller.
     /// <para>
-    /// They are firmware data and identical across identical builds, so one controller is enough.
+    /// Every controller, not the first one that answers. The built-in palettes really are firmware
+    /// data and the same everywhere, but a controller's own uploaded palettes are not: they are
+    /// numbered down from 255 and mean whatever that box was given. Reading one controller and
+    /// using it for the house meant a run on a custom palette drew flat whenever the controller
+    /// that answered first was not the one holding it - intermittently, depending on which
+    /// answered first.
     /// </para>
     /// </summary>
     private async Task LoadPalettesAsync()
     {
+        var byController = new Dictionary<string, IReadOnlyDictionary<int, WledPalette>>(
+            StringComparer.OrdinalIgnoreCase);
+
         foreach (DeviceViewModel device in Devices)
         {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
             try
             {
                 IReadOnlyDictionary<int, WledPalette> loaded =
@@ -1742,54 +1920,122 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (loaded.Count > 0)
                 {
-                    Palettes = loaded;
-                    return;
+                    byController[key] = loaded;
                 }
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
-                // Try the next controller; the preview falls back to flat color without them.
+                // That controller's runs fall back to flat color; the rest of the house is fine.
             }
         }
+
+        if (byController.Count == 0)
+        {
+            return;
+        }
+
+        // Published on the UI thread, and the pickers refilled as a separate step rather than from
+        // the property's own changed callback. A callback that throws - which one touching a bound
+        // collection off-thread does - takes the change notification down with it, so the canvas
+        // would never hear that the palettes arrived at all.
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            Palettes = byController;
+            RefreshSegmentPickers(SelectedSegment);
+        });
     }
 
-    private IReadOnlyDictionary<string, WledState>? _previewStates;
+    private IReadOnlyDictionary<string, WledState>? _pendingStates;
 
-    partial void OnPreviewPresetChanged(HousePreset? value)
+    partial void OnSelectedPresetChanged(HousePreset? value)
     {
-        _previewStates = value is null ? null : BuildPreviewStates(value);
+        RebuildPresetDetails(value);
+        OnPropertyChanged(nameof(PresetCoverage));
 
-        RebuildPreviewDetails(value);
+        // Set by the apply path re-pointing the list at the merged entry it just created. Acting
+        // on that would apply the preset a second time.
+        if (_applyingPreset)
+        {
+            return;
+        }
 
-        OnPropertyChanged(nameof(DisplayStates));
-        OnPropertyChanged(nameof(IsPreviewing));
-        OnPropertyChanged(nameof(PreviewCoverage));
+        _presetIsPending = value is not null && !LiveSync;
+        RebuildPendingStates();
+
+        if (value is null)
+        {
+            return;
+        }
+
+        if (LiveSync)
+        {
+            Dispatcher.UIThread.Post(async void () => await ApplyPresetAsync(value));
+            return;
+        }
+
+        Status = $"'{value.Name}' is on the photo. The lights have not changed \u2014 press Send when you want it.";
     }
 
     /// <summary>
-    /// Turns a stored preset into the same per-controller shape the photo already draws from, so a
-    /// preview costs nothing more than pointing the canvas at different data.
+    /// Rebuilds what the photo draws: the house as the controllers last reported it, with the
+    /// chosen preset and then every held-back edit laid over the top, in that order.
+    /// <para>
+    /// Laid over a copy rather than merged into the live states, because the live states are what
+    /// the app falls back to the moment any of this is sent or discarded.
+    /// </para>
     /// </summary>
-    private static Dictionary<string, WledState> BuildPreviewStates(HousePreset preset)
+    private void RebuildPendingStates()
     {
-        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (PresetPlacement placement in preset.Placements)
+        if (LiveSync || (!_presetIsPending && _heldPatches.Count == 0))
         {
-            states[placement.ControllerKey] = new WledState
-            {
-                On = placement.Preset.On ?? true,
-                Brightness = placement.Preset.Brightness ?? 255,
-                Segments = placement.Preset.Segments,
-            };
+            _pendingStates = null;
+            OnPropertyChanged(nameof(DisplayStates));
+            OnPropertyChanged(nameof(HasPendingChanges));
+            return;
         }
 
-        return states;
+        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (KeyValuePair<string, WledState> live in ControllerStates)
+        {
+            states[live.Key] = live.Value.Clone();
+        }
+
+        if (_presetIsPending && SelectedPreset is { } preset)
+        {
+            foreach (PresetPlacement placement in preset.Placements)
+            {
+                // A preset replaces a controller's look rather than adding to it, so this is not
+                // a merge; the controllers it says nothing about keep showing what they are doing.
+                states[placement.ControllerKey] = new WledState
+                {
+                    On = placement.Preset.On ?? true,
+                    Brightness = placement.Preset.Brightness ?? 255,
+                    Segments = placement.Preset.Segments,
+                }.Clone();
+            }
+        }
+
+        foreach (KeyValuePair<string, WledState> held in _heldPatches)
+        {
+            if (states.TryGetValue(held.Key, out WledState? state))
+            {
+                state.MergeFrom(held.Value);
+            }
+            else
+            {
+                states[held.Key] = held.Value.Clone();
+            }
+        }
+
+        _pendingStates = states;
+        OnPropertyChanged(nameof(DisplayStates));
+        OnPropertyChanged(nameof(HasPendingChanges));
     }
 
-    private void RebuildPreviewDetails(HousePreset? preset)
+    private void RebuildPresetDetails(HousePreset? preset)
     {
-        PreviewDetails.Clear();
+        PresetDetails.Clear();
 
         if (preset is null)
         {
@@ -1811,19 +2057,19 @@ public sealed partial class MainViewModel : ViewModelBase
                     continue;
                 }
 
-                PreviewDetails.Add(Describe(run, wled, device));
+                PresetDetails.Add(Describe(run, wled, device));
             }
         }
     }
 
     private static PresetDetail Describe(Segment run, WledSegment wled, DeviceViewModel? device)
     {
-        string pattern = wled.Effect is { } fx
+        string effect = wled.Effect is { } fx
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
             : "unchanged";
 
         string palette = wled.Palette is { } pal
-            ? device is not null && pal < device.Palettes.Count ? device.Palettes[pal] : $"Palette {pal}"
+            ? device?.Device.PaletteName(pal) ?? $"Palette {pal}"
             : "—";
 
         RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
@@ -1831,7 +2077,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         return new PresetDetail(
             run.Name,
-            pattern,
+            effect,
             palette,
             DescribeMotion(wled),
             new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
@@ -1844,16 +2090,16 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (wled.Effect is 0 or null)
         {
-            return "still";
+            return "does not move";
         }
 
         string speed = wled.Speed switch
         {
-            null => "unchanged pace",
-            < 48 => "drifting",
-            < 110 => "gentle",
-            < 190 => "brisk",
-            _ => "fast",
+            null => "moves at whatever pace it is set to",
+            < 48 => "drifts",
+            < 110 => "moves gently",
+            < 190 => "moves briskly",
+            _ => "moves fast",
         };
 
         string amount = wled.Intensity switch

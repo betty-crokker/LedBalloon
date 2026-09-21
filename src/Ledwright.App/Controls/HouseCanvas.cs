@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -8,6 +9,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using Ledwright.Core;
 using Ledwright.Core.Layout;
 using Ledwright.Core.Models;
@@ -63,8 +65,9 @@ public sealed class HouseCanvas : Control
     /// white and blue preset means solid red.
     /// </para>
     /// </summary>
-    public static readonly StyledProperty<IReadOnlyDictionary<int, WledPalette>?> PalettesProperty =
-        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<int, WledPalette>?>(nameof(Palettes));
+    public static readonly StyledProperty<IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>?> PalettesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>?>(
+            nameof(Palettes));
 
     /// <summary>
     /// Bumped by the view model when segments are added or removed. Property changes on a segment
@@ -116,7 +119,7 @@ public sealed class HouseCanvas : Control
         set => SetValue(IsDrawingProperty, value);
     }
 
-    public IReadOnlyDictionary<int, WledPalette>? Palettes
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>? Palettes
     {
         get => GetValue(PalettesProperty);
         set => SetValue(PalettesProperty, value);
@@ -143,6 +146,46 @@ public sealed class HouseCanvas : Control
     /// <summary>How near a click has to land, in pixels, to count as picking a run.</summary>
     private const double PickRadius = 26;
 
+    /// <summary>
+    /// Drives the palette scroll, so an effect is something you can see rather than a word.
+    /// <para>
+    /// Naming an effect tells you nothing: "Chunchun" is not a description, and a still photo of a
+    /// moving run is a photo of the wrong thing. Nearly every WLED effect slides its palette along
+    /// the strip, so that is what is drawn - at the pace the segment's speed asks for. It is a
+    /// family resemblance to 180 effects rather than any one of them, which the panel says.
+    /// </para>
+    /// </summary>
+    private readonly DispatcherTimer _clock;
+
+    private readonly Stopwatch _since = Stopwatch.StartNew();
+
+    /// <summary>True when some run is on a palette-driven effect, so there is motion to redraw for.</summary>
+    private bool _animating;
+
+    public HouseCanvas() =>
+        _clock = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(50), DispatcherPriority.Background, OnTick);
+
+    private void OnTick(object? sender, EventArgs e)
+    {
+        if (_animating)
+        {
+            InvalidateVisual();
+        }
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        _clock.Start();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        _clock.Stop();
+    }
+
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
@@ -151,7 +194,22 @@ public sealed class HouseCanvas : Control
         {
             WatchSegments();
         }
+
+        if (change.Property == ControllerStatesProperty)
+        {
+            // Worked out once per report rather than once per frame: a still house should cost
+            // nothing, and most of the year the house is still.
+            _animating = AnythingMoves();
+        }
     }
+
+    private bool AnythingMoves() =>
+        ControllerStates is { } states &&
+        states.Values.Any(state =>
+            state.On != false &&
+            state.Segments is { } segments &&
+            segments.Any(segment =>
+                segment.On != false && segment.Effect is > 0 && segment.Palette is > 0));
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {
@@ -354,7 +412,7 @@ public sealed class HouseCanvas : Control
             Point apex = ToControl(image, segment.PositionOf(index));
             LayoutPoint aim = fixture.AimFrom(DirectionInPixels(image, segment, t));
 
-            RgbColor color = appearance.ColorAt(t, Palettes);
+            RgbColor color = appearance.ColorAt(t);
 
             foreach ((double angleScale, double alphaScale) in layers)
             {
@@ -523,7 +581,7 @@ public sealed class HouseCanvas : Control
             Point at = ToControl(image, segment.PositionOf(index));
 
             // Sampled per LED, so a run on a palette shows the palette rather than one flat color.
-            RgbColor color = appearance.ColorAt(PositionFraction(segment, index), Palettes);
+            RgbColor color = appearance.ColorAt(PositionFraction(segment, index));
 
             // Two passes: a soft halo, then the pixel itself. Reads like a light at night rather
             // than a dot on a diagram.
@@ -551,7 +609,7 @@ public sealed class HouseCanvas : Control
         // Each short piece takes its own color, so a palette gradient runs along the rope.
         for (int i = 0; i < Samples; i++)
         {
-            RgbColor color = appearance.ColorAt(i / (double)Samples, Palettes);
+            RgbColor color = appearance.ColorAt(i / (double)Samples);
             var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
             {
                 LineCap = PenLineCap.Round,
@@ -562,7 +620,7 @@ public sealed class HouseCanvas : Control
 
         for (int i = 0; i < Samples; i++)
         {
-            RgbColor color = appearance.ColorAt(i / (double)Samples, Palettes);
+            RgbColor color = appearance.ColorAt(i / (double)Samples);
             var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
             {
                 LineCap = PenLineCap.Round,
@@ -671,19 +729,30 @@ public sealed class HouseCanvas : Control
     /// </para>
     /// </summary>
     /// <summary>How one run currently looks, including how its color varies along its length.</summary>
-    private sealed record RunAppearance(bool IsLit, RgbColor Flat, WledSegment? Wled, double Scale)
+    private sealed record RunAppearance(
+        bool IsLit,
+        RgbColor Flat,
+        WledSegment? Wled,
+        double Scale,
+        double Phase,
+        IReadOnlyDictionary<int, WledPalette>? Palettes = null)
     {
         /// <summary>The color at a fraction along the run, which a palette makes vary.</summary>
-        public RgbColor ColorAt(double t, IReadOnlyDictionary<int, WledPalette>? palettes)
+        public RgbColor ColorAt(double t)
         {
             if (Wled?.Palette is not { } index || index == 0 ||
-                palettes is null || !palettes.TryGetValue(index, out WledPalette? palette))
+                Palettes is null || !Palettes.TryGetValue(index, out WledPalette? palette))
             {
                 return Flat;
             }
 
+            // Where along the palette this LED is reading right now. Wrapped rather than clamped,
+            // so the gradient runs off one end of the run and back on at the other.
+            double along = t + Phase;
+            along -= Math.Floor(along);
+
             RgbColor color = palette.ColorAt(
-                t,
+                along,
                 Wled.Colors is { Length: > 0 } ? Wled.PrimaryColor : RgbColor.White,
                 Wled.Colors is { Length: > 1 } ? Wled.SecondaryColor : RgbColor.Black,
                 Wled.Colors is { Length: > 2 } ? RgbColor.FromWledArray(Wled.Colors[2]) : RgbColor.Black);
@@ -703,7 +772,7 @@ public sealed class HouseCanvas : Control
             state.Segments is not { } segments)
         {
             // Nothing known about it yet: show where it is, do not pretend to know its color.
-            return new RunAppearance(false, new RgbColor(120, 120, 130), null, 1);
+            return new RunAppearance(false, new RgbColor(120, 120, 130), null, 1, 0);
         }
 
         int segmentId = project.WledSegmentIdFor(segment);
@@ -711,7 +780,7 @@ public sealed class HouseCanvas : Control
 
         if (wled is null || wled.On == false || state.On == false)
         {
-            return new RunAppearance(false, new RgbColor(40, 42, 48), null, 1);
+            return new RunAppearance(false, new RgbColor(40, 42, 48), null, 1, 0);
         }
 
         RgbColor color = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.White;
@@ -727,7 +796,38 @@ public sealed class HouseCanvas : Control
         bool hasPalette = wled.Palette is > 0;
         bool isLit = hasPalette ? scale > 0.05 : scaled.R + scaled.G + scaled.B > 12;
 
-        return new RunAppearance(isLit, scaled, wled, scale);
+        return new RunAppearance(
+            isLit, scaled, wled, scale, PhaseFor(wled), PalettesOn(segment.ControllerKey));
+    }
+
+    /// <summary>
+    /// How far the palette has slid along a run by now, in palette widths.
+    /// <para>
+    /// Zero for a run that is not running an effect over a palette, which keeps a solid color
+    /// perfectly still instead of quietly cycling it.
+    /// </para>
+    /// </summary>
+    /// <summary>The gradients belonging to the controller that drives a run. Custom palettes are
+    /// per-controller uploads, so the house's are not interchangeable.</summary>
+    private IReadOnlyDictionary<int, WledPalette>? PalettesOn(string? controllerKey) =>
+        controllerKey is not null && Palettes is { } all &&
+        all.TryGetValue(controllerKey, out IReadOnlyDictionary<int, WledPalette>? found)
+            ? found
+            : null;
+
+    private double PhaseFor(WledSegment wled)
+    {
+        if (wled.Effect is not > 0 || wled.Palette is not > 0)
+        {
+            return 0;
+        }
+
+        // Slowest is a crawl you can still see, fastest is about one palette a second; WLED's own
+        // range is wider at both ends, but past this it just reads as a blur on a photo.
+        double cyclesPerSecond = 0.06 + ((wled.Speed ?? 128) / 255d * 0.8);
+        double phase = _since.Elapsed.TotalSeconds * cyclesPerSecond;
+
+        return wled.Reverse == true ? -phase : phase;
     }
 
     private static void DrawLabel(DrawingContext context, Point at, Segment segment, bool isSelected)

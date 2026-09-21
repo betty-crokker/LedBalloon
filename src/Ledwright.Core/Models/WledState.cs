@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Ledwright.Core.Models;
 
@@ -100,6 +100,21 @@ public sealed class WledState
         var segment = new WledSegment { Id = segmentId };
         configure(segment);
         return new WledState { Segments = [segment] };
+    }
+
+    /// <summary>
+    /// An independent copy, down to the segments.
+    /// <para>
+    /// The photo draws the house as it is plus whatever has been picked but not sent yet, which
+    /// means laying changes over a copy of the live state. Without this the overlay would write
+    /// through into the state the controller actually reported.
+    /// </para>
+    /// </summary>
+    public WledState Clone()
+    {
+        var copy = (WledState)MemberwiseClone();
+        copy.Segments = Segments?.Select(segment => segment.Clone()).ToList();
+        return copy;
     }
 
     /// <summary>Copies every non-null field of <paramref name="newer"/> over this state, merging segments by id.</summary>

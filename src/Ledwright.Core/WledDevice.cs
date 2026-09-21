@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Ledwright.Core.Models;
 
@@ -180,8 +180,20 @@ public sealed class WledDevice : INotifyPropertyChanged, IAsyncDisposable
         index >= 0 && index < Effects.Count ? Effects[index] : $"Effect {index}";
 
     /// <summary>The palette name for an index, or a readable fallback when the list is not loaded.</summary>
-    public string PaletteName(int index) =>
-        index >= 0 && index < Palettes.Count ? Palettes[index] : $"Palette {index}";
+    public string PaletteName(int index)
+    {
+        if (index >= 0 && index < Palettes.Count)
+        {
+            return Palettes[index];
+        }
+
+        // A controller's own uploaded palettes are numbered down from 255, and WLED leaves them out
+        // of the name list entirely, so they arrive here as bare numbers. Name them the way the
+        // files that hold them are named.
+        return index is >= 246 and <= 255
+            ? $"Custom {255 - index}"
+            : $"Palette {index}";
+    }
 
     private async Task SendAsync(WledState patch, CancellationToken cancellationToken)
     {

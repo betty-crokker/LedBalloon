@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Ledwright.Core.Models;
 
 namespace Ledwright.Core;
@@ -99,8 +99,12 @@ public sealed class WledPalette
 /// <summary>
 /// Reads the palette gradients a controller actually has, from <c>/json/palx</c>.
 /// <para>
-/// Paginated, because the whole set does not fit in one response on a microcontroller. The page
-/// count comes back as <c>m</c> in each response.
+/// Paginated, because the whole set does not fit in one response on a microcontroller. Each
+/// response carries <c>m</c>, which is the <em>last</em> page number rather than how many there
+/// are. Reading it as a count stops one page early, and the page that gets dropped is the last
+/// one - which is where a controller's custom palettes live, since those are numbered down from
+/// 255. On a house running a custom red-white-and-blue palette that is the only page that
+/// mattered, and losing it drew the whole run flat red.
 /// </para>
 /// </summary>
 public static class WledPalettes
@@ -118,9 +122,9 @@ public static class WledPalettes
         };
 
         var palettes = new Dictionary<int, WledPalette>();
-        int pages = 1;
+        int lastPage = 0;
 
-        for (int page = 0; page < pages; page++)
+        for (int page = 0; page <= lastPage; page++)
         {
             using HttpResponseMessage response = await http
                 .GetAsync($"json/palx?page={page}", cancellationToken)
@@ -137,10 +141,10 @@ public static class WledPalettes
                 .ParseAsync(stream, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
-            if (document.RootElement.TryGetProperty("m", out JsonElement total) &&
-                total.TryGetInt32(out int count))
+            if (document.RootElement.TryGetProperty("m", out JsonElement last) &&
+                last.TryGetInt32(out int number))
             {
-                pages = Math.Clamp(count, 1, 32);
+                lastPage = Math.Clamp(number, 0, 31);
             }
 
             if (!document.RootElement.TryGetProperty("p", out JsonElement entries))

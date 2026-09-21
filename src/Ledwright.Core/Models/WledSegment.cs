@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 
 namespace Ledwright.Core.Models;
 
@@ -93,6 +93,21 @@ public sealed class WledSegment
 
         next[slot] = color.ToWledArray();
         Colors = next;
+    }
+
+    /// <summary>
+    /// An independent copy. Lets a state be drawn with pending changes laid over it without those
+    /// changes reaching the live state they were copied from.
+    /// </summary>
+    public WledSegment Clone()
+    {
+        var copy = (WledSegment)MemberwiseClone();
+
+        // The color slots are the only reference type here, and merging replaces the whole array,
+        // so copying one level deep is enough.
+        copy.Colors = Colors?.Select(slot => slot.ToArray()).ToArray();
+
+        return copy;
     }
 
     /// <summary>Copies every non-null field of <paramref name="newer"/> over this segment.</summary>
