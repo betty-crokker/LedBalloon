@@ -1077,6 +1077,8 @@ public sealed partial class MainViewModel : ViewModelBase
             return copied;
         }
 
+        DeviceViewModel? sourceDevice = DeviceFor(source.ControllerKey);
+
         foreach (DeviceViewModel target in CopyTargets(preset))
         {
             if (target.DeviceKey is not { } key)
@@ -1087,12 +1089,35 @@ public sealed partial class MainViewModel : ViewModelBase
             Status = $"'{preset.Name}' is not on {target.DisplayName} yet — copying it there...";
 
             WledPreset copy = PresetCopier.BuildFor(source.Preset, Project, key, preset.Name);
+
+            // A preset built on one of the controller's own uploaded palettes has to bring that
+            // palette with it. Without this the target has never heard of the id, and WLED does
+            // not say so - it quietly falls back to plain color.
+            int palettes = 0;
+            if (sourceDevice is not null)
+            {
+                IReadOnlyDictionary<int, int> landed = await CustomPaletteCopier.CopyForAsync(
+                    sourceDevice.Host, target.Host, copy);
+
+                CustomPaletteCopier.Remap(copy, landed);
+                palettes = landed.Count;
+            }
+
             int slot = await PresetCopier.StoreAsync(target.Host, copy);
 
             await target.Device.RefreshPresetsAsync();
             await target.Device.ApplyNowAsync(new WledState { Preset = slot });
 
-            copied.Add($"{target.DisplayName} (slot {slot})");
+            copied.Add(palettes == 0
+                ? $"{target.DisplayName} (slot {slot})"
+                : $"{target.DisplayName} (slot {slot}, with its palette)");
+        }
+
+        if (copied.Count > 0)
+        {
+            // Those controllers hold palettes they did not a moment ago, and the photo draws runs
+            // from that list.
+            await LoadPalettesAsync();
         }
 
         return copied;
