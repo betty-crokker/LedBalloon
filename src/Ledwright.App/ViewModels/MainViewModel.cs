@@ -1281,6 +1281,49 @@ public sealed partial class MainViewModel : ViewModelBase
         await SaveAsync(force: false);
     }
 
+    /// <summary>
+    /// Turns every controller off.
+    /// <para>
+    /// Sent over HTTP rather than the socket on purpose: a response is proof the controller acted,
+    /// and a WebSocket frame posted as the process exits is not. Each controller is tried on its
+    /// own, so one that has gone off the network cannot stop the others going dark.
+    /// </para>
+    /// </summary>
+    public async Task TurnEverythingOffAsync()
+    {
+        foreach (DeviceViewModel device in Devices)
+        {
+            try
+            {
+                await device.Device.Http.ApplyAsync(new WledState { On = false });
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // Unreachable on the way out. Nothing useful left to do about it.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Everything that has to happen before the window goes away: keep the work, then put the
+    /// lights out.
+    /// <para>
+    /// Saving comes first because losing an evening's tracing matters more than the lights, and
+    /// a controller that hangs while being switched off must not take the save down with it.
+    /// </para>
+    /// <para>
+    /// Switching off on exit is deliberate for now, while the app is still being built: leaving a
+    /// house lit because a window got closed is a worse surprise than it going dark.
+    /// </para>
+    /// </summary>
+    public async Task ShutDownAsync()
+    {
+        await SaveBeforeClosingAsync();
+
+        Status = "Turning the lights off...";
+        await TurnEverythingOffAsync();
+    }
+
     private void RebuildPresetCatalog()
     {
         var byController = new Dictionary<string, IReadOnlyList<WledPreset>>(StringComparer.OrdinalIgnoreCase);

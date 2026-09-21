@@ -17,24 +17,27 @@ public partial class MainWindow : Window
         InitializeComponent();
     }
 
-    private bool _savedOnClose;
+    private bool _shutDown;
 
     private MainViewModel? ViewModel => DataContext as MainViewModel;
 
     /// <summary>
-    /// Saves outstanding edits on the way out. Closing the window should never be the way a
-    /// morning's tracing gets lost, and there is nowhere else for it to go.
+    /// Saves outstanding edits and puts the lights out on the way out.
+    /// <para>
+    /// The close is cancelled once so the work can finish, then re-issued. Both steps need a
+    /// response from the controllers, and neither survives the process exiting underneath them.
+    /// </para>
     /// </summary>
     protected override async void OnClosing(WindowClosingEventArgs e)
     {
-        if (!_savedOnClose && ViewModel is { HasUnsavedChanges: true } viewModel)
+        if (!_shutDown && ViewModel is { } viewModel)
         {
             e.Cancel = true;
-            _savedOnClose = true;
+            _shutDown = true;
 
             try
             {
-                await viewModel.SaveBeforeClosingAsync();
+                await viewModel.ShutDownAsync();
             }
             catch
             {
