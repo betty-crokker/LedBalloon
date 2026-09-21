@@ -203,13 +203,28 @@
         <Border DockPanel.Dock="Top" Padding="14,10"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
           <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Done — back to colors"
-                    Command="{Binding FinishSetupCommand}"
-                    IsEnabled="{Binding HasSegments}" />
+            <!-- Saving is a document-level action, so it belongs up here where it is always in
+                 reach, not at the end of a long scroll. -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
+                        VerticalAlignment="Center">
+              <Border Padding="7,2" CornerRadius="3" Background="#C9821B" VerticalAlignment="Center"
+                      IsVisible="{Binding HasUnsavedChanges}">
+                <TextBlock Text="Unsaved" FontSize="12" Foreground="White" />
+              </Border>
+              <Button Content="Save to controllers"
+                      Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
+              <Button Content="Overwrite anyway"
+                      Command="{Binding OverwriteNewerRevisionCommand}"
+                      IsVisible="{Binding SaveBlockedByNewerRevision}" />
+              <Button Content="Done — back to colors"
+                      Command="{Binding FinishSetupCommand}"
+                      IsEnabled="{Binding HasSegments}" />
+            </StackPanel>
+
             <StackPanel VerticalAlignment="Center">
               <TextBlock Text="Setting up the house" FontWeight="SemiBold" />
               <TextBlock Classes="hint"
-                         Text="Controllers, runs and where they hang. Done once; come back whenever something changes." />
+                         Text="Controllers, runs and where they hang. Saving stores the layout on the controllers and re-cuts their segments to match." />
             </StackPanel>
           </DockPanel>
         </Border>
@@ -217,8 +232,11 @@
         <Border DockPanel.Dock="Left" Width="320" Padding="14"
                 Background="{DynamicResource PanelBackground}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
-          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-            <StackPanel Spacing="0">
+          <!-- Picking a controller and a run stays put at the top, the two things you always want
+               stay pinned at the bottom, and only the editor scrolls. Previously the whole column
+               scrolled as one and Save ended up below the fold. -->
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Spacing="0">
 
               <TextBlock Classes="panelTitle" Text="Controller" Margin="0,0,0,6" />
               <TextBlock Classes="hint" Margin="0,0,0,6"
@@ -270,8 +288,17 @@
               <TextBlock Classes="hint" Margin="0,6,0,0"
                          IsVisible="{Binding !HasVisibleSegments}"
                          Text="Nothing described on this controller yet. Bring in its outputs above, or add a run by hand below." />
+            </StackPanel>
 
-              <StackPanel Spacing="8" Margin="0,12,0,0">
+            <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
+              <Button Classes="block" Content="Add a run to this controller"
+                      Command="{Binding AddSegmentCommand}" />
+              <Button Classes="block" Content="Re-lay end to end"
+                      Command="{Binding RepackSegmentsCommand}" />
+            </StackPanel>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" Margin="0,10,0,0">
+              <StackPanel Spacing="8">
 
                 <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
                      reported here as it is typed rather than behind a button elsewhere. -->
@@ -364,22 +391,11 @@
                     </Border>
                   </DataTemplate>
                 </ContentControl.ContentTemplate>
-              </ContentControl>
+                </ContentControl>
 
-                <Button Classes="block" Content="Add a segment" Command="{Binding AddSegmentCommand}" />
-                <Button Classes="block" Content="Re-lay end to end" Command="{Binding RepackSegmentsCommand}" />
-                <Button Classes="block" Content="Push layout to controllers" Command="{Binding PushGeometryCommand}" />
-                <Button Classes="block" Content="Save to controllers"
-                        Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
-                <Button Classes="block" Content="Overwrite the newer version anyway"
-                        Command="{Binding OverwriteNewerRevisionCommand}"
-                        IsVisible="{Binding SaveBlockedByNewerRevision}" />
-                <TextBlock Classes="hint"
-                           Text="Saving stores the layout on the controllers themselves, so anyone else on this network finds it already set up. Anything outstanding is saved when you close the window." />
               </StackPanel>
-
-            </StackPanel>
-          </ScrollViewer>
+            </ScrollViewer>
+          </DockPanel>
         </Border>
 
         <TabControl Margin="14,8,14,8">

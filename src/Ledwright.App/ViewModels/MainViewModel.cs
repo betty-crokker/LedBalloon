@@ -390,9 +390,20 @@ public sealed partial class MainViewModel : ViewModelBase
             SaveBlockedByNewerRevision = false;
             HasUnsavedChanges = false;
 
+            // Saving the description and making the hardware match it are the same intention.
+            string pushed = string.Empty;
+            try
+            {
+                int count = await PushGeometryAsync();
+                pushed = count > 0 ? $" {count} controller(s) re-cut to match." : string.Empty;
+            }
+            catch (Exception ex)
+            {
+                pushed = $" The layout was stored but a controller would not take its segments: {ex.Message}";
+            }
+
             Status = result.Failures.Count == 0
-                ? $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}. " +
-                  "Any machine on this network will now find this layout."
+                ? $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}.{pushed}"
                 : $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}, but " +
                   string.Join("  ", result.Failures);
         }
@@ -839,32 +850,30 @@ public sealed partial class MainViewModel : ViewModelBase
         AfterProjectChanged($"Re-laid {Project.Segments.Count} segment(s) across {Project.TotalLeds} LEDs.");
     }
 
-    /// <summary>Pushes the project's segment geometry onto every controller it touches.</summary>
-    [RelayCommand]
-    private async Task PushGeometryAsync()
+    /// <summary>
+    /// Makes each controller's own segments match the project's runs.
+    /// <para>
+    /// Part of saving rather than a button of its own. Describing a run and telling the controller
+    /// about it are one intention; splitting them left people wondering which of two similar
+    /// buttons they still owed, and a controller whose segments disagree with the description puts
+    /// colors on the wrong LEDs.
+    /// </para>
+    /// </summary>
+    private async Task<int> PushGeometryAsync()
     {
-        try
-        {
-            IReadOnlyDictionary<string, WledState> byController = LookResolver.ResolveGeometry(Project);
-            int sent = 0;
+        IReadOnlyDictionary<string, WledState> byController = LookResolver.ResolveGeometry(Project);
+        int sent = 0;
 
-            foreach ((string key, WledState state) in byController)
+        foreach ((string key, WledState state) in byController)
+        {
+            if (DeviceFor(key) is { } device)
             {
-                if (DeviceFor(key) is { } device)
-                {
-                    await device.Device.ApplyNowAsync(state);
-                    sent++;
-                }
+                await device.Device.ApplyNowAsync(state);
+                sent++;
             }
+        }
 
-            Status = sent == 0
-                ? "No connected controller matches this layout."
-                : $"Pushed the layout to {sent} controller(s).";
-        }
-        catch (Exception ex)
-        {
-            Status = $"Could not push the layout: {ex.Message}";
-        }
+        return sent;
     }
 
     // ---- Lights ---------------------------------------------------------------------------------
