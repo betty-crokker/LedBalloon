@@ -80,6 +80,11 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                 Replace(Effects, _device.Effects);
                 Replace(Palettes, _device.Palettes);
                 Replace(Presets, _device.Presets);
+
+                // Filling a collection in place leaves the property holding it unchanged, so
+                // anything derived from these lists never hears that they arrived unless told.
+                OnPropertyChanged(nameof(Effects));
+                OnPropertyChanged(nameof(Palettes));
                 OnPropertyChanged(nameof(Presets));
 
                 if (_device.Info is { } info)

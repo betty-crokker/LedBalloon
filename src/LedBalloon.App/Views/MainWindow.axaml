@@ -78,9 +78,16 @@
 
       <!-- ================= STARTING: finding the controllers ================= -->
       <Border IsVisible="{Binding IsStartingMode}" Background="{DynamicResource PanelBackground}">
-        <Border Classes="card" Width="460" VerticalAlignment="Center" HorizontalAlignment="Center"
-                Padding="26" Background="{DynamicResource StatusBackground}">
-          <StackPanel Spacing="14">
+        <Border Classes="card" Width="520" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Padding="0" ClipToBounds="True" Background="{DynamicResource StatusBackground}">
+          <StackPanel Spacing="0">
+
+            <!-- The L-7 WLED, moored and strung with lights. Waiting for a controller to answer is
+                 dead time; give it something to look at rather than a spinner on a blank card. -->
+            <Image Source="avares://LedBalloon.App/Assets/airship.jpg"
+                   Stretch="UniformToFill" Height="240" />
+
+            <StackPanel Spacing="14" Margin="26">
 
             <TextBlock Text="LedBalloon" FontSize="22" FontWeight="SemiBold" />
             <TextBlock Classes="hint"
@@ -112,6 +119,7 @@
                       HorizontalAlignment="Left" />
             </StackPanel>
 
+            </StackPanel>
           </StackPanel>
         </Border>
       </Border>
@@ -210,6 +218,9 @@
                           <TextBlock Classes="hint">
                             <Run Text="palette " /><Run Text="{Binding Palette}" /><Run Text="  ·  " /><Run Text="{Binding Motion}" />
                           </TextBlock>
+
+                          <TextBlock Classes="hint" FontStyle="Italic" Opacity="0.55"
+                                     Text="{Binding Fidelity}" />
                         </StackPanel>
                       </Border>
                     </DataTemplate>
@@ -217,7 +228,7 @@
                 </ItemsControl>
 
                 <TextBlock Classes="hint" TextWrapping="Wrap"
-                           Text="The photo scrolls each run's palette so the motion is visible. Speed in WLED is a 0-255 dial that every effect reads its own way rather than a rate, so the pace here is only relative. The effect itself runs on the controller." />
+                           Text="Effects LedBalloon knows are run properly, at the frame rate the controller is set to. The rest are stood in for by sliding the run's palette along it, which gets the colors right and the movement only roughly." />
               </StackPanel>
 
               <!-- Tuning one run by hand is the less common job, so it folds away. -->
@@ -269,6 +280,8 @@
                           SelectedSegment="{Binding SelectedSegment}"
                           ControllerStates="{Binding DisplayStates}"
                           Palettes="{Binding Palettes}"
+                          EffectNames="{Binding EffectNames}"
+                          FrameTimes="{Binding FrameTimes}"
                           IsDrawing="False"
                           SegmentPicked="OnSegmentPicked" />
       </DockPanel>

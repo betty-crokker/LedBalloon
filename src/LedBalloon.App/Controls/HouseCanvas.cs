@@ -11,6 +11,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using LedBalloon.Core;
+using LedBalloon.Core.Effects;
 using LedBalloon.Core.Layout;
 using LedBalloon.Core.Models;
 
@@ -70,6 +71,21 @@ public sealed class HouseCanvas : Control
             nameof(Palettes));
 
     /// <summary>
+    /// Each controller's effect list, as it reports it. Effects are matched by name, never by the
+    /// number a preset stores, because the numbers have shifted between WLED versions.
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<string, IReadOnlyList<string>>?> EffectNamesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, IReadOnlyList<string>>?>(
+            nameof(EffectNames));
+
+    /// <summary>
+    /// Each controller's frame time in milliseconds, from its configured frame rate. Anything that
+    /// trails or fades does so per frame, so this decides how long a trail looks.
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<string, int>?> FrameTimesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, int>?>(nameof(FrameTimes));
+
+    /// <summary>
     /// Bumped by the view model when segments are added or removed. Property changes on a segment
     /// are watched directly, but the list itself is a plain list, so structural edits need a nudge.
     /// </summary>
@@ -85,7 +101,8 @@ public sealed class HouseCanvas : Control
     {
         AffectsRender<HouseCanvas>(
             PhotoProperty, ProjectProperty, SelectedSegmentProperty, ControllerStatesProperty,
-            IsDrawingProperty, LayoutRevisionProperty, PalettesProperty);
+            IsDrawingProperty, LayoutRevisionProperty, PalettesProperty,
+            EffectNamesProperty, FrameTimesProperty);
     }
 
     public Bitmap? Photo
@@ -125,6 +142,18 @@ public sealed class HouseCanvas : Control
         set => SetValue(PalettesProperty, value);
     }
 
+    public IReadOnlyDictionary<string, IReadOnlyList<string>>? EffectNames
+    {
+        get => GetValue(EffectNamesProperty);
+        set => SetValue(EffectNamesProperty, value);
+    }
+
+    public IReadOnlyDictionary<string, int>? FrameTimes
+    {
+        get => GetValue(FrameTimesProperty);
+        set => SetValue(FrameTimesProperty, value);
+    }
+
     public int LayoutRevision
     {
         get => GetValue(LayoutRevisionProperty);
@@ -159,6 +188,19 @@ public sealed class HouseCanvas : Control
 
     private readonly Stopwatch _since = Stopwatch.StartNew();
 
+    /// <summary>
+    /// A running copy of each drawn effect, one per run, kept between frames.
+    /// <para>
+    /// Kept rather than rebuilt because that is the entire point: an effect that trails is a
+    /// function of the frames before it, so throwing the buffer away each repaint would throw away
+    /// the trail. The signature is everything the effect reads, so changing a color or a speed
+    /// starts a fresh one rather than quietly carrying on with the old settings.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, (string Signature, EffectSimulation Simulation)> _running = [];
+
+    private TimeSpan _lastTick;
+
     /// <summary>True when some run is on a palette-driven effect, so there is motion to redraw for.</summary>
     private bool _animating;
 
@@ -168,7 +210,18 @@ public sealed class HouseCanvas : Control
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_animating)
+        TimeSpan elapsed = _since.Elapsed;
+        double delta = (elapsed - _lastTick).TotalMilliseconds;
+        _lastTick = elapsed;
+
+        // Every drawn effect steps forward by the wall-clock time that passed, in whole frames of
+        // its own controller's frame time.
+        foreach ((_, EffectSimulation simulation) in _running.Values)
+        {
+            simulation.Advance(delta);
+        }
+
+        if (_animating || _running.Count > 0)
         {
             InvalidateVisual();
         }
@@ -193,6 +246,9 @@ public sealed class HouseCanvas : Control
         if (change.Property == ProjectProperty || change.Property == LayoutRevisionProperty)
         {
             WatchSegments();
+
+            // The runs themselves changed, so anything running against the old ones is stale.
+            _running.Clear();
         }
 
         if (change.Property == ControllerStatesProperty)
@@ -412,7 +468,7 @@ public sealed class HouseCanvas : Control
             Point apex = ToControl(image, segment.PositionOf(index));
             LayoutPoint aim = fixture.AimFrom(DirectionInPixels(image, segment, t));
 
-            RgbColor color = appearance.ColorAt(t);
+            RgbColor color = appearance.ColorAt(t, FixtureSpan(segment));
 
             foreach ((double angleScale, double alphaScale) in layers)
             {
@@ -580,8 +636,10 @@ public sealed class HouseCanvas : Control
         {
             Point at = ToControl(image, segment.PositionOf(index));
 
-            // Sampled per LED, so a run on a palette shows the palette rather than one flat color.
-            RgbColor color = appearance.ColorAt(PositionFraction(segment, index));
+            // Sampled across the LEDs this fixture stands for, so a run on a palette shows the
+            // palette and an effect that lights a scattered few still registers.
+            RgbColor color = appearance.ColorAt(
+                PositionFraction(segment, index), FixtureSpan(segment));
 
             // Two passes: a soft halo, then the pixel itself. Reads like a light at night rather
             // than a dot on a diagram.
@@ -609,7 +667,7 @@ public sealed class HouseCanvas : Control
         // Each short piece takes its own color, so a palette gradient runs along the rope.
         for (int i = 0; i < Samples; i++)
         {
-            RgbColor color = appearance.ColorAt(i / (double)Samples);
+            RgbColor color = appearance.ColorAt(i / (double)Samples, 1d / Samples);
             var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
             {
                 LineCap = PenLineCap.Round,
@@ -620,7 +678,7 @@ public sealed class HouseCanvas : Control
 
         for (int i = 0; i < Samples; i++)
         {
-            RgbColor color = appearance.ColorAt(i / (double)Samples);
+            RgbColor color = appearance.ColorAt(i / (double)Samples, 1d / Samples);
             var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
             {
                 LineCap = PenLineCap.Round,
@@ -675,6 +733,19 @@ public sealed class HouseCanvas : Control
     /// </summary>
     private static IEnumerable<int> FixtureIndices(Segment segment)
     {
+        int step = FixtureStep(segment);
+
+        for (int i = 0; i < segment.Count; i += step)
+        {
+            yield return i;
+        }
+    }
+
+    /// <summary>
+    /// How many LEDs each drawn fixture stands for, which is more than one on a long run.
+    /// </summary>
+    private static int FixtureStep(Segment segment)
+    {
         int step = Math.Max(1, segment.Fixture.VisibleEvery);
         int drawn = (segment.Count + step - 1) / step;
 
@@ -683,11 +754,19 @@ public sealed class HouseCanvas : Control
             step *= (int)Math.Ceiling(drawn / (double)MaxFixturesPerSegment);
         }
 
-        for (int i = 0; i < segment.Count; i += step)
-        {
-            yield return i;
-        }
+        return step;
     }
+
+    /// <summary>
+    /// The stretch of a run one drawn fixture covers, as a fraction of the whole.
+    /// <para>
+    /// Only interesting when a run is drawn with fewer fixtures than it has LEDs. Reading a single
+    /// LED for each of them silently drops an effect that lights a scattered few - the dots land
+    /// between the samples and the run looks dark.
+    /// </para>
+    /// </summary>
+    private static double FixtureSpan(Segment segment) =>
+        segment.Count < 1 ? 0 : FixtureStep(segment) / (double)segment.Count;
 
     private static double PositionFraction(Segment segment, int index) =>
         segment.Count <= 1 ? 0 : Math.Clamp(index / (double)(segment.Count - 1), 0, 1);
@@ -735,11 +814,48 @@ public sealed class HouseCanvas : Control
         WledSegment? Wled,
         double Scale,
         double Phase,
-        IReadOnlyDictionary<int, WledPalette>? Palettes = null)
+        IReadOnlyDictionary<int, WledPalette>? Palettes = null,
+        EffectSimulation? Simulation = null)
     {
-        /// <summary>The color at a fraction along the run, which a palette makes vary.</summary>
-        public RgbColor ColorAt(double t)
+        /// <summary>
+        /// The color a fraction along the run, optionally averaged over the stretch of it that one
+        /// sample covers.
+        /// </summary>
+        /// <param name="span">
+        /// How much of the run this sample stands for, as a fraction. Zero reads a single LED,
+        /// which is right when every LED is being drawn. Drawing a diffused run takes fewer
+        /// samples than there are LEDs, and reading one LED out of every three would lose an
+        /// effect that lights a few at a time - a flock of single dots would mostly land between
+        /// the samples and vanish. Averaging is also what the diffuser itself does.
+        /// </param>
+        public RgbColor ColorAt(double t, double span = 0)
         {
+            // An effect we can actually run has already decided what every LED is showing, so
+            // there is nothing to approximate: read the pixels.
+            if (Simulation is { } running)
+            {
+                RgbColor[] pixels = running.Segment.Pixels;
+                int last = pixels.Length - 1;
+
+                int from = Math.Clamp((int)((t - (span / 2)) * last), 0, last);
+                int to = Math.Clamp((int)Math.Ceiling((t + (span / 2)) * last), from, last);
+
+                int r = 0, g = 0, b = 0;
+                for (int i = from; i <= to; i++)
+                {
+                    r += pixels[i].R;
+                    g += pixels[i].G;
+                    b += pixels[i].B;
+                }
+
+                int count = to - from + 1;
+
+                return new RgbColor(
+                    (byte)(r / count * Scale),
+                    (byte)(g / count * Scale),
+                    (byte)(b / count * Scale));
+            }
+
             if (Wled?.Palette is not { } index || index == 0 ||
                 Palettes is null || !Palettes.TryGetValue(index, out WledPalette? palette))
             {
@@ -783,6 +899,8 @@ public sealed class HouseCanvas : Control
             return new RunAppearance(false, new RgbColor(40, 42, 48), null, 1, 0);
         }
 
+        // Named here so the simulation lookup below reads as being about this run's controller.
+
         RgbColor color = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.White;
 
         // Fold master and segment brightness into the preview so a dimmed strip looks dimmed.
@@ -796,8 +914,62 @@ public sealed class HouseCanvas : Control
         bool hasPalette = wled.Palette is > 0;
         bool isLit = hasPalette ? scale > 0.05 : scaled.R + scaled.G + scaled.B > 12;
 
+        EffectSimulation? running = SimulationFor(segment, wled, key);
+
+        // A drawn effect decides for itself whether a pixel is lit, and the flock in Chunchun
+        // leaves most of the run dark at any instant. Trust the brightness, not the pixels.
         return new RunAppearance(
-            isLit, scaled, wled, scale, PhaseFor(wled), PalettesOn(segment.ControllerKey));
+            isLit, scaled, wled, scale, PhaseFor(wled),
+            PalettesOn(segment.ControllerKey), running);
+    }
+
+    /// <summary>
+    /// The running copy of this run's effect, started if this is the first sight of it and
+    /// restarted if anything it reads has changed. Null when the effect is not one we can draw.
+    /// </summary>
+    private EffectSimulation? SimulationFor(Segment segment, WledSegment wled, string controllerKey)
+    {
+        if (segment.Id is not { Length: > 0 } id || segment.Count < 1)
+        {
+            return null;
+        }
+
+        string signature = string.Join(
+            '/',
+            wled.Effect, wled.Palette, wled.Speed, wled.Intensity, segment.Count,
+            wled.Colors is { Length: > 0 } ? wled.PrimaryColor.ToHex() : "-",
+            wled.Colors is { Length: > 1 } ? wled.SecondaryColor.ToHex() : "-");
+
+        if (_running.TryGetValue(id, out (string Signature, EffectSimulation Simulation) existing))
+        {
+            if (existing.Signature == signature)
+            {
+                return existing.Simulation;
+            }
+
+            _running.Remove(id);
+        }
+
+        WledPalette? palette = wled.Palette is { } paletteId
+            ? PalettesOn(controllerKey)?.GetValueOrDefault(paletteId)
+            : null;
+
+        EffectSimulation? started = EffectLibrary.Simulate(
+            wled,
+            segment.Count,
+            EffectNames?.GetValueOrDefault(controllerKey),
+            palette,
+            FrameTimes?.GetValueOrDefault(controllerKey) is > 0 and { } frame
+                ? frame
+                : EffectSimulation.DefaultFrameMilliseconds);
+
+        if (started is null)
+        {
+            return null;
+        }
+
+        _running[id] = (signature, started);
+        return started;
     }
 
     /// <summary>
