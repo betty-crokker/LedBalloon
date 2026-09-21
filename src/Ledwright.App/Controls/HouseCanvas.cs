@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Ledwright.Core;
 using Ledwright.Core.Layout;
 using Ledwright.Core.Models;
 
@@ -56,6 +57,16 @@ public sealed class HouseCanvas : Control
         AvaloniaProperty.Register<HouseCanvas, bool>(nameof(IsDrawing));
 
     /// <summary>
+    /// Palette gradients, read from the controller.
+    /// <para>
+    /// Without them a run using a palette draws in its primary color alone, which for a red,
+    /// white and blue preset means solid red.
+    /// </para>
+    /// </summary>
+    public static readonly StyledProperty<IReadOnlyDictionary<int, WledPalette>?> PalettesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<int, WledPalette>?>(nameof(Palettes));
+
+    /// <summary>
     /// Bumped by the view model when segments are added or removed. Property changes on a segment
     /// are watched directly, but the list itself is a plain list, so structural edits need a nudge.
     /// </summary>
@@ -71,7 +82,7 @@ public sealed class HouseCanvas : Control
     {
         AffectsRender<HouseCanvas>(
             PhotoProperty, ProjectProperty, SelectedSegmentProperty, ControllerStatesProperty,
-            IsDrawingProperty, LayoutRevisionProperty);
+            IsDrawingProperty, LayoutRevisionProperty, PalettesProperty);
     }
 
     public Bitmap? Photo
@@ -103,6 +114,12 @@ public sealed class HouseCanvas : Control
     {
         get => GetValue(IsDrawingProperty);
         set => SetValue(IsDrawingProperty, value);
+    }
+
+    public IReadOnlyDictionary<int, WledPalette>? Palettes
+    {
+        get => GetValue(PalettesProperty);
+        set => SetValue(PalettesProperty, value);
     }
 
     public int LayoutRevision
@@ -309,10 +326,10 @@ public sealed class HouseCanvas : Control
     /// </summary>
     private void DrawAimedWash(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        (RgbColor color, bool isLit) = ResolveAppearance(project, segment);
+        RunAppearance appearance = ResolveAppearance(project, segment);
 
         // An unlit fixture throws nothing. Washing the wall in dark gray only muddies the photo.
-        if (!isLit)
+        if (!appearance.IsLit)
         {
             return;
         }
@@ -336,6 +353,8 @@ public sealed class HouseCanvas : Control
             double t = PositionFraction(segment, index);
             Point apex = ToControl(image, segment.PositionOf(index));
             LayoutPoint aim = fixture.AimFrom(DirectionInPixels(image, segment, t));
+
+            RgbColor color = appearance.ColorAt(t, Palettes);
 
             foreach ((double angleScale, double alphaScale) in layers)
             {
@@ -398,12 +417,12 @@ public sealed class HouseCanvas : Control
     /// <summary>Draws the fixtures themselves, which is all you see of some kinds and all of others.</summary>
     private void DrawEmitters(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        (RgbColor color, bool isLit) = ResolveAppearance(project, segment);
+        RunAppearance appearance = ResolveAppearance(project, segment);
         bool isSelected = ReferenceEquals(segment, SelectedSegment);
 
-        DrawRunOutline(context, image, segment, isSelected, isLit);
+        DrawRunOutline(context, image, segment, isSelected, appearance.IsLit);
 
-        if (segment.Count <= 0 || !isLit)
+        if (segment.Count <= 0 || !appearance.IsLit)
         {
             DrawLabel(context, ToControl(image, segment.PointAlongPath(0.5)), segment, isSelected);
 
@@ -418,17 +437,17 @@ public sealed class HouseCanvas : Control
         switch (segment.Fixture.Style)
         {
             case FixtureStyle.DiffusedStrip:
-                DrawDiffusedRun(context, image, segment, color);
+                DrawDiffusedRun(context, image, segment, appearance);
                 break;
 
             case FixtureStyle.Downlight:
             case FixtureStyle.Uplight:
                 // The lens is a small bright point; the wall does the talking.
-                DrawPoints(context, image, segment, color, coreRadius: 1.6, haloRadius: 3.5, haloAlpha: 60);
+                DrawPoints(context, image, segment, appearance, coreRadius: 1.6, haloRadius: 3.5, haloAlpha: 60);
                 break;
 
             default:
-                DrawPoints(context, image, segment, color, coreRadius: 2.0, haloRadius: 5.5, haloAlpha: 70);
+                DrawPoints(context, image, segment, appearance, coreRadius: 2.0, haloRadius: 5.5, haloAlpha: 70);
                 break;
         }
 
@@ -494,27 +513,31 @@ public sealed class HouseCanvas : Control
         DrawingContext context,
         Rect image,
         Segment segment,
-        RgbColor color,
+        RunAppearance appearance,
         double coreRadius,
         double haloRadius,
         byte haloAlpha)
     {
-        var core = new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B));
-        var halo = new SolidColorBrush(Color.FromArgb(haloAlpha, color.R, color.G, color.B));
-
         foreach (int index in FixtureIndices(segment))
         {
             Point at = ToControl(image, segment.PositionOf(index));
 
+            // Sampled per LED, so a run on a palette shows the palette rather than one flat color.
+            RgbColor color = appearance.ColorAt(PositionFraction(segment, index), Palettes);
+
             // Two passes: a soft halo, then the pixel itself. Reads like a light at night rather
             // than a dot on a diagram.
-            context.DrawEllipse(halo, null, at, haloRadius, haloRadius);
-            context.DrawEllipse(core, null, at, coreRadius, coreRadius);
+            context.DrawEllipse(
+                new SolidColorBrush(Color.FromArgb(haloAlpha, color.R, color.G, color.B)),
+                null, at, haloRadius, haloRadius);
+            context.DrawEllipse(
+                new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)),
+                null, at, coreRadius, coreRadius);
         }
     }
 
     /// <summary>A continuous glowing line, for rope and diffused channel where no pixel is visible.</summary>
-    private void DrawDiffusedRun(DrawingContext context, Rect image, Segment segment, RgbColor color)
+    private void DrawDiffusedRun(DrawingContext context, Rect image, Segment segment, RunAppearance appearance)
     {
         // Sampled finely rather than per-LED: the whole point of diffusion is that you cannot see
         // where one LED ends and the next begins.
@@ -525,25 +548,26 @@ public sealed class HouseCanvas : Control
             points[i] = ToControl(image, segment.PointAlongPath(i / (double)Samples));
         }
 
-        var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
-        {
-            LineCap = PenLineCap.Round,
-            LineJoin = PenLineJoin.Round,
-        };
-
-        var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
-        {
-            LineCap = PenLineCap.Round,
-            LineJoin = PenLineJoin.Round,
-        };
-
+        // Each short piece takes its own color, so a palette gradient runs along the rope.
         for (int i = 0; i < Samples; i++)
         {
+            RgbColor color = appearance.ColorAt(i / (double)Samples, Palettes);
+            var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
+            {
+                LineCap = PenLineCap.Round,
+            };
+
             context.DrawLine(glow, points[i], points[i + 1]);
         }
 
         for (int i = 0; i < Samples; i++)
         {
+            RgbColor color = appearance.ColorAt(i / (double)Samples, Palettes);
+            var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
+            {
+                LineCap = PenLineCap.Round,
+            };
+
             context.DrawLine(body, points[i], points[i + 1]);
         }
     }
@@ -646,7 +670,32 @@ public sealed class HouseCanvas : Control
     /// near-black dots, which is to say invisible.
     /// </para>
     /// </summary>
-    private (RgbColor Color, bool IsLit) ResolveAppearance(LedwrightProject project, Segment segment)
+    /// <summary>How one run currently looks, including how its color varies along its length.</summary>
+    private sealed record RunAppearance(bool IsLit, RgbColor Flat, WledSegment? Wled, double Scale)
+    {
+        /// <summary>The color at a fraction along the run, which a palette makes vary.</summary>
+        public RgbColor ColorAt(double t, IReadOnlyDictionary<int, WledPalette>? palettes)
+        {
+            if (Wled?.Palette is not { } index || index == 0 ||
+                palettes is null || !palettes.TryGetValue(index, out WledPalette? palette))
+            {
+                return Flat;
+            }
+
+            RgbColor color = palette.ColorAt(
+                t,
+                Wled.Colors is { Length: > 0 } ? Wled.PrimaryColor : RgbColor.White,
+                Wled.Colors is { Length: > 1 } ? Wled.SecondaryColor : RgbColor.Black,
+                Wled.Colors is { Length: > 2 } ? RgbColor.FromWledArray(Wled.Colors[2]) : RgbColor.Black);
+
+            return new RgbColor(
+                (byte)(color.R * Scale),
+                (byte)(color.G * Scale),
+                (byte)(color.B * Scale));
+        }
+    }
+
+    private RunAppearance ResolveAppearance(LedwrightProject project, Segment segment)
     {
         if (ControllerStates is not { } states ||
             segment.ControllerKey is not { } key ||
@@ -654,7 +703,7 @@ public sealed class HouseCanvas : Control
             state.Segments is not { } segments)
         {
             // Nothing known about it yet: show where it is, do not pretend to know its color.
-            return (new RgbColor(120, 120, 130), false);
+            return new RunAppearance(false, new RgbColor(120, 120, 130), null, 1);
         }
 
         int segmentId = project.WledSegmentIdFor(segment);
@@ -662,10 +711,10 @@ public sealed class HouseCanvas : Control
 
         if (wled is null || wled.On == false || state.On == false)
         {
-            return (new RgbColor(40, 42, 48), false);
+            return new RunAppearance(false, new RgbColor(40, 42, 48), null, 1);
         }
 
-        RgbColor color = wled.PrimaryColor;
+        RgbColor color = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.White;
 
         // Fold master and segment brightness into the preview so a dimmed strip looks dimmed.
         double scale = (state.Brightness ?? 255) / 255d * ((wled.Brightness ?? 255) / 255d);
@@ -674,9 +723,11 @@ public sealed class HouseCanvas : Control
             (byte)(color.G * scale),
             (byte)(color.B * scale));
 
-        // Dimmed to nothing is off as far as the eye is concerned.
-        bool isLit = scaled.R + scaled.G + scaled.B > 12;
-        return (scaled, isLit);
+        // A run on a palette is lit even when its primary color happens to be dark.
+        bool hasPalette = wled.Palette is > 0;
+        bool isLit = hasPalette ? scale > 0.05 : scaled.R + scaled.G + scaled.B > 12;
+
+        return new RunAppearance(isLit, scaled, wled, scale);
     }
 
     private static void DrawLabel(DrawingContext context, Point at, Segment segment, bool isSelected)
