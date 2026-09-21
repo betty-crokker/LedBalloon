@@ -5,6 +5,7 @@
         xmlns:conv="using:Avalonia.Data.Converters"
         xmlns:vm="using:Ledwright.App.ViewModels"
         xmlns:ctrl="using:Ledwright.App.Controls"
+        xmlns:layout="using:Ledwright.Core.Layout"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="820"
         x:Class="Ledwright.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -297,66 +298,73 @@
                              Text="Pick a run in the list above to rename it, change its length, or remove it." />
                 </Border>
 
-                <Border Classes="card"
-                        IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
-                  <StackPanel Spacing="6">
-                    <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                      <Run Text="Editing:" /><Run Text=" " /><Run Text="{Binding SelectedSegment.Name}" />
-                    </TextBlock>
+              <!-- The editor is a template over the selected run, not a panel that hides itself.
+                   IsVisible="False" still binds its children, so every field here evaluated
+                   against a null segment whenever nothing was selected and logged a binding
+                   error. With a template, no selection means nothing is built at all. -->
+              <ContentControl Content="{Binding SelectedSegment}">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate DataType="layout:Segment">
+                    <Border Classes="card">
+                      <StackPanel Spacing="6">
+                        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
+                          <Run Text="Editing:" /><Run Text=" " /><Run Text="{Binding Name}" />
+                        </TextBlock>
 
-                    <TextBlock Classes="hint" Text="Name" />
-                    <TextBox Text="{Binding SelectedSegment.Name}" />
+                        <TextBlock Classes="hint" Text="Name" />
+                        <TextBox Text="{Binding Name}" />
 
-                    <Grid ColumnDefinitions="*,8,*">
-                      <StackPanel Grid.Column="0" Spacing="4">
-                        <TextBlock Classes="hint" Text="LEDs" />
-                        <TextBox Text="{Binding SelectedSegment.Count}" />
+                        <Grid ColumnDefinitions="*,8,*">
+                          <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Classes="hint" Text="LEDs" />
+                            <TextBox Text="{Binding Count}" />
+                          </StackPanel>
+                          <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Classes="hint" Text="Starts at" />
+                            <TextBox Text="{Binding Start}" />
+                          </StackPanel>
+                        </Grid>
+
+                        <TextBlock Classes="hint" Text="What kind of light" />
+                        <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).FixtureStyles}"
+                                  SelectedItem="{Binding $parent[Window].((vm:MainViewModel)DataContext).FixtureChoice}"
+                                  PlaceholderText="Pick a fixture"
+                                  HorizontalAlignment="Stretch" />
+
+                        <StackPanel Spacing="4" IsVisible="{Binding Fixture.IsAimed}">
+                          <TextBlock Classes="hint" Text="Beam spread" />
+                          <Slider Minimum="10" Maximum="160" Value="{Binding Fixture.BeamAngleDegrees}" />
+                          <TextBlock Classes="hint" Text="How far it reaches" />
+                          <Slider Minimum="0.02" Maximum="0.6" Value="{Binding Fixture.ThrowLength}" />
+                          <CheckBox Content="Aim the other way" IsChecked="{Binding Fixture.FlipAim}" />
+                        </StackPanel>
+
+                        <TextBlock Classes="hint" Text="A lens every N LEDs" />
+                        <TextBox Text="{Binding Fixture.VisibleEvery}" />
+
+                        <Button Classes="block" Content="Flip which end is LED 1"
+                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FlipSegmentDirectionCommand}" />
+                        <Button Classes="block" Content="Trace it on the photo"
+                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RedrawSegmentCommand}" />
+                        <TextBlock Classes="hint" Foreground="#C9821B"
+                                   IsVisible="{Binding !HasGeometry}"
+                                   Text="This run has no line on the photo yet, so it cannot be shown or clicked there." />
+
+                        <TextBlock Classes="hint" Text="Driven by" />
+                        <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).Devices}"
+                                  SelectedItem="{Binding $parent[Window].((vm:MainViewModel)DataContext).SegmentController}"
+                                  DisplayMemberBinding="{Binding DisplayName}"
+                                  PlaceholderText="Not assigned"
+                                  HorizontalAlignment="Stretch" />
+
+                        <Button Classes="block" Content="Remove this segment"
+                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DeleteSegmentCommand}"
+                                Margin="0,4,0,0" />
                       </StackPanel>
-                      <StackPanel Grid.Column="2" Spacing="4">
-                        <TextBlock Classes="hint" Text="Starts at" />
-                        <TextBox Text="{Binding SelectedSegment.Start}" />
-                      </StackPanel>
-                    </Grid>
-
-                    <TextBlock Classes="hint" Text="What kind of light" />
-                    <ComboBox ItemsSource="{Binding FixtureStyles}"
-                              SelectedItem="{Binding FixtureChoice}"
-                              PlaceholderText="Pick a fixture"
-                              HorizontalAlignment="Stretch" />
-
-                    <StackPanel Spacing="4" IsVisible="{Binding SelectedSegment.Fixture.IsAimed}">
-                      <TextBlock Classes="hint" Text="Beam spread" />
-                      <Slider Minimum="10" Maximum="160"
-                              Value="{Binding SelectedSegment.Fixture.BeamAngleDegrees}" />
-                      <TextBlock Classes="hint" Text="How far it reaches" />
-                      <Slider Minimum="0.02" Maximum="0.6"
-                              Value="{Binding SelectedSegment.Fixture.ThrowLength}" />
-                      <CheckBox Content="Aim the other way"
-                                IsChecked="{Binding SelectedSegment.Fixture.FlipAim}" />
-                    </StackPanel>
-
-                    <TextBlock Classes="hint" Text="A lens every N LEDs" />
-                    <TextBox Text="{Binding SelectedSegment.Fixture.VisibleEvery}" />
-
-                    <Button Classes="block" Content="Flip which end is LED 1"
-                            Command="{Binding FlipSegmentDirectionCommand}" />
-                    <Button Classes="block" Content="Trace it on the photo"
-                            Command="{Binding RedrawSegmentCommand}" />
-                    <TextBlock Classes="hint" Foreground="#C9821B"
-                               IsVisible="{Binding SelectedSegmentNeedsDrawing}"
-                               Text="This run has no line on the photo yet, so it cannot be shown or clicked there." />
-
-                    <TextBlock Classes="hint" Text="Driven by" />
-                    <ComboBox ItemsSource="{Binding Devices}"
-                              SelectedItem="{Binding SegmentController}"
-                              DisplayMemberBinding="{Binding DisplayName}"
-                              PlaceholderText="Not assigned"
-                              HorizontalAlignment="Stretch" />
-
-                    <Button Classes="block" Content="Remove this segment"
-                            Command="{Binding DeleteSegmentCommand}" Margin="0,4,0,0" />
-                  </StackPanel>
-                </Border>
+                    </Border>
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
 
                 <Button Classes="block" Content="Add a segment" Command="{Binding AddSegmentCommand}" />
                 <Button Classes="block" Content="Re-lay end to end" Command="{Binding RepackSegmentsCommand}" />
