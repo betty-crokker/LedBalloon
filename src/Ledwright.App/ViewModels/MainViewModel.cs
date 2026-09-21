@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -39,6 +39,22 @@ public enum AppMode
     /// <summary>Controllers, runs, lengths and geometry.</summary>
     Setup,
 }
+
+/// <summary>
+/// What a preset does to one run, in words rather than numbers.
+/// <para>
+/// A preset name says nothing about what it looks like. These are the four things worth knowing
+/// before sending it to the house: which run, what pattern, what colors, and how it moves.
+/// </para>
+/// </summary>
+public sealed record PresetDetail(
+    string RunName,
+    string Pattern,
+    string Palette,
+    string Motion,
+    IBrush PrimarySwatch,
+    IBrush SecondarySwatch,
+    bool HasSecondary);
 
 /// <summary>A fixture style with wording that means something to whoever hung the lights.</summary>
 public sealed record FixtureChoice(FixtureStyle Style, string Name, string Description)
@@ -87,6 +103,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>The color of whatever is selected, or of the whole house when nothing is.</summary>
     [ObservableProperty] private Color _pickedColor = Colors.White;
+
+    /// <summary>The preset being looked at, which is not the same as one being used.</summary>
+    [ObservableProperty] private HousePreset? _previewPreset;
     [ObservableProperty] private byte[]? _photoBytes;
 
     /// <summary>Set when the layout expects a photo this machine has never seen.</summary>
@@ -534,6 +553,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 Step("Reading the layout from the controllers");
             }
 
+            await LoadPalettesAsync();
+
             // The controllers hold the layout, so a fresh machine finds the house already described.
             await LoadProjectAsync();
 
@@ -878,8 +899,33 @@ public sealed partial class MainViewModel : ViewModelBase
 
     // ---- Lights ---------------------------------------------------------------------------------
 
-    /// <summary>Recalls a preset on every controller that stores it.</summary>
+    /// <summary>
+    /// Shows what a preset would look like, without touching the lights.
+    /// <para>
+    /// Picking one from a list is browsing, not committing. Sending it immediately means you
+    /// cannot look through what you have while the family is sitting under it, and it makes
+    /// choosing a preset for later use impossible.
+    /// </para>
+    /// </summary>
     [RelayCommand]
+    private void PreviewPresetOnPhoto(HousePreset? preset)
+    {
+        PreviewPreset = preset;
+
+        Status = preset is null
+            ? "Showing what the lights are actually doing."
+            : $"Previewing '{preset.Name}' on the photo. The lights have not changed — press Apply to send it.";
+    }
+
+    /// <summary>Stops previewing and goes back to showing what the lights are really doing.</summary>
+    [RelayCommand]
+    private void StopPreview() => PreviewPresetOnPhoto(null);
+
+    /// <summary>Recalls the previewed preset on every controller that stores it.</summary>
+    [RelayCommand]
+    private Task ApplyPreviewAsync() => ApplyPresetAsync(PreviewPreset);
+
+    /// <summary>Recalls a preset on every controller that stores it.</summary>
     private async Task ApplyPresetAsync(HousePreset? preset)
     {
         if (preset is null)
@@ -887,28 +933,147 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        IsBusy = true;
+
         try
         {
-            int sent = 0;
             foreach (PresetPlacement placement in preset.Placements)
             {
                 if (DeviceFor(placement.ControllerKey) is { } device)
                 {
                     await device.Device.ApplyNowAsync(new WledState { Preset = placement.Slot });
-                    sent++;
                 }
             }
 
-            Status = preset.IsPartial(Devices.Count)
-                ? $"Applied '{preset.Name}' to {sent} of {Devices.Count} controllers. " +
-                  "The rest of the house kept what it was showing."
-                : $"Applied '{preset.Name}'.";
+            // Controllers that never had this preset get it now, because "apply" means the house,
+            // not the half of it that happens to store the preset.
+            List<string> copied = await CopyToMissingControllersAsync(preset);
+
+            if (copied.Count > 0)
+            {
+                RefreshPresetSelection(preset.Name);
+            }
+
+            // Back to showing reality now that reality is what was asked for.
+            PreviewPreset = null;
+
+            Status = copied.Count == 0
+                ? $"Applied '{preset.Name}'."
+                : $"Applied '{preset.Name}', copying it to {string.Join(", ", copied)} on the way.";
         }
         catch (Exception ex)
         {
             Status = $"Could not apply the preset: {ex.Message}";
         }
+        finally
+        {
+            IsBusy = false;
+        }
     }
+
+    /// <summary>
+    /// Stores <paramref name="preset"/> on the controllers that lack it and recalls it there,
+    /// returning what was written and where.
+    /// <para>
+    /// Written into each target's preset file rather than saved through the lights, so the copy
+    /// itself changes nothing; the recall that follows is what lights the run.
+    /// </para>
+    /// </summary>
+    private async Task<List<string>> CopyToMissingControllersAsync(HousePreset preset)
+    {
+        var copied = new List<string>();
+
+        if (preset.IsPlaylist || !preset.IsPartial(Devices.Count))
+        {
+            return copied;
+        }
+
+        // The placement worth copying is one that actually describes segments; a preset can be
+        // stored on a controller as little more than a name.
+        PresetPlacement? source =
+            preset.Placements.FirstOrDefault(p => p.Preset.Segments is { Count: > 0 }) ??
+            preset.Placements.FirstOrDefault();
+
+        if (source is null)
+        {
+            return copied;
+        }
+
+        foreach (DeviceViewModel target in CopyTargets(preset))
+        {
+            if (target.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            Status = $"'{preset.Name}' is not on {target.DisplayName} yet — copying it there...";
+
+            WledPreset copy = PresetCopier.BuildFor(source.Preset, Project, key, preset.Name);
+            int slot = await PresetCopier.StoreAsync(target.Host, copy);
+
+            await target.Device.RefreshPresetsAsync();
+            await target.Device.ApplyNowAsync(new WledState { Preset = slot });
+
+            copied.Add($"{target.DisplayName} (slot {slot})");
+        }
+
+        return copied;
+    }
+
+    /// <summary>
+    /// Re-points the list at the merged entry that replaced <paramref name="name"/>, so it reads as
+    /// covering the whole house once it does.
+    /// </summary>
+    private void RefreshPresetSelection(string name)
+    {
+        RebuildPresetCatalog();
+
+        if (Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
+            is { } refreshed)
+        {
+            SelectedPreset = refreshed;
+        }
+    }
+
+    /// <summary>
+    /// Which controllers store the previewed preset, said in terms of the house rather than of
+    /// hardware.
+    /// </summary>
+    public string PreviewCoverage
+    {
+        get
+        {
+            if (PreviewPreset is not { } preset)
+            {
+                return string.Empty;
+            }
+
+            if (!preset.IsPartial(Devices.Count))
+            {
+                return "Stored on every controller, so it lights the whole house.";
+            }
+
+            string[] have = [.. preset.Placements
+                .Select(p => DeviceFor(p.ControllerKey)?.DisplayName)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Select(n => n!)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)];
+
+            string names = have.Length > 0 ? string.Join(" and ", have) : "one controller";
+
+            return $"Only stored on {names} right now. Applying it copies it to the others so the whole house matches.";
+        }
+    }
+
+    /// <summary>
+    /// Controllers that do not store the preset and have runs drawn on them, so there is somewhere
+    /// for the copy to land.
+    /// </summary>
+    private List<DeviceViewModel> CopyTargets(HousePreset preset) =>
+        [.. Devices.Where(d =>
+            d.DeviceKey is { } key &&
+            !preset.Placements.Any(p => string.Equals(p.ControllerKey, key, StringComparison.OrdinalIgnoreCase)) &&
+            Project.SegmentsOn(key).Count > 0)];
 
     partial void OnMasterOnChanged(bool value)
     {
@@ -964,8 +1129,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// reaches the hardware.
     /// </para>
     /// </summary>
+    /// <summary>The picked color as a brush, for the swatch that opens the picker.</summary>
+    public IBrush PickedBrush => new SolidColorBrush(PickedColor);
+
     partial void OnPickedColorChanged(Color value)
     {
+        OnPropertyChanged(nameof(PickedBrush));
+
         if (_suppressPush)
         {
             return;
@@ -1536,5 +1706,164 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         ControllerStates = states;
+        OnPropertyChanged(nameof(DisplayStates));
+    }
+
+    /// <summary>
+    /// What the photo draws: the preset being previewed if there is one, otherwise the lights as
+    /// they actually are.
+    /// </summary>
+    public IReadOnlyDictionary<string, WledState> DisplayStates => _previewStates ?? ControllerStates;
+
+    public bool IsPreviewing => PreviewPreset is not null;
+
+    /// <summary>What the previewed preset does, run by run.</summary>
+    public ObservableCollection<PresetDetail> PreviewDetails { get; } = [];
+
+    /// <summary>
+    /// Palette gradients read off a controller, so the photo can draw a run that uses one.
+    /// </summary>
+    [ObservableProperty] private IReadOnlyDictionary<int, WledPalette>? _palettes;
+
+    /// <summary>
+    /// Reads the palette gradients once, from whichever controller answers.
+    /// <para>
+    /// They are firmware data and identical across identical builds, so one controller is enough.
+    /// </para>
+    /// </summary>
+    private async Task LoadPalettesAsync()
+    {
+        foreach (DeviceViewModel device in Devices)
+        {
+            try
+            {
+                IReadOnlyDictionary<int, WledPalette> loaded =
+                    await WledPalettes.LoadAsync(device.Host);
+
+                if (loaded.Count > 0)
+                {
+                    Palettes = loaded;
+                    return;
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // Try the next controller; the preview falls back to flat color without them.
+            }
+        }
+    }
+
+    private IReadOnlyDictionary<string, WledState>? _previewStates;
+
+    partial void OnPreviewPresetChanged(HousePreset? value)
+    {
+        _previewStates = value is null ? null : BuildPreviewStates(value);
+
+        RebuildPreviewDetails(value);
+
+        OnPropertyChanged(nameof(DisplayStates));
+        OnPropertyChanged(nameof(IsPreviewing));
+        OnPropertyChanged(nameof(PreviewCoverage));
+    }
+
+    /// <summary>
+    /// Turns a stored preset into the same per-controller shape the photo already draws from, so a
+    /// preview costs nothing more than pointing the canvas at different data.
+    /// </summary>
+    private static Dictionary<string, WledState> BuildPreviewStates(HousePreset preset)
+    {
+        var states = new Dictionary<string, WledState>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (PresetPlacement placement in preset.Placements)
+        {
+            states[placement.ControllerKey] = new WledState
+            {
+                On = placement.Preset.On ?? true,
+                Brightness = placement.Preset.Brightness ?? 255,
+                Segments = placement.Preset.Segments,
+            };
+        }
+
+        return states;
+    }
+
+    private void RebuildPreviewDetails(HousePreset? preset)
+    {
+        PreviewDetails.Clear();
+
+        if (preset is null)
+        {
+            return;
+        }
+
+        foreach (PresetPlacement placement in preset.Placements)
+        {
+            DeviceViewModel? device = DeviceFor(placement.ControllerKey);
+
+            foreach (Segment run in Project.SegmentsOn(placement.ControllerKey))
+            {
+                int segmentId = Project.WledSegmentIdFor(run);
+                WledSegment? wled = placement.Preset.Segments?
+                    .FirstOrDefault(s => s.Id == segmentId && !s.IsPlaceholder);
+
+                if (wled is null)
+                {
+                    continue;
+                }
+
+                PreviewDetails.Add(Describe(run, wled, device));
+            }
+        }
+    }
+
+    private static PresetDetail Describe(Segment run, WledSegment wled, DeviceViewModel? device)
+    {
+        string pattern = wled.Effect is { } fx
+            ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
+            : "unchanged";
+
+        string palette = wled.Palette is { } pal
+            ? device is not null && pal < device.Palettes.Count ? device.Palettes[pal] : $"Palette {pal}"
+            : "—";
+
+        RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
+        RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
+
+        return new PresetDetail(
+            run.Name,
+            pattern,
+            palette,
+            DescribeMotion(wled),
+            new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
+            new SolidColorBrush(Color.FromRgb(secondary.R, secondary.G, secondary.B)),
+            wled.Colors is { Length: > 1 } && secondary is not { R: 0, G: 0, B: 0 });
+    }
+
+    /// <summary>Turns WLED's speed and intensity numbers into something you can picture.</summary>
+    private static string DescribeMotion(WledSegment wled)
+    {
+        if (wled.Effect is 0 or null)
+        {
+            return "still";
+        }
+
+        string speed = wled.Speed switch
+        {
+            null => "unchanged pace",
+            < 48 => "drifting",
+            < 110 => "gentle",
+            < 190 => "brisk",
+            _ => "fast",
+        };
+
+        string amount = wled.Intensity switch
+        {
+            null => string.Empty,
+            < 64 => ", sparse",
+            < 160 => string.Empty,
+            _ => ", busy",
+        };
+
+        return speed + amount;
     }
 }

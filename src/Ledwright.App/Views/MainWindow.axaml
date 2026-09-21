@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -132,8 +132,9 @@
           </DockPanel>
         </Border>
 
-        <!-- Color, for whatever is selected -->
-        <Border DockPanel.Dock="Right" Width="320" Padding="14"
+        <!-- Color and presets. Wider than the setup sidebar, because a preset needs describing
+             and the photo only has to be big enough to read. -->
+        <Border DockPanel.Dock="Right" Width="420" Padding="14"
                 Background="{DynamicResource PanelBackground}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1,0,0,0">
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
@@ -147,12 +148,85 @@
                       Command="{Binding SelectWholeHouseCommand}"
                       IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
 
-              <ColorView Color="{Binding PickedColor}"
-                         IsAlphaEnabled="False"
-                         IsColorPaletteVisible="True"
-                         IsColorComponentsVisible="False"
-                         HorizontalAlignment="Stretch"
-                         Margin="0,6,0,0" />
+              <TextBlock Classes="heading" Text="Presets" />
+              <TextBlock Classes="hint"
+                         Text="Every preset on every controller, in one list — it does not matter which one stores it. Choosing one shows it on the photo; the lights do not change until you apply it." />
+
+              <ComboBox ItemsSource="{Binding Presets}"
+                        SelectedItem="{Binding PreviewPreset}"
+                        DisplayMemberBinding="{Binding Name}"
+                        PlaceholderText="Pick a preset to look at"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,4,0,0" />
+
+              <StackPanel Spacing="8" IsVisible="{Binding IsPreviewing}">
+
+                <Border Classes="card" Background="#332F7BD6">
+                  <StackPanel Spacing="8">
+                    <TextBlock FontWeight="SemiBold" FontSize="12"
+                               Text="Previewing — the lights have not changed" />
+                    <TextBlock Classes="hint" Text="{Binding PreviewCoverage}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Apply to the house" Command="{Binding ApplyPreviewCommand}" />
+                      <Button Content="Stop previewing" Command="{Binding StopPreviewCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
+                <!-- What the preset actually does, which its name does not tell you. -->
+                <ItemsControl ItemsSource="{Binding PreviewDetails}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PresetDetail">
+                      <Border Classes="card" Margin="0,0,0,6" Padding="10">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="{Binding RunName}" FontWeight="SemiBold" FontSize="12"
+                                     TextTrimming="CharacterEllipsis" />
+
+                          <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Border Width="18" Height="18" CornerRadius="3"
+                                    Background="{Binding PrimarySwatch}"
+                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                            <Border Width="18" Height="18" CornerRadius="3"
+                                    Background="{Binding SecondarySwatch}"
+                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                    IsVisible="{Binding HasSecondary}" />
+                            <TextBlock Classes="hint" VerticalAlignment="Center"
+                                       Text="{Binding Pattern}" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+
+                          <TextBlock Classes="hint">
+                            <Run Text="palette " /><Run Text="{Binding Palette}" /><Run Text="  ·  " /><Run Text="{Binding Motion}" />
+                          </TextBlock>
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </StackPanel>
+
+              <!-- Tuning one run by hand is the less common job, so it folds away. -->
+              <!-- A swatch that opens the picker, rather than a picker that is always open:
+                   most of the time the preset list is what is wanted and the wheel is just bulk. -->
+              <TextBlock Classes="heading" Text="By hand" Margin="0,14,0,0" />
+
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Padding="6,4" VerticalAlignment="Center">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Border Width="22" Height="22" CornerRadius="4"
+                            Background="{Binding PickedBrush}"
+                            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                    <TextBlock Text="Color" VerticalAlignment="Center" />
+                  </StackPanel>
+                  <Button.Flyout>
+                    <Flyout Placement="Bottom">
+                      <ColorView Color="{Binding PickedColor, Mode=TwoWay}"
+                                 IsAlphaEnabled="False"
+                                 IsColorPaletteVisible="True"
+                                 IsColorComponentsVisible="False" />
+                    </Flyout>
+                  </Button.Flyout>
+                </Button>
+              </StackPanel>
 
               <StackPanel Spacing="4"
                           IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
@@ -169,21 +243,6 @@
                           HorizontalAlignment="Stretch" />
               </StackPanel>
 
-              <TextBlock Classes="heading" Text="Presets" />
-              <TextBlock Classes="hint"
-                         Text="Everything saved on your controllers, in one list." />
-              <ItemsControl ItemsSource="{Binding Presets}" Margin="0,4,0,0">
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Button Margin="0,2" HorizontalAlignment="Stretch"
-                            HorizontalContentAlignment="Left"
-                            Content="{Binding Name}"
-                            Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).ApplyPresetCommand}"
-                            CommandParameter="{Binding}" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-
             </StackPanel>
           </ScrollViewer>
         </Border>
@@ -192,7 +251,8 @@
                           Photo="{Binding PhotoBytes, Converter={x:Static vm:Converters.PhotoBitmap}}"
                           LayoutRevision="{Binding LayoutRevision}"
                           SelectedSegment="{Binding SelectedSegment}"
-                          ControllerStates="{Binding ControllerStates}"
+                          ControllerStates="{Binding DisplayStates}"
+                          Palettes="{Binding Palettes}"
                           IsDrawing="False"
                           SegmentPicked="OnSegmentPicked" />
       </DockPanel>
