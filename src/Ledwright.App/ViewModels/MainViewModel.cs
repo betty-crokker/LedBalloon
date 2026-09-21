@@ -24,6 +24,15 @@ namespace Ledwright.App.ViewModels;
 /// </summary>
 public enum AppMode
 {
+    /// <summary>
+    /// Finding the controllers and reading the layout off them, which takes a few seconds.
+    /// <para>
+    /// Its own mode rather than an empty main window, because an app that looks finished but does
+    /// nothing for five seconds reads as broken.
+    /// </para>
+    /// </summary>
+    Starting,
+
     /// <summary>Colors, effects and presets, on the photo.</summary>
     Design,
 
@@ -71,7 +80,10 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private FixtureChoice? _fixtureChoice;
 
     /// <summary>Which half of the app is showing.</summary>
-    [ObservableProperty] private AppMode _mode = AppMode.Setup;
+    [ObservableProperty] private AppMode _mode = AppMode.Starting;
+
+    /// <summary>True until the first scan and load have finished.</summary>
+    private bool _starting = true;
 
     /// <summary>The color of whatever is selected, or of the whole house when nothing is.</summary>
     [ObservableProperty] private Color _pickedColor = Colors.White;
@@ -257,6 +269,16 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public bool IsSetupMode => Mode == AppMode.Setup;
 
+    public bool IsStartingMode => Mode == AppMode.Starting;
+
+    /// <summary>What has happened so far, so the wait is legible rather than blank.</summary>
+    public ObservableCollection<string> StartupSteps { get; } = [];
+
+    /// <summary>True once the first scan finished having found nothing.</summary>
+    [ObservableProperty] private bool _startupFoundNothing;
+
+    private void Step(string message) => StartupSteps.Add(message);
+
     /// <summary>What the color controls are pointed at right now.</summary>
     public string SelectionLabel => SelectedSegment?.Name ?? "The whole house";
 
@@ -264,6 +286,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(IsDesignMode));
         OnPropertyChanged(nameof(IsSetupMode));
+        OnPropertyChanged(nameof(IsStartingMode));
     }
 
     [RelayCommand]
@@ -438,7 +461,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
             // Freshly loaded is not unsaved.
             HasUnsavedChanges = false;
-            Mode = HasSegments ? AppMode.Design : AppMode.Setup;
+
+            if (_starting)
+            {
+                Step($"Found {Project.Segments.Count} run(s) across {Project.TotalLeds} LEDs");
+            }
+            else
+            {
+                Mode = HasSegments ? AppMode.Design : AppMode.Setup;
+            }
         }
         catch (Exception ex)
         {
@@ -462,7 +493,15 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         IsScanning = true;
+        StartupFoundNothing = false;
         Status = "Browsing for WLED controllers...";
+
+        if (_starting)
+        {
+            // A second look starts a fresh account of it rather than appending to the first.
+            StartupSteps.Clear();
+            Step("Looking for controllers on the network");
+        }
 
         try
         {
@@ -477,17 +516,67 @@ public sealed partial class MainViewModel : ViewModelBase
 
             AfterDevicesChanged();
 
+            if (_starting && Devices.Count > 0)
+            {
+                Step("Reading the layout from the controllers");
+            }
+
             // The controllers hold the layout, so a fresh machine finds the house already described.
             await LoadProjectAsync();
+
+            if (_starting)
+            {
+                FinishStarting();
+            }
         }
         catch (Exception ex)
         {
             Status = $"Scan failed: {ex.Message}";
+
+            if (_starting)
+            {
+                Step($"Scan failed: {ex.Message}");
+                FinishStarting();
+            }
         }
         finally
         {
             IsScanning = false;
         }
+    }
+
+    /// <summary>
+    /// Leaves the starting screen for whichever half of the app fits.
+    /// <para>
+    /// Nothing found is not a failure to hurry past: it stays on the starting screen with a way
+    /// forward, because dropping someone into an empty Setup with no explanation is worse.
+    /// </para>
+    /// </summary>
+    private void FinishStarting()
+    {
+        if (Devices.Count == 0)
+        {
+            StartupFoundNothing = true;
+            Step("No controllers answered.");
+            return;
+        }
+
+        _starting = false;
+        Mode = HasSegments ? AppMode.Design : AppMode.Setup;
+
+        Status = HasSegments
+            ? "Click a run on the photo to change it, or pick a color for the whole house."
+            : "Describe the runs plugged into each controller to get started.";
+    }
+
+    /// <summary>Gives up waiting for a controller to answer and goes to Setup to add one by hand.</summary>
+    [RelayCommand]
+    private void ContinueWithoutControllers()
+    {
+        _starting = false;
+        StartupFoundNothing = false;
+        Mode = AppMode.Setup;
+        Status = "No controllers found. Add one by address under Controllers.";
     }
 
     [RelayCommand]
@@ -503,6 +592,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
         await AddDeviceAsync(host, null);
         AfterDevicesChanged();
+
+        // Added from the starting screen: that is the controller it was waiting for.
+        if (_starting && Devices.Count > 0)
+        {
+            await LoadProjectAsync();
+            FinishStarting();
+        }
     }
 
     private async Task AddDeviceAsync(string host, string? discoveredName)
@@ -515,7 +611,19 @@ public sealed partial class MainViewModel : ViewModelBase
         var device = new DeviceViewModel(host, discoveredName);
         Devices.Add(device);
 
+        if (_starting)
+        {
+            Step($"Found a controller at {host}");
+        }
+
         await device.ConnectAsync();
+
+        if (_starting)
+        {
+            Step(device.Capabilities is { } capabilities
+                ? $"    {device.DisplayName} — {capabilities.LedCount} LEDs, {device.Effects.Count} effects"
+                : $"    {device.DisplayName} — {device.Status}");
+        }
 
         if (device.DeviceKey is { } key)
         {
@@ -1130,7 +1238,11 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         // Once the house is described, the hardware stops being the interesting thing.
-        Mode = HasSegments ? AppMode.Design : AppMode.Setup;
+        // While starting, the last step decides; switching here would flash a half-built window.
+        if (!_starting)
+        {
+            Mode = HasSegments ? AppMode.Design : AppMode.Setup;
+        }
     }
 
     private void AfterProjectChanged(string status, bool dirty = true)
