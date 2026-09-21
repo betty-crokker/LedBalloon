@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using LedBalloon.Core;
 using LedBalloon.Core.Discovery;
+using LedBalloon.Core.Effects;
 using LedBalloon.Core.Layout;
 using LedBalloon.Core.Models;
 
@@ -54,7 +55,8 @@ public sealed record PresetDetail(
     string Motion,
     IBrush PrimarySwatch,
     IBrush SecondarySwatch,
-    bool HasSecondary);
+    bool HasSecondary,
+    string Fidelity);
 
 /// <summary>
 /// One choice in the effect or palette picker, carrying the number WLED knows it by.
@@ -594,6 +596,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             await LoadPalettesAsync();
+            await LoadFrameTimesAsync();
 
             // The controllers hold the layout, so a fresh machine finds the house already described.
             await LoadProjectAsync();
@@ -1118,6 +1121,7 @@ public sealed partial class MainViewModel : ViewModelBase
             // Those controllers hold palettes they did not a moment ago, and the photo draws runs
             // from that list.
             await LoadPalettesAsync();
+            await LoadFrameTimesAsync();
         }
 
         return copied;
@@ -1850,6 +1854,9 @@ public sealed partial class MainViewModel : ViewModelBase
             case nameof(DeviceViewModel.Presets):
                 RebuildPresetCatalog();
                 break;
+            case nameof(DeviceViewModel.Effects):
+                OnPropertyChanged(nameof(EffectNames));
+                break;
             case nameof(DeviceViewModel.State):
                 RebuildControllerStates();
                 break;
@@ -1907,6 +1914,67 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     private IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>? _palettes;
+
+    /// <summary>
+    /// Each controller's effect list, keyed by controller, so the photo can tell which effect a
+    /// preset's number actually names on the box that stores it.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyList<string>> EffectNames =>
+        Devices
+            .Where(d => d.DeviceKey is not null && d.Effects.Count > 0)
+            .ToDictionary(
+                d => d.DeviceKey!,
+                d => (IReadOnlyList<string>)[.. d.Effects],
+                StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Each controller's frame time in milliseconds, worked out from the frame rate it is
+    /// configured for. Anything that trails or fades does so once a frame, so this is what decides
+    /// how long a trail looks.
+    /// </summary>
+    [ObservableProperty] private IReadOnlyDictionary<string, int>? _frameTimes;
+
+    /// <summary>
+    /// Reads each controller's configured frame rate.
+    /// <para>
+    /// From the configuration rather than from the live info, because info reports the rate being
+    /// achieved and that is zero while the lights are off - which is exactly when a preset is
+    /// being looked at instead of used.
+    /// </para>
+    /// </summary>
+    private async Task LoadFrameTimesAsync()
+    {
+        var times = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            try
+            {
+                var config = new WledConfigClient(device.Host);
+
+                if (await config.GetTargetFpsAsync() is { } fps and > 0)
+                {
+                    // Integer division, matching how the firmware rounds its own frame time.
+                    times[key] = Math.Max(1, 1000 / fps);
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // That controller's runs fall back to WLED's default rate, which is what it most
+                // likely is anyway.
+            }
+        }
+
+        if (times.Count > 0)
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => FrameTimes = times);
+        }
+    }
 
     /// <summary>The gradients the controller behind a run holds, or nothing if it has not answered.</summary>
     public IReadOnlyDictionary<int, WledPalette>? PalettesOn(string? controllerKey) =>
@@ -2100,6 +2168,14 @@ public sealed partial class MainViewModel : ViewModelBase
         RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
         RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
 
+        // Whether the photo is running this effect or standing in for it. Worth saying rather than
+        // leaving the picture to imply a fidelity it does not have.
+        bool exact = device is not null && EffectLibrary.Find(wled.Effect, device.Effects) is not null;
+
+        string fidelity = exact
+            ? "drawn from the effect itself"
+            : "approximated on the photo";
+
         return new PresetDetail(
             run.Name,
             effect,
@@ -2107,7 +2183,8 @@ public sealed partial class MainViewModel : ViewModelBase
             DescribeMotion(wled),
             new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
             new SolidColorBrush(Color.FromRgb(secondary.R, secondary.G, secondary.B)),
-            wled.Colors is { Length: > 1 } && secondary is not { R: 0, G: 0, B: 0 });
+            wled.Colors is { Length: > 1 } && secondary is not { R: 0, G: 0, B: 0 },
+            fidelity);
     }
 
     /// <summary>Turns WLED's speed and intensity numbers into something you can picture.</summary>

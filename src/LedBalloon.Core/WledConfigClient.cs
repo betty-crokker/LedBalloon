@@ -113,6 +113,32 @@ public sealed class WledConfigClient
     }
 
     /// <summary>
+    /// How often the controller aims to redraw, from <c>hw.led.fps</c>.
+    /// <para>
+    /// Read from the configuration rather than from <c>/json/info</c> on purpose. Info reports the
+    /// rate actually being achieved, which is the better number but is zero whenever the lights are
+    /// off - which is exactly when a preset is being looked at rather than used. The configured
+    /// target is always there, and is an upper bound on the other.
+    /// </para>
+    /// <para>
+    /// It matters because an effect that fades or trails does so once per frame, not once per
+    /// millisecond, so how long a trail looks depends on this number.
+    /// </para>
+    /// </summary>
+    public async Task<int?> GetTargetFpsAsync(CancellationToken cancellationToken = default)
+    {
+        using JsonDocument document = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!TryGetLedSection(document.RootElement, out JsonElement led))
+        {
+            return null;
+        }
+
+        int fps = ReadInt(led, "fps");
+        return fps is > 0 and <= 255 ? fps : null;
+    }
+
+    /// <summary>
     /// Renames the device on the controller itself, so the name follows it into the WLED app, the
     /// web UI and anything else that talks to it.
     /// <para>

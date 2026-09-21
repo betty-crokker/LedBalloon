@@ -1,0 +1,80 @@
+namespace LedBalloon.Core.Effects;
+
+/// <summary>
+/// The integer math WLED's effects are built out of, ported rather than approximated.
+/// <para>
+/// These look like things <see cref="Math"/> already does, and they are not. WLED runs on a
+/// microcontroller with no FPU to spare, so its sine is a fixed-point Bhaskara approximation and
+/// its scaling is an 8-bit multiply-and-shift. Both are a little wrong in ways that are part of
+/// how the effects look - a run drawn with real trigonometry drifts against the same run on the
+/// wall. Reproducing the arithmetic is the cheap half of reproducing the effect.
+/// </para>
+/// </summary>
+public static class FastLed
+{
+    /// <summary>
+    /// Sine over a full turn: input 0-65535, output -32767 to +32767.
+    /// <para>
+    /// Bhaskara I's approximation, <c>16x(pi - x) / (5pi^2 - 4x(pi - x))</c>, in integers. Accurate
+    /// to about a part in a thousand, which is half an LED on a three hundred LED run.
+    /// </para>
+    /// </summary>
+    public static short Sin16(ushort theta)
+    {
+        int scale = 1;
+
+        if (theta > 0x7FFF)
+        {
+            theta = (ushort)(0xFFFF - theta);
+            scale = -1; // The back half of the turn is the front half, negated.
+        }
+
+        uint precomputed = (uint)theta * (uint)(0x7FFF - theta);
+        ulong numerator = (ulong)precomputed * (4 * 0x7FFF);
+
+        // 1342095361 is 5 * 0x7FFF^2 / 4.
+        int denominator = 1342095361 - (int)precomputed;
+
+        var result = (short)(numerator / (ulong)denominator);
+        return (short)(result * scale);
+    }
+
+    /// <summary>Cosine, which is sine a quarter turn along.</summary>
+    public static short Cos16(ushort theta) => Sin16((ushort)(theta + 0x4000));
+
+    /// <summary>Sine over a byte: input 0-255, output 0-255 centered on 128.</summary>
+    public static byte Sin8(byte theta)
+    {
+        int value = Sin16((ushort)(theta * 257)); // 255 * 257 == 0xFFFF
+        value += 0x7FFF + 128;                    // to 0-0xFFFF, plus a half for rounding
+        return (byte)(Math.Min(value, 0xFFFF) >> 8);
+    }
+
+    /// <summary>Cosine over a byte.</summary>
+    public static byte Cos8(byte theta) => Sin8((byte)(theta + 64));
+
+    /// <summary>
+    /// Scales a byte by a fraction expressed as a byte: <c>i * scale / 256</c>.
+    /// <para>
+    /// The truncation matters. Effects lean on <c>scale8(i, 240)</c> to stop a palette lookup short
+    /// of the end so it does not blend back round to the start, and doing that in floating point
+    /// lands on different colors.
+    /// </para>
+    /// </summary>
+    public static byte Scale8(byte i, byte scale) => (byte)(i * scale / 256);
+
+    /// <summary>Moves one channel a fraction of the way toward another, never stalling short of it.</summary>
+    /// <param name="mappedRate">How far to move, out of 256.</param>
+    public static byte FadeChannel(byte from, byte to, int mappedRate)
+    {
+        int delta = (to - from) * mappedRate / 256;
+
+        // Without this a fade rounds to zero while still a shade off and stops there forever.
+        if (delta == 0)
+        {
+            delta = to == from ? 0 : to > from ? 1 : -1;
+        }
+
+        return (byte)(from + delta);
+    }
+}
