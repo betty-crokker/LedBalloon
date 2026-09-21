@@ -201,8 +201,10 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </summary>
     public string PhotoHint => IsDrawingSegment
-        ? $"Drawing '{SelectedSegment?.Name}'. Click along the run, starting at the end where LED 1 is. " +
-          "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
+        ? SelectedSegment is { } drawing
+            ? $"Drawing '{drawing.Name}'. Click along the run, starting at the end where LED 1 is. " +
+              "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
+            : "Pick a run on the left before tracing it."
         : SelectedSegment is { HasGeometry: false } undrawn
             ? $"'{undrawn.Name}' has not been traced yet. Press Draw selected segment, then click along it on the photo."
             : "Click a run on the photo to select it. To move or re-trace one, select it and press Draw selected segment.";
@@ -1201,9 +1203,10 @@ public sealed partial class MainViewModel : ViewModelBase
         LayoutRevision++;
         HasUnsavedChanges = true;
 
+        // Deliberately no list rebuild: the row's "not traced yet" badge watches the run itself,
+        // and rebuilding mid-trace would churn the selection underneath the drawing.
         OnPropertyChanged(nameof(PhotoHint));
         OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
-        RebuildSegmentRows();
     }
 
     // ---- Plumbing -------------------------------------------------------------------------------
@@ -1345,13 +1348,13 @@ public sealed partial class MainViewModel : ViewModelBase
         // The editor must not be editing a run from a controller the list is not showing. That
         // happens on startup, where coverage settles on whichever box answered first while the
         // selection is still the project's first run.
-        _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep));
+        _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep))
+                       ?? (keep is null ? null : SegmentRows.FirstOrDefault());
 
-        if (_selectedRow is null && keep is not null)
-        {
-            _selectedRow = SegmentRows.FirstOrDefault();
-            SelectedSegment = _selectedRow?.Segment;
-        }
+        // Clearing the list above made it write a null selection back through the binding, which
+        // left the row looking selected with nothing behind it: an empty editor, an empty name in
+        // the drawing hint, and clicks on the photo landing nowhere. Put the selection back.
+        SelectedSegment = _selectedRow?.Segment;
 
         OnPropertyChanged(nameof(SelectedRow));
         OnPropertyChanged(nameof(HasVisibleSegments));
