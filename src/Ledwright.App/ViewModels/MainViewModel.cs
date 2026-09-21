@@ -1342,7 +1342,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
         RefreshLayoutWarnings();
 
+        // The editor must not be editing a run from a controller the list is not showing. That
+        // happens on startup, where coverage settles on whichever box answered first while the
+        // selection is still the project's first run.
         _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep));
+
+        if (_selectedRow is null && keep is not null)
+        {
+            _selectedRow = SegmentRows.FirstOrDefault();
+            SelectedSegment = _selectedRow?.Segment;
+        }
+
         OnPropertyChanged(nameof(SelectedRow));
         OnPropertyChanged(nameof(HasVisibleSegments));
     }
