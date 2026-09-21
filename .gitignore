@@ -43,6 +43,6 @@ coverage*.info
 Thumbs.db
 desktop.ini
 
-## Ledwright local config (device lists, saved presets)
+## LedBalloon local config (device lists, saved presets)
 appsettings.Local.json
 devices.local.json

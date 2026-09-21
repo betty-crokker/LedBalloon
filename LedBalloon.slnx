@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/LedBalloon.App/LedBalloon.App.csproj" />
+    <Project Path="src/LedBalloon.Cli/LedBalloon.Cli.csproj" />
+    <Project Path="src/LedBalloon.Core/LedBalloon.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/LedBalloon.Core.Tests/LedBalloon.Core.Tests.csproj" />
+  </Folder>
+</Solution>
