@@ -309,8 +309,10 @@ public sealed class HouseCanvas : Control
     /// </summary>
     private void DrawAimedWash(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        RgbColor color = ResolveColor(project, segment);
-        if (color is { R: 0, G: 0, B: 0 })
+        (RgbColor color, bool isLit) = ResolveAppearance(project, segment);
+
+        // An unlit fixture throws nothing. Washing the wall in dark gray only muddies the photo.
+        if (!isLit)
         {
             return;
         }
@@ -396,13 +398,20 @@ public sealed class HouseCanvas : Control
     /// <summary>Draws the fixtures themselves, which is all you see of some kinds and all of others.</summary>
     private void DrawEmitters(DrawingContext context, Rect image, LedwrightProject project, Segment segment)
     {
-        RgbColor color = ResolveColor(project, segment);
+        (RgbColor color, bool isLit) = ResolveAppearance(project, segment);
         bool isSelected = ReferenceEquals(segment, SelectedSegment);
 
-        DrawRunOutline(context, image, segment, isSelected);
+        DrawRunOutline(context, image, segment, isSelected, isLit);
 
-        if (segment.Count <= 0)
+        if (segment.Count <= 0 || !isLit)
         {
+            DrawLabel(context, ToControl(image, segment.PointAlongPath(0.5)), segment, isSelected);
+
+            if (isSelected)
+            {
+                DrawRunEnds(context, image, segment);
+            }
+
             return;
         }
 
@@ -539,16 +548,42 @@ public sealed class HouseCanvas : Control
         }
     }
 
-    private void DrawRunOutline(DrawingContext context, Rect image, Segment segment, bool isSelected)
+    /// <summary>
+    /// Traces where the run hangs, whether or not it is lit.
+    /// <para>
+    /// Drawn as a dark backing line with a light one on top, because a single thin stroke
+    /// disappears into a bright sky or a dark eave depending on the photo. Switching the house off
+    /// must not make it impossible to see where anything is.
+    /// </para>
+    /// </summary>
+    private void DrawRunOutline(DrawingContext context, Rect image, Segment segment, bool isSelected, bool isLit)
     {
-        // The run itself, so an unlit segment is still visible while you work on it.
-        var outline = new Pen(
-            new SolidColorBrush(isSelected ? Colors.White : Color.FromArgb(80, 255, 255, 255)),
-            isSelected ? 2.0 : 0.8);
+        double width = isSelected ? 2.8 : 2.2;
+
+        // Solid black under a dashed white line: the black reads against pale siding and sky, the
+        // white against shingles and shadow, and the gaps let each show through the other. A single
+        // light stroke with a faint shadow looked fine in isolation and vanished completely along a
+        // white fascia, which is exactly where a roofline run tends to be.
+        var backing = new Pen(new SolidColorBrush(Color.FromArgb(230, 6, 8, 12)), width + 2.6)
+        {
+            LineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round,
+        };
+
+        var stroke = new Pen(new SolidColorBrush(Color.FromArgb(isSelected ? (byte)255 : (byte)235, 255, 255, 255)), width)
+        {
+            LineCap = PenLineCap.Flat,
+            LineJoin = PenLineJoin.Round,
+            DashStyle = new DashStyle([3, 2.6], 0),
+        };
 
         for (int i = 0; i < segment.Path.Count - 1; i++)
         {
-            context.DrawLine(outline, ToControl(image, segment.Path[i]), ToControl(image, segment.Path[i + 1]));
+            Point from = ToControl(image, segment.Path[i]);
+            Point to = ToControl(image, segment.Path[i + 1]);
+
+            context.DrawLine(backing, from, to);
+            context.DrawLine(stroke, from, to);
         }
     }
 
@@ -602,14 +637,24 @@ public sealed class HouseCanvas : Control
     /// Finds the color this segment is currently showing, by looking up the WLED segment it drives
     /// in the controller's live state.
     /// </summary>
-    private RgbColor ResolveColor(LedwrightProject project, Segment segment)
+    /// <summary>
+    /// What this run is currently showing, and whether it is showing anything at all.
+    /// <para>
+    /// Lit is reported rather than guessed from how bright the color looks. The placeholder used
+    /// for a run whose controller has not reported yet is a mid gray, and inferring from its
+    /// brightness classified it as lit — so an unlit run was drawn as a solid line covered in
+    /// near-black dots, which is to say invisible.
+    /// </para>
+    /// </summary>
+    private (RgbColor Color, bool IsLit) ResolveAppearance(LedwrightProject project, Segment segment)
     {
         if (ControllerStates is not { } states ||
             segment.ControllerKey is not { } key ||
             !states.TryGetValue(key, out WledState? state) ||
             state.Segments is not { } segments)
         {
-            return new RgbColor(120, 120, 130);
+            // Nothing known about it yet: show where it is, do not pretend to know its color.
+            return (new RgbColor(120, 120, 130), false);
         }
 
         int segmentId = project.WledSegmentIdFor(segment);
@@ -617,17 +662,21 @@ public sealed class HouseCanvas : Control
 
         if (wled is null || wled.On == false || state.On == false)
         {
-            return new RgbColor(40, 42, 48);
+            return (new RgbColor(40, 42, 48), false);
         }
 
         RgbColor color = wled.PrimaryColor;
 
         // Fold master and segment brightness into the preview so a dimmed strip looks dimmed.
         double scale = (state.Brightness ?? 255) / 255d * ((wled.Brightness ?? 255) / 255d);
-        return new RgbColor(
+        var scaled = new RgbColor(
             (byte)(color.R * scale),
             (byte)(color.G * scale),
             (byte)(color.B * scale));
+
+        // Dimmed to nothing is off as far as the eye is concerned.
+        bool isLit = scaled.R + scaled.G + scaled.B > 12;
+        return (scaled, isLit);
     }
 
     private static void DrawLabel(DrawingContext context, Point at, Segment segment, bool isSelected)

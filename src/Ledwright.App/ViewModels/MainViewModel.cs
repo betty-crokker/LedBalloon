@@ -181,6 +181,23 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>True when the selected controller has any runs to list.</summary>
     public bool HasVisibleSegments => SegmentRows.Count > 0;
 
+    /// <summary>
+    /// What clicking the photo does right now.
+    /// <para>
+    /// Clicking means two different things depending on the mode — pick a run, or place a point —
+    /// so a single fixed sentence was wrong half the time.
+    /// </para>
+    /// </summary>
+    public string PhotoHint => IsDrawingSegment
+        ? $"Drawing '{SelectedSegment?.Name}'. Click along the run, starting at the end where LED 1 is. " +
+          "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
+        : SelectedSegment is { HasGeometry: false } undrawn
+            ? $"'{undrawn.Name}' has not been traced yet. Press Draw selected segment, then click along it on the photo."
+            : "Click a run on the photo to select it. To move or re-trace one, select it and press Draw selected segment.";
+
+    /// <summary>True while the selected run has no line on the photo.</summary>
+    public bool SelectedSegmentNeedsDrawing => SelectedSegment is { HasGeometry: false };
+
     public bool HasLayoutWarnings => LayoutWarnings.Count > 0;
 
     /// <summary>The row selected in the list. Drives <see cref="SelectedSegment"/>.</summary>
@@ -864,8 +881,13 @@ public sealed partial class MainViewModel : ViewModelBase
         Status = $"'{segment.Name}' selected. Choose a color, or click the photo again to pick another run.";
     }
 
+    partial void OnIsDrawingSegmentChanged(bool value) => OnPropertyChanged(nameof(PhotoHint));
+
     partial void OnSelectedSegmentChanged(Segment? value)
     {
+        OnPropertyChanged(nameof(PhotoHint));
+        OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
+
         // Keep the setup list in step with a pick made on the photo.
         SegmentRow? row = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, value));
         if (!ReferenceEquals(row, _selectedRow))
@@ -1070,6 +1092,10 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedSegment.NotifyPathChanged();
         LayoutRevision++;
         HasUnsavedChanges = true;
+
+        OnPropertyChanged(nameof(PhotoHint));
+        OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
+        RebuildSegmentRows();
     }
 
     // ---- Plumbing -------------------------------------------------------------------------------
