@@ -218,6 +218,9 @@
                       <TextBlock Classes="hint">
                         <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs  ·  LED " /><Run Text="{Binding Segment.Start}" /><Run Text=" to " /><Run Text="{Binding Segment.StopExclusive}" />
                       </TextBlock>
+                      <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
+                                 IsVisible="{Binding !Segment.HasGeometry}"
+                                 Text="not traced on the photo yet" />
                     </StackPanel>
                   </DataTemplate>
                 </ListBox.ItemTemplate>
@@ -297,8 +300,11 @@
 
                     <Button Classes="block" Content="Flip which end is LED 1"
                             Command="{Binding FlipSegmentDirectionCommand}" />
-                    <Button Classes="block" Content="Redraw it on the photo"
+                    <Button Classes="block" Content="Trace it on the photo"
                             Command="{Binding RedrawSegmentCommand}" />
+                    <TextBlock Classes="hint" Foreground="#C9821B"
+                               IsVisible="{Binding SelectedSegmentNeedsDrawing}"
+                               Text="This run has no line on the photo yet, so it cannot be shown or clicked there." />
 
                     <TextBlock Classes="hint" Text="Driven by" />
                     <ComboBox ItemsSource="{Binding Devices}"
@@ -334,12 +340,21 @@
             <DockPanel>
               <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="8" Margin="4,8">
                 <Button Content="Load photo" Click="OnLoadPhoto" />
-                <Button Content="Draw selected segment" Command="{Binding StartDrawingSegmentCommand}" />
-                <Button Content="Done drawing" Command="{Binding FinishDrawingSegmentCommand}" />
+                <Button Content="Draw selected segment"
+                        Command="{Binding StartDrawingSegmentCommand}"
+                        IsEnabled="{Binding !IsDrawingSegment}" />
+                <Button Content="Done drawing"
+                        Command="{Binding FinishDrawingSegmentCommand}"
+                        IsEnabled="{Binding IsDrawingSegment}" />
+                <Border Padding="8,3" CornerRadius="3" Background="#2F7BD6" VerticalAlignment="Center"
+                        IsVisible="{Binding IsDrawingSegment}">
+                  <TextBlock Text="Drawing" FontSize="12" Foreground="White" />
+                </Border>
               </StackPanel>
 
+              <!-- Says what a click does now, which is not the same in both modes. -->
               <TextBlock DockPanel.Dock="Top" Classes="hint" Margin="4,0,4,8"
-                         Text="Pick a run on the left, then click along it on the photo — starting at the end where LED 1 is. Extra clicks follow a corner." />
+                         Text="{Binding PhotoHint}" />
 
               <ctrl:HouseCanvas Project="{Binding Project}"
                                 Photo="{Binding PhotoBytes, Converter={x:Static vm:Converters.PhotoBitmap}}"
