@@ -75,6 +75,46 @@
 
     <Grid>
 
+      <!-- ================= STARTING: finding the controllers ================= -->
+      <Border IsVisible="{Binding IsStartingMode}" Background="{DynamicResource PanelBackground}">
+        <Border Classes="card" Width="460" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Padding="26" Background="{DynamicResource StatusBackground}">
+          <StackPanel Spacing="14">
+
+            <TextBlock Text="Ledwright" FontSize="22" FontWeight="SemiBold" />
+            <TextBlock Classes="hint"
+                       Text="Your controllers hold the layout, so there is nothing to open — it just has to be found. This takes a few seconds." />
+
+            <ProgressBar IsIndeterminate="True" Height="4" Margin="0,4"
+                         IsVisible="{Binding IsScanning}" />
+
+            <ItemsControl ItemsSource="{Binding StartupSteps}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Nothing answered: explain why that happens and offer both ways on. -->
+            <StackPanel Spacing="10" IsVisible="{Binding StartupFoundNothing}">
+              <TextBlock Classes="hint"
+                         Text="Discovery uses mDNS, which does not cross subnets or most VPNs. If your controllers are on another part of the network, add one by address instead." />
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Content="Look again" Command="{Binding ScanCommand}"
+                        IsEnabled="{Binding !IsScanning}" />
+                <TextBox Width="150" PlaceholderText="192.168.0.102" Text="{Binding ManualHost}" />
+                <Button Content="Add by address" Command="{Binding AddManualCommand}" />
+              </StackPanel>
+              <Button Content="Continue without a controller"
+                      Command="{Binding ContinueWithoutControllersCommand}"
+                      HorizontalAlignment="Left" />
+            </StackPanel>
+
+          </StackPanel>
+        </Border>
+      </Border>
+
       <!-- ================= DESIGN: what color should things be ================= -->
       <DockPanel IsVisible="{Binding IsDesignMode}">
 
