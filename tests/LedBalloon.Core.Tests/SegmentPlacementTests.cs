@@ -1,210 +1,245 @@
+using LedBalloon.Core;
 using LedBalloon.Core.Layout;
 using Xunit;
 
 namespace LedBalloon.Core.Tests;
 
 /// <summary>
-/// Correcting a miscounted run is the single most common edit this app exists for, and it is the
-/// one that can quietly break the house: LEDs are addressed along one wire, so a run that grows
-/// lands on top of the next one and a run that shrinks strands the LEDs behind it.
+/// Where a run sits is worked out, never typed. A WS281x strip has no addressing - the data is
+/// shifted down the chain and each LED takes the first 24 bits it sees - so the runs on one output
+/// are end to end in wiring order, and an output starts where the one before it finishes. The only
+/// number anyone knows is how many LEDs are in a run, because they counted them.
 /// </summary>
 public class SegmentPlacementTests
 {
     private const string Key = "aa:bb:cc:dd:ee:ff";
 
-    private static Segment Run(string name, int start, int count) => new()
+    private static Segment Run(string name, int output, int count) => new()
     {
         Name = name,
         ControllerKey = Key,
-        Start = start,
+        Output = output,
         Count = count,
     };
 
-    /// <summary>First 20, then 10 butted up behind it — the scenario, exactly.</summary>
-    private static LedBalloonProject House()
+    private static LedBalloonProject House(params Segment[] runs)
     {
-        var project = new LedBalloonProject();
-        project.Segments.Add(Run("One", 0, 20));
-        project.Segments.Add(Run("Two", 20, 10));
+        var project = new LedBalloonProject
+        {
+            Controllers = [new ControllerRef { Key = Key, Name = "South" }],
+        };
+
+        foreach (Segment run in runs)
+        {
+            project.Segments.Add(run);
+        }
+
+        project.Reflow(Key);
         return project;
     }
 
     [Fact]
-    public void Correcting_twenty_to_twenty_two_pushes_the_next_run_clear()
+    public void Runs_on_one_output_lie_end_to_end_in_order()
     {
-        LedBalloonProject project = House();
-        Segment one = project.Segments[0];
-        Segment two = project.Segments[1];
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        House(garage, porch);
 
-        one.Count = 22;
-        IReadOnlyList<Segment> moved = project.MakeRoomAfter(one);
+        Assert.Equal(0, garage.Start);
+        Assert.Equal(20, porch.Start);
+        Assert.Equal(25, porch.StopExclusive);
+    }
 
-        Assert.Same(two, Assert.Single(moved));
-        Assert.Equal(22, two.Start);
-        Assert.Equal(10, two.Count);
+    [Fact]
+    public void An_output_starts_where_the_one_before_it_finishes()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        House(garage, porch, roofline);
+
+        Assert.Equal(25, roofline.Start);
+        Assert.Equal(310, roofline.StopExclusive);
+    }
+
+    /// <summary>The scenario that started all of this, now with nothing to repair.</summary>
+    [Fact]
+    public void Correcting_a_length_moves_everything_after_it_by_itself()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(garage, porch, roofline);
+
+        // The porch really has eight. Nothing else is touched by hand.
+        porch.Count = 8;
+        project.Reflow(Key);
+
+        Assert.Equal(20, porch.Start);
+        Assert.Equal(28, roofline.Start);
         Assert.Empty(project.Validate());
     }
 
     [Fact]
-    public void A_run_with_room_in_front_of_it_absorbs_the_push()
+    public void Shortening_a_run_closes_up_behind_it_with_no_offer_to_make()
     {
-        var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 20);
-        Segment two = Run("Two", 25, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(garage, porch, roofline);
 
-        one.Count = 22;
+        porch.Count = 3;
+        project.Reflow(Key);
 
-        // 22 still clears 25, so the deliberate gap is left exactly as it was.
-        Assert.Empty(project.MakeRoomAfter(one));
-        Assert.Equal(25, two.Start);
-    }
-
-    [Fact]
-    public void The_push_cascades_only_as_far_as_the_collision_reaches()
-    {
-        var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 20);
-        Segment two = Run("Two", 20, 10);
-        Segment three = Run("Three", 60, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
-        project.Segments.Add(three);
-
-        one.Count = 25;
-        IReadOnlyList<Segment> moved = project.MakeRoomAfter(one);
-
-        Assert.Same(two, Assert.Single(moved));
-        Assert.Equal(25, two.Start);
-
-        // Two now ends at 35, well clear of Three, which keeps the space it was given.
-        Assert.Equal(60, three.Start);
-    }
-
-    [Fact]
-    public void A_run_swallowing_several_pushes_all_of_them()
-    {
-        var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 20);
-        Segment two = Run("Two", 20, 10);
-        Segment three = Run("Three", 30, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
-        project.Segments.Add(three);
-
-        one.Count = 45;
-        IReadOnlyList<Segment> moved = project.MakeRoomAfter(one);
-
-        Assert.Equal(2, moved.Count);
-        Assert.Equal(45, two.Start);
-        Assert.Equal(55, three.Start);
+        Assert.Equal(23, roofline.Start);
         Assert.Empty(project.Validate());
     }
 
+    /// <summary>
+    /// The output's configured length is not a limit the runs fit inside; it is their sum, and
+    /// saving writes it back. Counting eight on the porch means that output has 28 LEDs on it.
+    /// </summary>
     [Fact]
-    public void Nothing_moves_when_the_last_run_grows()
+    public void An_outputs_length_is_the_runs_plugged_into_it()
     {
-        LedBalloonProject project = House();
-        Segment two = project.Segments[1];
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(garage, porch, roofline);
 
-        two.Count = 40;
+        Assert.Equal([(1, 25), (2, 285)], project.OutputLengths(Key));
 
-        Assert.Empty(project.MakeRoomAfter(two));
-        Assert.Equal(20, two.Start);
+        porch.Count = 8;
+        project.Reflow(Key);
+
+        Assert.Equal([(1, 28), (2, 285)], project.OutputLengths(Key));
     }
 
     [Fact]
-    public void Shrinking_leaves_the_gap_alone_until_it_is_asked()
+    public void Moving_a_run_along_its_output_reorders_the_addresses()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(garage, porch);
+
+        Assert.True(project.MoveWithinOutput(porch, -1));
+
+        Assert.Equal(0, porch.Start);
+        Assert.Equal(5, garage.Start);
+    }
+
+    [Fact]
+    public void A_run_already_at_the_end_of_its_output_does_not_move()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(garage, porch);
+
+        Assert.False(project.MoveWithinOutput(garage, -1));
+        Assert.False(project.MoveWithinOutput(porch, 1));
+        Assert.Equal(0, garage.Start);
+        Assert.Equal(20, porch.Start);
+    }
+
+    [Fact]
+    public void Moving_a_run_cannot_take_it_to_another_output()
+    {
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(porch, roofline);
+
+        // They are each alone on their own output, so neither has anywhere to go.
+        Assert.False(project.MoveWithinOutput(porch, 1));
+        Assert.False(project.MoveWithinOutput(roofline, -1));
+        Assert.Equal(5, roofline.Start);
+    }
+
+    [Fact]
+    public void Removing_a_run_closes_the_output_up()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(garage, porch, roofline);
+
+        project.Segments.Remove(garage);
+        project.Reflow(Key);
+
+        Assert.Equal(0, porch.Start);
+        Assert.Equal(5, roofline.Start);
+    }
+
+    /// <summary>
+    /// Layouts written before outputs were modelled carry a start and nothing else, so the output
+    /// has to be read back out of it against the controller's own wiring.
+    /// </summary>
+    [Fact]
+    public void An_older_layout_gets_its_outputs_from_the_wiring()
     {
         var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 22);
-        Segment two = Run("Two", 22, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
+        var garage = new Segment { Name = "Garage", ControllerKey = Key, Start = 0, Count = 20 };
+        var porch = new Segment { Name = "Porch", ControllerKey = Key, Start = 20, Count = 5 };
+        var roofline = new Segment { Name = "Roofline", ControllerKey = Key, Start = 25, Count = 285 };
+        project.Segments.Add(garage);
+        project.Segments.Add(porch);
+        project.Segments.Add(roofline);
 
-        one.Count = 20;
+        project.AssignOutputs(Key, [
+            new LedBus(0, 25, [16], 1, false),
+            new LedBus(25, 285, [2], 0, false),
+        ]);
 
-        // The point of the offer: shortening does not move anything by itself.
-        Assert.Empty(project.MakeRoomAfter(one));
-        Assert.Equal(22, two.Start);
-        Assert.Equal(2, project.SpareAfter(one));
+        Assert.Equal(1, garage.Output);
+        Assert.Equal(1, porch.Output);
+        Assert.Equal(2, roofline.Output);
+
+        // And the starts it already had are exactly the ones the model works out.
+        project.Reflow(Key);
+        Assert.Equal(0, garage.Start);
+        Assert.Equal(20, porch.Start);
+        Assert.Equal(25, roofline.Start);
     }
 
     [Fact]
-    public void Closing_the_gap_brings_the_rest_back_down_the_wire()
+    public void Assigning_outputs_leaves_alone_a_run_that_already_says()
     {
         var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 22);
-        Segment two = Run("Two", 22, 10);
-        Segment three = Run("Three", 32, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
-        project.Segments.Add(three);
+        var run = new Segment { Name = "Porch", ControllerKey = Key, Start = 0, Count = 5, Output = 2 };
+        project.Segments.Add(run);
 
-        one.Count = 20;
-        IReadOnlyList<Segment> moved = project.CloseSpareAfter(one);
+        project.AssignOutputs(Key, [new LedBus(0, 25, [16], 1, false)]);
 
-        Assert.Equal(2, moved.Count);
-        Assert.Equal(20, two.Start);
-        Assert.Equal(30, three.Start);
-        Assert.Empty(project.Validate());
+        Assert.Equal(2, run.Output);
     }
 
     [Fact]
-    public void Closing_a_gap_keeps_spacing_further_down_the_wire()
+    public void Each_controller_is_laid_out_on_its_own()
     {
         var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 22);
-        Segment two = Run("Two", 22, 10);
-        Segment three = Run("Three", 50, 10);
-        project.Segments.Add(one);
-        project.Segments.Add(two);
-        project.Segments.Add(three);
-
-        one.Count = 20;
-        project.CloseSpareAfter(one);
-
-        // Everything shifts by the same 2: the 18 LEDs between Two and Three were put there on
-        // purpose and closing a gap somewhere else is no reason to swallow them.
-        Assert.Equal(20, two.Start);
-        Assert.Equal(48, three.Start);
-    }
-
-    [Fact]
-    public void There_is_no_gap_behind_the_last_run()
-    {
-        LedBalloonProject project = House();
-        Segment two = project.Segments[1];
-
-        // LEDs past the end are not described yet, which the controller card already says.
-        Assert.Equal(0, project.SpareAfter(two));
-        Assert.Empty(project.CloseSpareAfter(two));
-    }
-
-    [Fact]
-    public void An_overlap_reads_as_no_spare_rather_than_negative()
-    {
-        var project = new LedBalloonProject();
-        Segment one = Run("One", 0, 30);
-        project.Segments.Add(one);
-        project.Segments.Add(Run("Two", 20, 10));
-
-        Assert.Equal(0, project.SpareAfter(one));
-    }
-
-    [Fact]
-    public void A_neighbour_on_another_controller_is_not_in_the_way()
-    {
-        var project = new LedBalloonProject();
-        Segment mine = Run("One", 0, 20);
-        var theirs = new Segment { Name = "Other", ControllerKey = "11:22:33:44:55:66", Start = 20, Count = 10 };
+        Segment mine = Run("Porch", 1, 20);
+        var theirs = new Segment { Name = "Other", ControllerKey = "11:22:33:44:55:66", Count = 10, Output = 1 };
         project.Segments.Add(mine);
         project.Segments.Add(theirs);
 
-        mine.Count = 40;
+        project.ReflowAll();
 
-        Assert.Empty(project.MakeRoomAfter(mine));
-        Assert.Equal(20, theirs.Start);
+        Assert.Equal(0, mine.Start);
+        Assert.Equal(0, theirs.Start);
+    }
+
+    [Fact]
+    public void A_run_with_no_leds_is_still_worth_saying()
+    {
+        LedBalloonProject project = House(Run("Nothing", 1, 0));
+
+        Assert.Contains(project.Validate(), p => p.Contains("has no LEDs"));
+    }
+
+    [Fact]
+    public void Runs_on_output_two_with_nothing_on_output_one_are_reported()
+    {
+        LedBalloonProject project = House(Run("Roofline", 2, 285));
+
+        Assert.Contains(project.Validate(), p => p.Contains("nothing on output 1"));
     }
 }

@@ -105,12 +105,30 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                     : $"{Capabilities.LedCount} LEDs, {Effects.Count} effects, " +
                       $"{(Capabilities.HasWebSocket ? "live" : "polling")}";
             });
+
+            // Which outputs this box has, and on which pins. Read on connect rather than when
+            // something needs it: a segment has to say which output it is plugged into, and a
+            // picker that is empty until you visit some other screen first is a trap.
+            IReadOnlyList<LedBus> wiring = await new WledConfigClient(Host).GetLedBusesAsync();
+            OnUi(() =>
+            {
+                Outputs.Clear();
+                foreach (LedBus bus in wiring)
+                {
+                    Outputs.Add(bus);
+                }
+
+                OnPropertyChanged(nameof(Outputs));
+            });
         }
         catch (Exception ex)
         {
             OnUi(() => Status = $"Could not connect: {ex.Message}");
         }
     }
+
+    /// <summary>The controller's LED outputs, in the order it lists them. Output 1 is index 0.</summary>
+    public ObservableCollection<LedBus> Outputs { get; } = [];
 
     partial void OnAssignedNameChanged(string? value) => OnPropertyChanged(nameof(DisplayName));
 

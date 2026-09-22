@@ -60,6 +60,15 @@ internal static class ProjectSerialization
             segment.Fixture.RetireFlipAim();
         }
 
+        // Wiring order is the order of this list, because the starts are worked out from it rather
+        // than the other way round. A stored file has the starts, so sorting by them once here is
+        // what makes the two agree - after this nothing reads a start to decide an order.
+        project?.Segments.Sort((a, b) =>
+        {
+            int byController = string.Compare(a.ControllerKey, b.ControllerKey, StringComparison.OrdinalIgnoreCase);
+            return byController != 0 ? byController : a.Start.CompareTo(b.Start);
+        });
+
         return project;
     }
 }

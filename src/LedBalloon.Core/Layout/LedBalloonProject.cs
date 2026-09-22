@@ -101,9 +101,26 @@ public sealed class LedBalloonProject
         return existing;
     }
 
-    /// <summary>The segments driven by one controller, in address order.</summary>
+    /// <summary>
+    /// The segments driven by one controller, in wiring order: output by output, and within an
+    /// output in the order they are chained.
+    /// <para>
+    /// Order comes from <see cref="Segments"/> itself rather than from the stored starts, because
+    /// the starts are worked out from this order and sorting by them would be circular. Loading
+    /// normalises the list into address order once, so the two always agree.
+    /// </para>
+    /// </summary>
     public IReadOnlyList<Segment> SegmentsOn(string controllerKey) =>
-        [.. Segments.Where(s => KeyEquals(s.ControllerKey, controllerKey)).OrderBy(s => s.Start)];
+        [.. Segments
+            .Select((segment, index) => (Segment: segment, Index: index))
+            .Where(x => KeyEquals(x.Segment.ControllerKey, controllerKey))
+            .OrderBy(x => x.Segment.Output <= 0 ? int.MaxValue : x.Segment.Output)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Segment)];
+
+    /// <summary>The segments plugged into one output of one controller, in the order they chain.</summary>
+    public IReadOnlyList<Segment> SegmentsOn(string controllerKey, int output) =>
+        [.. SegmentsOn(controllerKey).Where(s => Math.Max(1, s.Output) == output)];
 
     /// <summary>Every controller key that has segments assigned to it.</summary>
     public IReadOnlyList<string> ActiveControllerKeys() =>
@@ -131,119 +148,118 @@ public sealed class LedBalloonProject
     }
 
     /// <summary>
-    /// Re-packs one controller's segments end to end from LED 0, preserving order. Call after
-    /// correcting a run's length so the runs downstream of it shift instead of overlapping.
+    /// Works out where every run on a controller starts, output by output.
+    /// <para>
+    /// This is the whole placement model in one method. A WS281x strip has no addressing - data is
+    /// shifted down the chain and each LED takes the first 24 bits it sees - so the runs on one
+    /// output are end to end in the order they are wired, and an output begins where the outputs
+    /// before it finish. Everything here is therefore arithmetic on the lengths, and the lengths
+    /// are the one thing a person actually knows: they counted them.
+    /// </para>
+    /// <para>
+    /// Because nothing else is typed, an overlap or a gap cannot be expressed. There was
+    /// previously a pile of machinery to detect them, push runs out of each other's way and offer
+    /// to close what was left, and none of it is needed once the numbers are worked out instead of
+    /// entered.
+    /// </para>
     /// </summary>
-    public void Repack(string controllerKey)
+    public void Reflow(string controllerKey)
     {
         int next = 0;
-        foreach (Segment segment in SegmentsOn(controllerKey))
+
+        foreach (IGrouping<int, Segment> output in SegmentsOn(controllerKey)
+                     .GroupBy(s => Math.Max(1, s.Output))
+                     .OrderBy(g => g.Key))
         {
-            segment.Start = next;
-            next += segment.Count;
+            foreach (Segment segment in output)
+            {
+                segment.Start = next;
+                next += segment.Count;
+            }
         }
     }
 
-    /// <summary>Re-packs every controller.</summary>
-    public void RepackAll()
+    /// <summary>Works out every controller.</summary>
+    public void ReflowAll()
     {
         foreach (string key in ActiveControllerKeys())
         {
-            Repack(key);
+            Reflow(key);
         }
     }
 
     /// <summary>
-    /// Pushes the segments after <paramref name="grown"/> down the wire until nothing sits on top
-    /// of it, and returns the ones that had to move.
+    /// How long each of a controller's outputs is, according to the runs plugged into it.
     /// <para>
-    /// Two segments claiming the same LED is not a matter of taste: part of the house lights twice
-    /// and part of it not at all. So correcting a length to the truth - the run really is 22 LEDs,
-    /// not the 20 you counted - moves its neighbours rather than leaving a wreck behind.
-    /// </para>
-    /// <para>
-    /// It cascades only as far as the collision actually reaches. A segment with room in front of
-    /// it absorbs the push and everything past it stays where it was put, so deliberate gaps
-    /// further down the wire survive.
+    /// The other direction from the one you might expect: the controller's configured length is not
+    /// a limit the runs have to fit inside, it is a setting that should agree with them. If you
+    /// counted eight LEDs on the porch then that output has eight more LEDs on it than the setting
+    /// says, and the setting is what is wrong. Saving writes these back.
     /// </para>
     /// </summary>
-    public IReadOnlyList<Segment> MakeRoomAfter(Segment grown)
+    public IReadOnlyList<(int Number, int Length)> OutputLengths(string controllerKey) =>
+        [.. SegmentsOn(controllerKey)
+            .GroupBy(s => Math.Max(1, s.Output))
+            .OrderBy(g => g.Key)
+            .Select(g => (g.Key, g.Sum(s => s.Count)))];
+
+    /// <summary>
+    /// Fills in which output each run is plugged into, for layouts written before outputs were
+    /// modelled, by reading it back out of the start that was stored at the time.
+    /// </summary>
+    public void AssignOutputs(string controllerKey, IReadOnlyList<LedBus> wiring)
     {
-        ArgumentNullException.ThrowIfNull(grown);
+        ArgumentNullException.ThrowIfNull(wiring);
 
-        IReadOnlyList<Segment> ordered = SegmentsOn(grown.ControllerKey ?? string.Empty);
-        int index = IndexOf(ordered, grown);
-
-        if (index < 0)
+        if (wiring.Count == 0)
         {
-            return [];
+            return;
         }
 
-        var moved = new List<Segment>();
-        int cursor = grown.StopExclusive;
-
-        for (int i = index + 1; i < ordered.Count; i++)
+        foreach (Segment segment in Segments.Where(s =>
+                     KeyEquals(s.ControllerKey, controllerKey) && s.Output <= 0))
         {
-            Segment next = ordered[i];
+            int number = 1;
 
-            if (next.Start >= cursor)
+            for (int i = 0; i < wiring.Count; i++)
             {
-                break;
+                if (segment.Start >= wiring[i].Start && segment.Start < wiring[i].StopExclusive)
+                {
+                    number = i + 1;
+                    break;
+                }
             }
 
-            next.Start = cursor;
-            moved.Add(next);
-            cursor = next.StopExclusive;
+            segment.Output = number;
         }
-
-        return moved;
     }
 
     /// <summary>
-    /// Unused LEDs between this segment and the next one on the same controller, or 0 when it is
-    /// the last. LEDs past the last segment are not a gap - they are simply not described yet.
+    /// Moves a run one place along the output it is on. Returns false when it is already at the end.
     /// </summary>
-    public int SpareAfter(Segment segment)
+    public bool MoveWithinOutput(Segment segment, int delta)
     {
         ArgumentNullException.ThrowIfNull(segment);
 
-        IReadOnlyList<Segment> ordered = SegmentsOn(segment.ControllerKey ?? string.Empty);
-        int index = IndexOf(ordered, segment);
+        IReadOnlyList<Segment> siblings = SegmentsOn(segment.ControllerKey ?? string.Empty,
+            Math.Max(1, segment.Output));
 
-        return index < 0 || index + 1 >= ordered.Count
-            ? 0
-            : Math.Max(0, ordered[index + 1].Start - segment.StopExclusive);
-    }
+        int at = IndexOf(siblings, segment);
+        int to = at + delta;
 
-    /// <summary>
-    /// Pulls every segment after this one back by the unused LEDs sitting right behind it, keeping
-    /// their spacing among themselves, and returns the ones that moved.
-    /// <para>
-    /// Unlike an overlap, a gap lights correctly - it only wastes LEDs - so nothing calls this on
-    /// its own. It is what the offer in the segment editor does when it is taken.
-    /// </para>
-    /// </summary>
-    public IReadOnlyList<Segment> CloseSpareAfter(Segment segment)
-    {
-        ArgumentNullException.ThrowIfNull(segment);
-
-        int spare = SpareAfter(segment);
-        if (spare <= 0)
+        if (at < 0 || to < 0 || to >= siblings.Count)
         {
-            return [];
+            return false;
         }
 
-        IReadOnlyList<Segment> ordered = SegmentsOn(segment.ControllerKey ?? string.Empty);
-        int index = IndexOf(ordered, segment);
-        var moved = new List<Segment>();
+        // Order lives in the project's own list, so the swap has to happen there.
+        int here = Segments.IndexOf(segment);
+        int there = Segments.IndexOf(siblings[to]);
 
-        for (int i = index + 1; i < ordered.Count; i++)
-        {
-            ordered[i].Start -= spare;
-            moved.Add(ordered[i]);
-        }
+        (Segments[here], Segments[there]) = (Segments[there], Segments[here]);
 
-        return moved;
+        Reflow(segment.ControllerKey ?? string.Empty);
+        return true;
     }
 
     /// <summary>By reference: two segments can sit at the same start, and names are not unique.</summary>
@@ -261,10 +277,19 @@ public sealed class LedBalloonProject
     }
 
     /// <summary>
-    /// Reports overlaps, gaps and runs that fall outside a controller's LED count. Checked per
-    /// controller, since each has its own address space.
+    /// Reports what is left to go wrong once the placement is worked out rather than typed.
+    /// <para>
+    /// Overlaps and gaps are not on the list any more, because <see cref="Reflow"/> makes them
+    /// impossible to express: runs on an output are laid end to end in wiring order, and an output
+    /// begins where the one before it finishes. Nor is running past the controller's configured LED
+    /// count, which was never a limit - that setting is the sum of the runs plugged in, and saving
+    /// writes it to agree with them.
+    /// </para>
+    /// <para>
+    /// What is left is a run with no length, a run on no controller, and an output number with
+    /// nothing wired to the outputs before it.
+    /// </para>
     /// </summary>
-    /// <param name="ledCounts">LED count per controller key, where known.</param>
     public IReadOnlyList<string> Validate(IReadOnlyDictionary<string, int>? ledCounts = null)
     {
         var problems = new List<string>();
@@ -277,46 +302,37 @@ public sealed class LedBalloonProject
         foreach (string key in ActiveControllerKeys())
         {
             string label = FindController(key)?.DisplayName() ?? key;
-            IReadOnlyList<Segment> ordered = SegmentsOn(key);
 
-            int? ledCount = ledCounts is not null && ledCounts.TryGetValue(key, out int found) ? found : null;
-
-            for (int i = 0; i < ordered.Count; i++)
+            foreach (Segment segment in SegmentsOn(key).Where(s => s.Count <= 0))
             {
-                Segment segment = ordered[i];
+                problems.Add($"{label}: '{segment.Name}' has no LEDs.");
+            }
 
-                if (segment.Count <= 0)
-                {
-                    problems.Add($"{label}: '{segment.Name}' has no LEDs.");
-                }
+            // Outputs are numbered by their place in the controller's own wiring, so output 3 with
+            // nothing on outputs 1 and 2 means the numbering has drifted from the hardware.
+            IReadOnlyList<(int Number, int Length)> outputs = OutputLengths(key);
 
-                // Not a number this app made up, and not the end of the last segment either: it is
-                // the lengths set against the controller's LED outputs, added up. WLED clamps any
-                // segment to it - ask for a stop past the total and it hands back the total - so
-                // those LEDs stay dark until the output itself is made longer. Which is a setting,
-                // not a wall, so the message says where it is rather than just complaining.
-                if (ledCount is { } max && segment.StopExclusive > max)
+            for (int i = 0; i < outputs.Count; i++)
+            {
+                if (outputs[i].Number != i + 1)
                 {
                     problems.Add(
-                        $"{label}: '{segment.Name}' ends at LED {segment.StopExclusive} but the controller drives " +
-                        $"{max}, so its last {segment.StopExclusive - max} stay dark until an output is made " +
-                        "longer in the controller's own LED settings.");
+                        $"{label}: there are runs on output {outputs[i].Number} but nothing on output {i + 1}.");
                 }
+            }
 
-                if (i + 1 < ordered.Count)
-                {
-                    Segment next = ordered[i + 1];
-                    if (next.Start < segment.StopExclusive)
-                    {
-                        problems.Add($"{label}: '{segment.Name}' overlaps '{next.Name}' at LED {next.Start}.");
-                    }
-                    else if (next.Start > segment.StopExclusive)
-                    {
-                        problems.Add(
-                            $"{label}: {next.Start - segment.StopExclusive} unassigned LEDs between " +
-                            $"'{segment.Name}' and '{next.Name}'.");
-                    }
-                }
+            // Not a limit being broken - the controller's setting is simply out of date with what
+            // is plugged in, and WLED clamps segments to it, so the difference would sit dark.
+            // Said here until LedBalloon writes the output lengths back itself.
+            int described = outputs.Sum(o => o.Length);
+
+            if (ledCounts is not null && ledCounts.TryGetValue(key, out int configured) &&
+                configured > 0 && described > configured)
+            {
+                problems.Add(
+                    $"{label}: the runs add up to {described} LEDs but the controller is still set up for " +
+                    $"{configured}. Lengthen its LED outputs to match, or the last {described - configured} " +
+                    "stay dark.");
             }
         }
 
