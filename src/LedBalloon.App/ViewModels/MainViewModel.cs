@@ -107,6 +107,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
+    [ObservableProperty] private SceneRow? _selectedScene;
     [ObservableProperty] private DeviceViewModel? _selectedDevice;
     [ObservableProperty] private bool _isScanning;
     [ObservableProperty] private bool _isDrawingSegment;
@@ -1466,7 +1467,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>How many scenes were actually written somewhere.</returns>
     private async Task<int> PublishScenesAsync()
     {
-        if (Project.Scenes.Count == 0)
+        if (Project.Scenes.Count == 0 && _scenesToUnpublish.Count == 0)
         {
             return 0;
         }
@@ -1496,16 +1497,38 @@ public sealed partial class MainViewModel : ViewModelBase
                     anyPalettes = true;
                 }
 
-                ScenePublication result = await ScenePublisher.PublishAsync(key, device.Host, preset);
+                ScenePublication result = await ScenePublisher
+                    .PublishAsync(key, device.Host, preset, scene.PublishedAs);
 
                 if (result.Written)
                 {
                     published.Add(scene.Id);
                 }
             }
+
+            // Recorded once the controllers have it, so a rename knows which slot to land in and
+            // the list can say whether the timers can reach this yet.
+            scene.PublishedAs = scene.Name;
         }
 
-        if (published.Count > 0)
+        // Scenes deleted since the last save. Their published copies go now, which is safe because
+        // deleting is refused while a timer points at one.
+        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string name in _scenesToUnpublish)
+        {
+            foreach (DeviceViewModel device in Devices)
+            {
+                if (await ScenePublisher.RemoveAsync(device.Host, name) is not null)
+                {
+                    removed.Add(name);
+                }
+            }
+        }
+
+        _scenesToUnpublish.Clear();
+
+        if (published.Count > 0 || removed.Count > 0)
         {
             foreach (DeviceViewModel device in Devices)
             {
@@ -1523,7 +1546,7 @@ public sealed partial class MainViewModel : ViewModelBase
             await LoadPalettesAsync();
         }
 
-        return published.Count;
+        return published.Count + removed.Count;
     }
 
     // ---- Lights ---------------------------------------------------------------------------------
@@ -1660,6 +1683,231 @@ public sealed partial class MainViewModel : ViewModelBase
             string names = have.Length > 0 ? string.Join(" and ", have) : "one controller";
 
             return $"Only stored on {names}, so recalling it leaves the rest of the house as it was.";
+        }
+    }
+
+    // ---- Scenes ---------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Every named way for the house to look: the scenes in the project, and any preset on a
+    /// controller that has not been adopted into one.
+    /// </summary>
+    public ObservableCollection<SceneRow> Scenes { get; } = [];
+
+    /// <summary>What the chosen scene does, run by run.</summary>
+    public ObservableCollection<PresetDetail> SceneDetails { get; } = [];
+
+    /// <summary>
+    /// Saves what the house is doing right now under a name.
+    /// <para>
+    /// The way scenes get made. Get the house looking right by hand, then write it down — which is
+    /// how anyone actually arrives at a scene, rather than by describing one from cold.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void CaptureScene()
+    {
+        // What the photo is showing, not what the hardware is doing. With Sync off they differ, and
+        // the photo is the thing being looked at while deciding this is worth keeping.
+        IReadOnlyDictionary<string, WledState> states = DisplayStates;
+
+        if (states.Count == 0)
+        {
+            Status = "No connected controller to read the house from.";
+            return;
+        }
+
+        Scene scene = SceneResolver.Capture(Project, states, Project.UniqueSceneName("New scene"));
+        Project.Scenes.Add(scene);
+
+        RebuildScenes();
+        SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, scene));
+
+        AfterProjectChanged(
+            $"Saved what the house looks like now as '{scene.Name}'. Give it a name, then Save to " +
+            "put it on the controllers.");
+    }
+
+    /// <summary>Puts the chosen scene on the house.</summary>
+    [RelayCommand]
+    private void ApplyScene()
+    {
+        if (SelectedScene is not { } row)
+        {
+            return;
+        }
+
+        if (row.Scene is not { } scene)
+        {
+            // Through the preset machinery rather than straight to the lights, so that Sync means
+            // the same thing here as everywhere else on this panel.
+            SelectedPreset = row.Preset;
+            return;
+        }
+
+        // Resolved from the layout now, rather than recalled from whenever it was written down, so
+        // a run whose length was corrected since is covered to its real end.
+        foreach ((string key, WledState state) in SceneResolver.Resolve(Project, scene))
+        {
+            Send(DeviceFor(key), state);
+        }
+
+        Status = LiveSync
+            ? $"Applied '{scene.Name}'."
+            : $"'{scene.Name}' is on the photo. The lights have not changed — press Send when you want it.";
+    }
+
+    /// <summary>
+    /// Removes a scene, unless a timer is pointing at it.
+    /// <para>
+    /// Taking the published preset out from under a timer would leave it firing nothing at 23:30
+    /// with no way to notice, and leaving the preset behind would keep alive a scene the app says
+    /// is gone. Refusing is the only answer that cannot surprise anyone in the dark.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteSceneAsync()
+    {
+        if (SelectedScene is not { Scene: { } scene } || Ask is not { } ask)
+        {
+            return;
+        }
+
+        if (TimersPointingAt(scene) is { Count: > 0 } timers)
+        {
+            Status = $"'{scene.Name}' cannot be removed while {string.Join(" and ", timers)} " +
+                     "point at it. Change the timer first, on the Schedule tab.";
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: $"Remove '{scene.Name}'?",
+            Message: scene.PublishedAs is null
+                ? "It is only in the project, so nothing on the controllers changes."
+                : "It is removed from the controllers too, the next time you save.",
+            AcceptText: "Remove",
+            CancelText: "Keep it"));
+
+        if (!answer.Accepted)
+        {
+            return;
+        }
+
+        Project.Scenes.Remove(scene);
+
+        if (scene.PublishedAs is { Length: > 0 } published)
+        {
+            _scenesToUnpublish.Add(published);
+        }
+
+        RebuildScenes();
+        SelectedScene = null;
+
+        AfterProjectChanged($"Removed '{scene.Name}'. Revert to put it back.");
+    }
+
+    /// <summary>
+    /// Scenes whose published copies are to be deleted on the next save. Held rather than acted on
+    /// at once, because nothing else this app changes reaches the house before a save either.
+    /// </summary>
+    private readonly List<string> _scenesToUnpublish = [];
+
+    /// <summary>Which timers fire this scene, named the way the Schedule tab names them.</summary>
+    private List<string> TimersPointingAt(Scene scene)
+    {
+        string[] names = [scene.Name, .. scene.PublishedAs is { Length: > 0 } was ? new[] { was } : []];
+
+        return
+        [
+            .. Schedule
+                .Where(row => row.Preset is { } preset &&
+                              names.Any(n => string.Equals(n.Trim(), preset.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                .Select(row => row.IsClock
+                    ? $"the {row.Hour:00}:{row.Minute:00} timer on {row.ControllerName}"
+                    : $"the {row.Trigger?.Name?.ToLowerInvariant() ?? "sun"} timer on {row.ControllerName}")
+                .Distinct(StringComparer.CurrentCultureIgnoreCase),
+        ];
+    }
+
+    /// <summary>
+    /// Rebuilds the list, merging each scene with the controllers' copy of it.
+    /// <para>
+    /// Merged by name, because a published scene exists twice — once in the project and once on
+    /// each box — and they are two renderings of one fact rather than two things.
+    /// </para>
+    /// </summary>
+    private void RebuildScenes()
+    {
+        string? was = SelectedScene?.Name;
+
+        Scenes.Clear();
+
+        foreach (Scene scene in Project.Scenes)
+        {
+            Scenes.Add(SceneRow.For(Project, scene, PublishedCopyOf(scene)));
+        }
+
+        // Anything on the controllers that no scene accounts for. It belongs in this list because
+        // to whoever is reading it, a preset made in the WLED app is a scene too.
+        foreach (HousePreset preset in Presets)
+        {
+            if (preset.IsPlaylist || Scenes.Any(row => Covers(row, preset.Name)))
+            {
+                continue;
+            }
+
+            Scenes.Add(SceneRow.For(Project, preset));
+        }
+
+        if (was is not null)
+        {
+            SelectedScene = Scenes.FirstOrDefault(row =>
+                string.Equals(row.Name, was, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    /// <summary>The controllers' copy of a scene, under either its name or the one it used to have.</summary>
+    private HousePreset? PublishedCopyOf(Scene scene) =>
+        Presets.FirstOrDefault(p =>
+            string.Equals(p.Name.Trim(), scene.Name.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            (scene.PublishedAs is { Length: > 0 } was &&
+             string.Equals(p.Name.Trim(), was.Trim(), StringComparison.OrdinalIgnoreCase)));
+
+    private static bool Covers(SceneRow row, string presetName) =>
+        string.Equals(row.Name.Trim(), presetName.Trim(), StringComparison.OrdinalIgnoreCase) ||
+        (row.Scene?.PublishedAs is { Length: > 0 } was &&
+         string.Equals(was.Trim(), presetName.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    partial void OnSelectedSceneChanged(SceneRow? value)
+    {
+        SceneDetails.Clear();
+
+        if (value?.Scene is not { } scene)
+        {
+            // An un-adopted preset describes itself out of what the controllers hold.
+            RebuildPresetDetails(value?.Preset);
+            foreach (PresetDetail detail in PresetDetails)
+            {
+                SceneDetails.Add(detail);
+            }
+
+            return;
+        }
+
+        foreach (string key in Project.ActiveControllerKeys())
+        {
+            DeviceViewModel? device = DeviceFor(key);
+            WledState state = SceneResolver.ResolveFor(Project, scene, key);
+
+            foreach (Segment run in Project.SegmentsOn(key))
+            {
+                int id = Project.WledSegmentIdFor(run);
+
+                if (state.Segments?.FirstOrDefault(s => s.Id == id) is { } wled)
+                {
+                    SceneDetails.Add(Describe(run, wled, device));
+                }
+            }
         }
     }
 
@@ -2449,6 +2697,9 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             Presets.Add(preset);
         }
+
+        // The scene list is built out of this one, so it is stale the moment this changes.
+        RebuildScenes();
     }
 
     private void OnDevicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)

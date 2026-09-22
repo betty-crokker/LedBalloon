@@ -134,6 +134,17 @@ public sealed class Scene
     /// <summary>Crossfade into this scene, in 100 ms units.</summary>
     [JsonPropertyName("transition")] public int? Transition { get; set; }
 
+    /// <summary>
+    /// The name this scene was last published under, or null if it never has been.
+    /// <para>
+    /// Publishing matches by name, so a rename would otherwise leave the old name behind on the
+    /// controllers — and an orphan here is worse than usual, because a timer pointing at its slot
+    /// would go on firing the previous version of the scene forever. Knowing the old name lets the
+    /// rename land in the slot the old one holds, which carries the timers with it.
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("publishedAs")] public string? PublishedAs { get; set; }
+
     /// <summary>What each segment wears, keyed by <see cref="Segment.Id"/>.</summary>
     [JsonPropertyName("segments")] public Dictionary<string, SceneEntry> Segments { get; set; } = [];
 

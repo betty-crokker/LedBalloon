@@ -178,6 +178,72 @@ public class ScenePublisherTests
         Assert.Empty(ScenePublisher.BuildFor(House(), StairsWhite(), "aabbccddeeff").Segments!);
     }
 
+    /// <summary>
+    /// A rename has to replace its old self. Anything else orphans the old preset, and a timer
+    /// pointing at its slot would go on firing the previous version of the scene forever.
+    /// </summary>
+    [Fact]
+    public void A_renamed_scene_lands_in_the_slot_its_old_name_holds()
+    {
+        JsonObject presets = OnTheBox(("1", "Bpm"), ("2", "Off"), ("4", "Evening white"));
+
+        Scene renamed = StairsWhite();
+        renamed.Name = "Evening warm";
+
+        PublishPlan plan = ScenePublisher.PlanFor(
+            presets,
+            ScenePublisher.BuildFor(House(), renamed, North),
+            previousName: "Evening white");
+
+        Assert.Equal(4, plan.Slot);
+        Assert.True(plan.Changed);
+    }
+
+    [Fact]
+    public void The_name_it_has_now_wins_over_the_one_it_used_to_have()
+    {
+        JsonObject presets = OnTheBox(("3", "Evening warm"), ("4", "Evening white"));
+
+        Scene renamed = StairsWhite();
+        renamed.Name = "Evening warm";
+
+        PublishPlan plan = ScenePublisher.PlanFor(
+            presets,
+            ScenePublisher.BuildFor(House(), renamed, North),
+            previousName: "Evening white");
+
+        Assert.Equal(3, plan.Slot);
+    }
+
+    /// <summary>
+    /// Two scenes of one name would fight over a single slot on every box, each overwriting the
+    /// other on alternate saves.
+    /// </summary>
+    [Fact]
+    public void A_scene_cannot_take_a_name_another_scene_already_has()
+    {
+        LedBalloonProject house = House();
+        house.Scenes.Add(new Scene { Id = "a", Name = "Christmas" });
+
+        Assert.Equal("Christmas 2", house.UniqueSceneName("Christmas"));
+
+        // The clash is spotted whatever the casing, and the answer keeps what was typed.
+        Assert.Equal("christmas 2", house.UniqueSceneName("  christmas  "));
+
+        // A scene keeps its own name when it is the one being renamed.
+        Assert.Equal("Christmas", house.UniqueSceneName("Christmas", ignoringId: "a"));
+    }
+
+    [Fact]
+    public void A_third_scene_of_the_same_name_counts_on_past_the_second()
+    {
+        LedBalloonProject house = House();
+        house.Scenes.Add(new Scene { Name = "Winter" });
+        house.Scenes.Add(new Scene { Name = "Winter 2" });
+
+        Assert.Equal("Winter 3", house.UniqueSceneName("Winter"));
+    }
+
     /// <summary>A presets.json holding named slots, the way a real box does.</summary>
     private static JsonObject OnTheBox(params (string Slot, string Name)[] entries)
     {

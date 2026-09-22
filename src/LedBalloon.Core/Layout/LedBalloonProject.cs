@@ -111,6 +111,38 @@ public sealed class LedBalloonProject
         Scenes.Count(scene => scene.Segments.Values.Any(e =>
             string.Equals(e.LookId, lookId, StringComparison.Ordinal)));
 
+    /// <summary>
+    /// A scene name nothing else is using, by adding a number until it is free.
+    /// <para>
+    /// Names have to be unique because publishing matches by name: two scenes called the same thing
+    /// would fight over one preset slot on every controller, each overwriting the other on
+    /// alternate saves.
+    /// </para>
+    /// </summary>
+    /// <param name="ignoringId">A scene allowed to keep its own name, when one is being renamed.</param>
+    public string UniqueSceneName(string wanted, string? ignoringId = null)
+    {
+        string trimmed = string.IsNullOrWhiteSpace(wanted) ? "Scene" : wanted.Trim();
+
+        bool Taken(string candidate) => Scenes.Any(s =>
+            !string.Equals(s.Id, ignoringId, StringComparison.Ordinal) &&
+            string.Equals(s.Name.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+
+        if (!Taken(trimmed))
+        {
+            return trimmed;
+        }
+
+        for (int n = 2; ; n++)
+        {
+            string candidate = $"{trimmed} {n}";
+            if (!Taken(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     /// <summary>True once there is enough here to stop asking about hardware and start lighting.</summary>
     [JsonIgnore]
     public bool IsConfigured => Segments.Count > 0;
