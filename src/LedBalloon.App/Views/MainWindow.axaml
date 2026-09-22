@@ -747,14 +747,13 @@
 
                         <CheckBox Content="Strip runs the other way"
                                   IsChecked="{Binding Owner.OutputReversed}" />
-                        <CheckBox Content="Keep refreshing while off"
-                                  IsChecked="{Binding Owner.OutputOffRefresh}" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Text="The whole output is addressed back to front. This is about how the strip is wired, not about which way a run was traced - that is on the run itself." />
 
-                        <Button Classes="block" Content="Write it to the controller" Margin="0,10,0,0"
-                                Command="{Binding Owner.SaveOutputCommand}"
-                                IsEnabled="{Binding !Owner.IsBusy}" />
-                        <TextBlock Classes="hint" TextWrapping="Wrap"
-                                   Text="This one goes straight to the controller rather than waiting for Save, because it is not part of the layout." />
+                        <CheckBox Content="Keep sending to it while it is off"
+                                  IsChecked="{Binding Owner.OutputOffRefresh}" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
+                                   Text="Normally the controller stops talking to a strip that is off. A few LED chips need to keep being told to stay dark, and glow faintly or pick up stray pixels when the line goes quiet. Leave it off unless you see that." />
 
                       </StackPanel>
                     </ScrollViewer>
