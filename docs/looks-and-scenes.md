@@ -232,6 +232,43 @@ timer pointing at its slot would go on firing the previous version of the scene 
 has to carry the timers with it, which is possible because they are recalled by slot and the slot is
 being reused.
 
+## What an outage does, and the one thing that rots
+
+Two controllers, both carrying scenes. North goes offline. Work continues on South. North returns.
+
+**The layout and the scenes survive intact**, because North is *absent* rather than stale: its runs
+are not in the project while it is away, so they cannot be edited or deleted, so there is nothing to
+conflict. `SliceFor` trims each scene to the segments on that controller, so each box authors only
+its own part. `Assemble` then unions — `Revision = Math.Max(...)`, segments deduped by id and
+disjoint by construction, scene entries merged per segment id. North comes back at 15 against
+South's 17, the house assembles as 17, the next save writes 18 to both.
+
+**The published presets do not.** `presets.json` carries no revision, no timestamp and no merge, and
+`PresetCatalog.Merge` groups by trimmed name into one `HousePreset` with a placement per controller
+**without ever comparing their contents**. So South's published "Christmas" is new, North's is old,
+the list shows one "Christmas", and recalling it lights each box a different way. The timers do the
+same, each firing its own local copy. Nothing notices.
+
+So publishing needs one more requirement:
+
+- **Republish any controller whose published copy is stale**, on reunion and on save. That needs
+  staleness to be detectable — either compare the built preset against what is on the box, or stamp
+  the project revision into the published preset and compare that. The comparison is needed anyway
+  for "write nothing when nothing changed".
+
+### Why the layout must stay sliced
+
+It is tempting to mirror the whole layout onto every controller so that a dead box does not take its
+traced lines with it. **That introduces exactly the conflict class the presets already have.** A
+mirrored South would hold North's runs, so during the outage they could be renamed or deleted; South
+would be revision 17 with the edit and North revision 15 with the original, and `Assemble` dedupes
+by segment id with first-slice-wins — where "first" is whichever box answered first. An arbitrary
+winner, chosen silently.
+
+Slicing is what makes reunion safe. Mirroring is only safe with per-segment versioning, which is a
+much larger change, and the loss it protects against — a controller dying and taking its traced
+geometry with it — is better addressed by an export.
+
 ## Offline controllers — a display gap that exists today
 
 A controller that has never answered **is not shown at all**, and its segments are unreachable:
