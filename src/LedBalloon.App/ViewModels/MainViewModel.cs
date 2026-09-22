@@ -617,6 +617,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 return;
             }
 
+            // The panel's editor is pointed at a row belonging to the project about to be thrown
+            // away. Left open it keeps showing that row's values - which after a revert are the
+            // very edits being undone - while editing nothing that still exists.
+            CloseSegmentEditor();
+
             Project = result.Project!;
             SelectedSegment = Project.Segments.FirstOrDefault();
 

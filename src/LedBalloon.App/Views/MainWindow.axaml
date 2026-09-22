@@ -331,10 +331,6 @@
                  reach, not at the end of a long scroll. -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
                         VerticalAlignment="Center">
-              <Border Padding="7,2" CornerRadius="3" Background="#C9821B" VerticalAlignment="Center"
-                      IsVisible="{Binding HasUnsavedChanges}">
-                <TextBlock Text="Unsaved" FontSize="12" Foreground="White" />
-              </Border>
               <Button Content="Revert"
                       ToolTip.Tip="Read the layout back off the controllers, throwing away unsaved changes"
                       Command="{Binding RevertCommand}"
@@ -351,7 +347,18 @@
             </StackPanel>
 
             <StackPanel VerticalAlignment="Center">
-              <TextBlock Text="Setting up the house" FontWeight="SemiBold" />
+              <!-- The badge belongs beside the title, not in the button strip. Sitting among
+                   buttons, at button height, it read as a button you could press. Here it is
+                   plainly a label on the thing it describes. -->
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Text="Setting up the house" FontWeight="SemiBold"
+                           VerticalAlignment="Center" />
+                <Border Padding="6,1" CornerRadius="3" VerticalAlignment="Center"
+                        Background="#33C9821B" BorderBrush="#C9821B" BorderThickness="1"
+                        IsVisible="{Binding HasUnsavedChanges}">
+                  <TextBlock Text="Unsaved" FontSize="11" Foreground="#C9821B" />
+                </Border>
+              </StackPanel>
               <TextBlock Classes="hint"
                          Text="Controllers, segments and where they hang. Saving stores the layout on the controllers and re-cuts them to match." />
             </StackPanel>
@@ -613,6 +620,15 @@
             <DockPanel Margin="8,8,8,8">
 
               <StackPanel DockPanel.Dock="Top" Spacing="6">
+                <!-- Same as Setup: the badge sits on the heading, clear of the buttons. -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <TextBlock Text="Timers" FontWeight="SemiBold" VerticalAlignment="Center" />
+                  <Border Padding="6,1" CornerRadius="3" VerticalAlignment="Center"
+                          Background="#33C9821B" BorderBrush="#C9821B" BorderThickness="1"
+                          IsVisible="{Binding ScheduleChanged}">
+                    <TextBlock Text="Unsaved" FontSize="11" Foreground="#C9821B" />
+                  </Border>
+                </StackPanel>
                 <TextBlock Classes="hint"
                            Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
@@ -620,10 +636,6 @@
                   <Button Content="Save to controllers"
                           Command="{Binding SaveScheduleCommand}"
                           IsEnabled="{Binding !IsBusy}" />
-                  <Border Padding="7,2" CornerRadius="3" Background="#C9821B" VerticalAlignment="Center"
-                          IsVisible="{Binding ScheduleChanged}">
-                    <TextBlock Text="Unsaved" FontSize="12" Foreground="White" />
-                  </Border>
                 </StackPanel>
               </StackPanel>
 
