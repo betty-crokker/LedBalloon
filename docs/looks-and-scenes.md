@@ -1,7 +1,20 @@
 # Looks and scenes
 
-Status: **design note, nothing built.** Written 2026-09-22 after a cross-controller preset copy
-produced a wrong result on real hardware.
+Status: **built.** Written 2026-09-22 after a cross-controller preset copy produced a wrong result
+on real hardware, and carried out over the same day.
+
+| Commit | What landed |
+| --- | --- |
+| `00bb247` | the whole house mirrored onto every controller, verified live |
+| `5b80345` | the model split into looks and scenes |
+| `41c99c9` | publishing; `PresetCopier.BuildFor` deleted |
+| `463232c` | capture, the scenes list, rename and delete |
+| `77398a6` | adoption |
+| `8be1fdd` | named looks, and binding to them on capture |
+| `5dc3c16` | absent controllers shown, wording |
+
+The sections below are the reasoning as it was worked out. **What was built differently** at the end
+records where carrying it out changed the answer.
 
 ## The defect this replaces
 
@@ -316,3 +329,39 @@ published, and say which box is missing.
 - Changing what a WLED preset is, or how the controllers recall one.
 - Storing anything on the PC. Scenes and looks live in the project, which lives on the controllers.
 - Keeping cross-controller preset copying as a user-facing idea, or as code.
+
+## What was built differently
+
+Three things the note got wrong or left open, found by running it against the house.
+
+**An adopted scene leaves unlisted runs alone.** The note treats `UnlistedSegmentsOff` as simply
+true, which makes a scene a complete description of the house. That is right for a captured scene,
+because it was made from the whole house. It is wrong for an adopted one: WLED applies the segments
+a preset lists and leaves the rest as they were, so adopting South's `Bpm` -- a South-only preset --
+would have produced a whole-house scene that blacks North out. Adoption sets it false, and
+publishing now skips a controller the scene names no run on, removing any stale copy there.
+
+**Matching by segment id is the same fallacy, smaller.** The read-only preview of an un-adopted
+preset read its segments by id, so `Bpm`'s second segment -- which covers the porch and most of the
+roofline -- claimed only the porch, because it happens to be id 1. The preview is now the adoption
+plan itself, so the cards and the *Make it a scene* button cannot disagree.
+
+**Half a run has to be covered** before it takes a segment's appearance. The note does not say what
+"matches" means. Below half, the segment is clipping the run rather than lighting it, and adopting
+on the strength of a few LEDs would put a pattern somewhere it was never shown.
+
+Two smaller ones. Deleting a look writes what it meant into every scene wearing it first: a dangling
+reference resolves to nothing, which would take those runs dark, and nobody deleting a name means
+"and turn those off". The resolver's fallback stays as the safety net for a reference that goes
+dangling some other way. And renaming is carried by `Scene.PublishedAs` rather than by a delete and
+a re-publish, so the new name lands in the slot the old one holds and the timers follow it.
+
+## Still open
+
+- **Drift is not detected.** The note says the project's scene wins and republishing overwrites,
+  and that this is worth saying the first time it happens. Publishing compares against the stored
+  JSON, so it knows when the box disagrees -- but it republishes silently rather than saying so.
+- **The absent-controller card is reasoned, not observed.** Both controllers answered throughout,
+  and taking one off the network was not something to do to a working house to test a card.
+- **South's `Bpm` and `Off` are still un-adopted**, by choice. Adopting either rewrites the slot its
+  timer fires, which is the owner's call rather than a test's.
