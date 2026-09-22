@@ -1,4 +1,4 @@
-using LedBalloon.Core.Models;
+﻿using LedBalloon.Core.Models;
 
 namespace LedBalloon.Core.Effects;
 
@@ -32,6 +32,27 @@ public sealed class EffectSegment
     /// <summary>The three color slots, primary first. WLED's SEGCOLOR.</summary>
     public RgbColor[] Colors { get; set; } = [RgbColor.White, RgbColor.Black, RgbColor.Black];
 
+    /// <summary>
+    /// How long one frame lasts on the controller driving this run.
+    /// <para>
+    /// Effects read it: Blink measures its duty cycle in frames, and anything that fades reaches a
+    /// given darkness after a number of them rather than after an amount of time.
+    /// </para>
+    /// </summary>
+    public int FrameMilliseconds { get; set; } = 1000 / 42;
+
+    /// <summary>
+    /// Scratch that survives between frames, WLED's <c>SEGENV.step</c>. Effects that need to know
+    /// what they did last time keep it here.
+    /// </summary>
+    public uint Step { get; set; }
+
+    /// <summary>Frames drawn since this run started, WLED's <c>SEGENV.call</c>.</summary>
+    public uint Call { get; set; }
+
+    /// <summary>Whether the run is wired back to front, which some effects mirror themselves for.</summary>
+    public bool Reverse { get; set; }
+
     public byte Speed { get; set; } = 128;
     public byte Intensity { get; set; } = 128;
     public byte Custom1 { get; set; } = 128;
@@ -53,21 +74,78 @@ public sealed class EffectSegment
     /// <summary>
     /// The color an effect gets when it asks the palette for index <paramref name="index"/>.
     /// </summary>
+    /// <param name="mapping">
+    /// True when the index is an LED position rather than a palette position, so it is stretched
+    /// across the palette first. That is how an effect paints the whole gradient along the run.
+    /// </param>
     /// <param name="wrap">
     /// False - the usual - stops the lookup short of the palette's end, so the last color does not
     /// blend back round into the first.
     /// </param>
-    public RgbColor ColorFromPalette(int index, bool wrap = false)
+    /// <param name="colorSlot">Which color slot stands in when the run is not on a palette.</param>
+    /// <param name="brightness">Scales the result, which some effects use to pulse.</param>
+    public RgbColor ColorFromPalette(
+        int index,
+        bool mapping = false,
+        bool wrap = false,
+        int colorSlot = 0,
+        byte brightness = 255)
     {
         if (PaletteId == 0 || Palette is null)
         {
-            return Colors[0];
+            RgbColor flat = Colors[Math.Clamp(colorSlot, 0, Colors.Length - 1)];
+            return brightness == 255 ? flat : Fade(flat, brightness);
         }
 
-        byte at = wrap ? (byte)(index & 0xFF) : FastLed.Scale8((byte)(index & 0xFF), 240);
+        int at = index;
 
-        return Palette.ColorAt(at / 255d, Colors[0], Colors[1], Colors[2]);
+        if (mapping && Length > 1)
+        {
+            at = index * 255 / (Length - 1);
+        }
+
+        byte wrapped = (byte)(at & 0xFF);
+        if (!wrap)
+        {
+            wrapped = FastLed.Scale8(wrapped, 240);
+        }
+
+        RgbColor color = Palette.ColorAt(wrapped / 255d, Colors[0], Colors[1], Colors[2]);
+
+        return brightness == 255 ? color : Fade(color, brightness);
     }
+
+    /// <summary>Scales a color down, never quite to nothing while it is still lit.</summary>
+    public static RgbColor Fade(RgbColor color, byte amount)
+    {
+        if (amount == 0)
+        {
+            return RgbColor.Black;
+        }
+
+        return new RgbColor(Down(color.R), Down(color.G), Down(color.B));
+
+        byte Down(byte channel)
+        {
+            int scaled = channel * amount >> 8;
+
+            // The "video" guard: a lit channel never scales all the way to black, so a dimmed
+            // color keeps its hue instead of losing its weakest component first.
+            return (byte)(scaled == 0 && channel != 0 ? 1 : scaled);
+        }
+    }
+
+    /// <summary>Mixes two colors, where 0 is all of the first and 255 all of the second.</summary>
+    public static RgbColor Blend(RgbColor first, RgbColor second, byte amount) =>
+        amount switch
+        {
+            0 => first,
+            255 => second,
+            _ => new RgbColor(
+                (byte)(((second.R * amount) + (first.R * (255 - amount))) >> 8),
+                (byte)(((second.G * amount) + (first.G * (255 - amount))) >> 8),
+                (byte)(((second.B * amount) + (first.B * (255 - amount))) >> 8)),
+        };
 
     /// <summary>Lights one LED, ignoring one off the end rather than throwing.</summary>
     public void SetPixel(int index, RgbColor color)
@@ -121,6 +199,7 @@ public sealed class EffectSegment
         Custom3 = wled.Custom3 ?? 16;
         PaletteId = wled.Palette ?? 0;
         Palette = palette;
+        Reverse = wled.Reverse ?? false;
 
         Colors =
         [
