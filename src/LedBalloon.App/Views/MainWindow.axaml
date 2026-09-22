@@ -745,10 +745,12 @@
                         <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
                                    Text="For LEDs at the near end that are wired but not wanted - hidden behind a downpipe, say." />
 
-                        <CheckBox Content="Strip runs the other way"
-                                  IsChecked="{Binding Owner.OutputReversed}" />
-                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,6"
-                                   Text="The whole output is addressed back to front. This is about how the strip is wired, not about which way a run was traced - that is on the run itself." />
+                        <!-- The output's own "reversed" flag is not offered. It says the same
+                             physical thing as putting the runs in the other order and flipping
+                             each one, except that those are visible in the panel and it is not -
+                             and on an output with more than one run it also swaps which LEDs
+                             belong to which run, which is not what anyone means by "the other
+                             way round". -->
 
                         <CheckBox Content="Keep sending to it while it is off"
                                   IsChecked="{Binding Owner.OutputOffRefresh}" />
