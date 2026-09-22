@@ -1,4 +1,4 @@
-namespace LedBalloon.Core.Effects;
+﻿namespace LedBalloon.Core.Effects;
 
 /// <summary>
 /// The integer math WLED's effects are built out of, ported rather than approximated.
@@ -62,6 +62,39 @@ public static class FastLed
     /// </para>
     /// </summary>
     public static byte Scale8(byte i, byte scale) => (byte)(i * scale / 256);
+
+    /// <summary>
+    /// Where in a beat we are, 0-255, at a given tempo. WLED counts beats off the same clock the
+    /// effects use, so this needs the same milliseconds they get.
+    /// </summary>
+    /// <param name="beatsPerMinute">Tempo. WLED hands the segment's speed straight in as a BPM.</param>
+    public static byte Beat8(byte beatsPerMinute, uint now)
+    {
+        // beat88's fixed-point tempo: the BPM shifted up eight bits, times 280, over 2^16.
+        uint tempo = (uint)beatsPerMinute << 8;
+
+        uint beat16;
+        unchecked
+        {
+            beat16 = (ushort)((now * tempo * 280) >> 16);
+        }
+
+        return (byte)(beat16 >> 8);
+    }
+
+    /// <summary>A sine at a given tempo, swinging between two values.</summary>
+    public static byte BeatSin8(
+        byte beatsPerMinute,
+        byte lowest,
+        byte highest,
+        uint now,
+        byte phaseOffset = 0)
+    {
+        byte beat = Beat8(beatsPerMinute, now);
+        byte wave = Sin8((byte)(beat + phaseOffset));
+
+        return (byte)(lowest + Scale8(wave, (byte)(highest - lowest)));
+    }
 
     /// <summary>Moves one channel a fraction of the way toward another, never stalling short of it.</summary>
     /// <param name="mappedRate">How far to move, out of 256.</param>

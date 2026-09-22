@@ -1,4 +1,4 @@
-using LedBalloon.Core.Models;
+﻿using LedBalloon.Core.Models;
 
 namespace LedBalloon.Core.Effects;
 
@@ -19,7 +19,15 @@ namespace LedBalloon.Core.Effects;
 /// </summary>
 public static class EffectLibrary
 {
-    private static readonly IWledEffect[] Ported = [new ChunchunEffect()];
+    private static readonly IWledEffect[] Ported =
+    [
+        new SolidEffect(),
+        new BlinkEffect(),
+        new BreatheEffect(),
+        new BpmEffect(),
+        new FlowEffect(),
+        new ChunchunEffect(),
+    ];
 
     private static readonly Dictionary<string, IWledEffect> ByName =
         Ported.ToDictionary(effect => effect.Name, StringComparer.OrdinalIgnoreCase);
@@ -62,7 +70,7 @@ public static class EffectLibrary
             return null;
         }
 
-        var segment = new EffectSegment(length);
+        var segment = new EffectSegment(length) { FrameMilliseconds = frameMilliseconds };
         segment.Adopt(wled, palette);
 
         var simulation = new EffectSimulation(effect, segment, frameMilliseconds);
