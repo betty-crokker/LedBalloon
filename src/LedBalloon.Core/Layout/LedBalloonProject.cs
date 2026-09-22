@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace LedBalloon.Core.Layout;
@@ -22,7 +25,18 @@ public sealed class LedBalloonProject
     /// build is refused rather than quietly mangled by an older one.
     /// </para>
     /// </summary>
-    public const int CurrentSchema = 1;
+    /// <summary>
+    /// The shape of the stored file.
+    /// <para>
+    /// 1 stored a slice per controller: each box held only its own runs. 2 mirrors the whole house
+    /// onto every box, which is what makes any one of them enough to rebuild it. Loading a 1 unions
+    /// the slices exactly as before; the next save writes 2 everywhere and the question goes away.
+    /// </para>
+    /// </summary>
+    public const int CurrentSchema = 2;
+
+    /// <summary>The first schema that mirrors rather than slices.</summary>
+    public const int MirroredSchema = 2;
 
     [JsonPropertyName("schema")] public int Schema { get; set; } = CurrentSchema;
 
@@ -448,8 +462,35 @@ public sealed class LedBalloonProject
     }
 
     /// <summary>
+    /// Everything about this house except when it was written, hashed.
+    /// <para>
+    /// For telling two copies apart when their revisions match, which means either that they are
+    /// the same document or that two people edited in a network split and neither knows. The
+    /// revision and the timestamp are left out on purpose: they say when, not what.
+    /// </para>
+    /// </summary>
+    public string Fingerprint()
+    {
+        JsonNode? node = JsonNode.Parse(Encoding.UTF8.GetString(ProjectSerialization.ToUtf8(this)));
+
+        if (node is JsonObject document)
+        {
+            document.Remove("revision");
+            document.Remove("savedUtc");
+        }
+
+        return Convert.ToHexStringLower(
+            SHA256.HashData(Encoding.UTF8.GetBytes(node?.ToJsonString() ?? string.Empty)))[..16];
+    }
+
+    /// <summary>
     /// Reassembles a house from the slices each controller holds. Later slices add to the picture;
     /// none of them overwrites another's runs.
+    /// <para>
+    /// Only for reading schema 1, where each box held its own runs and the house was what they added
+    /// up to. Mirrored copies must not be unioned: a box that was offline while a run was deleted
+    /// still holds it, and unioning would bring it back from the dead.
+    /// </para>
     /// </summary>
     public static LedBalloonProject Assemble(IEnumerable<LedBalloonProject> slices)
     {
