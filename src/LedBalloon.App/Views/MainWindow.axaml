@@ -480,52 +480,82 @@
                             </StackPanel>
                           </DockPanel>
 
-                          <Border Margin="6,0,0,0" Padding="10,2,0,2"
-                                  BorderBrush="{DynamicResource PanelBorder}" BorderThickness="2,0,0,0">
-                            <StackPanel Spacing="2">
+                          <!-- One block per LED output, because the order within an output is now
+                               something you set, and "move earlier" means nothing unless you can
+                               see what it is moving inside of. GPIO 16 against GPIO 2 belongs on
+                               the output too: it is a fact about the socket, not about the run. -->
+                          <ItemsControl ItemsSource="{Binding Outputs}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate x:DataType="vm:OutputGroup">
+                                <StackPanel Spacing="2" Margin="0,4,0,0">
 
-                              <ItemsControl ItemsSource="{Binding Runs}">
-                                <ItemsControl.ItemTemplate>
-                                  <DataTemplate x:DataType="vm:SegmentRow">
-                                    <DockPanel Margin="0,2">
+                                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,0,0,2">
+                                    <TextBlock Text="{Binding Header}" FontSize="11" FontWeight="SemiBold"
+                                               Opacity="0.75" />
+                                    <TextBlock Text="{Binding Summary}" Classes="hint" FontSize="11" />
+                                  </StackPanel>
 
-                                      <Button DockPanel.Dock="Right" Classes="icon"
-                                              ToolTip.Tip="Remove this segment"
-                                              Command="{Binding Owner.DeleteSegmentCommand}"
-                                              CommandParameter="{Binding}">
-                                        <TextBlock Text="&#x1F5D1;" />
-                                      </Button>
+                                  <Border Margin="6,0,0,0" Padding="10,2,0,2"
+                                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="2,0,0,0">
+                                    <ItemsControl ItemsSource="{Binding Runs}">
+                                      <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SegmentRow">
+                                          <DockPanel Margin="0,2">
 
-                                      <Button DockPanel.Dock="Right" Classes="icon"
-                                              ToolTip.Tip="Change this segment"
-                                              Command="{Binding Owner.EditSegmentCommand}"
-                                              CommandParameter="{Binding}">
-                                        <TextBlock Text="&#x270E;" />
-                                      </Button>
+                                            <Button DockPanel.Dock="Right" Classes="icon"
+                                                    ToolTip.Tip="Remove this segment"
+                                                    Command="{Binding Owner.DeleteSegmentCommand}"
+                                                    CommandParameter="{Binding}">
+                                              <TextBlock Text="&#x1F5D1;" />
+                                            </Button>
 
-                                      <Button Classes="row"
-                                              Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}"
-                                              Command="{Binding Owner.PickSegmentRowCommand}"
-                                              CommandParameter="{Binding}">
-                                        <StackPanel Spacing="1">
-                                          <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
-                                                     TextTrimming="CharacterEllipsis" />
-                                          <TextBlock Classes="hint" Text="{Binding Placement}" />
-                                          <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
-                                                     IsVisible="{Binding !Segment.HasGeometry}"
-                                                     Text="not traced on the photo yet" />
-                                        </StackPanel>
-                                      </Button>
-                                    </DockPanel>
-                                  </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                              </ItemsControl>
+                                            <Button DockPanel.Dock="Right" Classes="icon"
+                                                    ToolTip.Tip="Change this segment"
+                                                    Command="{Binding Owner.EditSegmentCommand}"
+                                                    CommandParameter="{Binding}">
+                                              <TextBlock Text="&#x270E;" />
+                                            </Button>
 
-                              <TextBlock Classes="hint" Margin="0,4"
-                                         IsVisible="{Binding !HasRuns}"
-                                         Text="Nothing described on this controller yet. Add a segment below, or use the pencil to read its wiring." />
-                            </StackPanel>
-                          </Border>
+                                            <Button DockPanel.Dock="Right" Classes="icon"
+                                                    ToolTip.Tip="Later along this output"
+                                                    Command="{Binding Owner.MoveSegmentLaterCommand}"
+                                                    CommandParameter="{Binding}">
+                                              <TextBlock Text="&#x25BC;" FontSize="10" />
+                                            </Button>
+
+                                            <Button DockPanel.Dock="Right" Classes="icon"
+                                                    ToolTip.Tip="Earlier along this output"
+                                                    Command="{Binding Owner.MoveSegmentEarlierCommand}"
+                                                    CommandParameter="{Binding}">
+                                              <TextBlock Text="&#x25B2;" FontSize="10" />
+                                            </Button>
+
+                                            <Button Classes="row"
+                                                    Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}"
+                                                    Command="{Binding Owner.PickSegmentRowCommand}"
+                                                    CommandParameter="{Binding}">
+                                              <StackPanel Spacing="1">
+                                                <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Classes="hint" Text="{Binding Placement}" />
+                                                <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
+                                                           IsVisible="{Binding !Segment.HasGeometry}"
+                                                           Text="not traced on the photo yet" />
+                                              </StackPanel>
+                                            </Button>
+                                          </DockPanel>
+                                        </DataTemplate>
+                                      </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                  </Border>
+                                </StackPanel>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+
+                          <TextBlock Classes="hint" Margin="4,4,0,0"
+                                     IsVisible="{Binding !HasRuns}"
+                                     Text="Nothing described on this controller yet. Add a segment below, or use the pencil to read its wiring." />
 
                           <!-- On the card rather than only in the pencil menu: adding a segment is
                                the ordinary thing you do here, and it says which controller it
@@ -590,14 +620,15 @@
                 <DataTemplate x:DataType="vm:SegmentRow">
                   <DockPanel>
 
+                    <!-- No big title carrying the segment's name: the Name box a few lines down
+                         already says it, and says it in the place you can change it. -->
                     <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
                       <Button HorizontalAlignment="Left" Padding="8,3"
                               Command="{Binding Owner.CloseSegmentEditorCommand}">
                         <TextBlock Text="&#x2190;  All controllers" />
                       </Button>
-                      <TextBlock Classes="panelTitle" TextTrimming="CharacterEllipsis"
-                                 Text="{Binding Segment.Name}" />
-                      <TextBlock Classes="hint" Text="{Binding ControllerName, StringFormat='On {0}'}" />
+                      <TextBlock Classes="panelTitle" Text="{Binding ControllerName, StringFormat='On {0}'}"
+                                 TextTrimming="CharacterEllipsis" />
                     </StackPanel>
 
                     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
@@ -619,17 +650,11 @@
                                   PlaceholderText="Which output"
                                   HorizontalAlignment="Stretch" />
 
-                        <TextBlock Classes="hint" Margin="0,2,0,0" Text="Order on that output" />
-                        <Grid ColumnDefinitions="*,6,*">
-                          <Button Grid.Column="0" Classes="block" FontSize="12" Padding="6,3"
-                                  Content="Move earlier"
-                                  Command="{Binding Owner.MoveSegmentEarlierCommand}" />
-                          <Button Grid.Column="2" Classes="block" FontSize="12" Padding="6,3"
-                                  Content="Move later"
-                                  Command="{Binding Owner.MoveSegmentLaterCommand}" />
-                        </Grid>
-
-                        <TextBlock Classes="hint" Margin="0,4,0,0" Text="{Binding Placement}" />
+                        <!-- Reordering happens in the list, under the output heading, where you
+                             can see what it is moving among. So this says where it sits rather
+                             than pointing at controls this panel is covering up. -->
+                        <TextBlock Classes="hint" Margin="0,2,0,0" TextWrapping="Wrap"
+                                   Text="{Binding Owner.OrderNotice}" />
 
                         <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
 

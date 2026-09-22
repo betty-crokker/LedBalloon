@@ -109,7 +109,24 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
             // Which outputs this box has, and on which pins. Read on connect rather than when
             // something needs it: a segment has to say which output it is plugged into, and a
             // picker that is empty until you visit some other screen first is a trap.
+            await RefreshOutputsAsync();
+        }
+        catch (Exception ex)
+        {
+            OnUi(() => Status = $"Could not connect: {ex.Message}");
+        }
+    }
+
+    /// <summary>The controller's LED outputs, in the order it lists them. Output 1 is index 0.</summary>
+    public ObservableCollection<LedBus> Outputs { get; } = [];
+
+    /// <summary>Reads the outputs again, after something has changed them.</summary>
+    public async Task RefreshOutputsAsync()
+    {
+        try
+        {
             IReadOnlyList<LedBus> wiring = await new WledConfigClient(Host).GetLedBusesAsync();
+
             OnUi(() =>
             {
                 Outputs.Clear();
@@ -121,14 +138,11 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
                 OnPropertyChanged(nameof(Outputs));
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            OnUi(() => Status = $"Could not connect: {ex.Message}");
+            // A box that will not say how it is wired is not a reason to fail whatever asked.
         }
     }
-
-    /// <summary>The controller's LED outputs, in the order it lists them. Output 1 is index 0.</summary>
-    public ObservableCollection<LedBus> Outputs { get; } = [];
 
     partial void OnAssignedNameChanged(string? value) => OnPropertyChanged(nameof(DisplayName));
 

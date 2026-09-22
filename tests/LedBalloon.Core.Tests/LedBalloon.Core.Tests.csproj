@@ -22,4 +22,9 @@
     <ProjectReference Include="..\..\src\LedBalloon.Core\LedBalloon.Core.csproj" />
   </ItemGroup>
 
+  <!-- A real cfg.json, off a real controller. Editing this file by hand defeats the point of it. -->
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
