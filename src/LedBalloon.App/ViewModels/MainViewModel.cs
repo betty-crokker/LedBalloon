@@ -94,6 +94,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private readonly ZeroconfWledDiscovery _discovery = new();
 
+    /// <summary>
+    /// How this asks before doing something that cannot be taken back. Set by the window.
+    /// <para>
+    /// Null means nothing can be asked, and everything that would have asked declines instead.
+    /// A destructive action that cannot put the question is not one to go ahead with quietly.
+    /// </para>
+    /// </summary>
+    public AskUser? Ask { get; set; }
+
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
@@ -888,18 +897,67 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedSegment = segment;
     }
 
+    /// <summary>
+    /// Removes a run, having asked first, and offers to close the gap it leaves.
+    /// <para>
+    /// Asks because there is no undo. It used to go straight ahead on one click, and the run was
+    /// gone from the list with nothing but a sentence in the status bar to say so.
+    /// </para>
+    /// <para>
+    /// The gap matters as much as the removal. LEDs are numbered along the wire, so taking a run
+    /// out of the middle leaves the ones after it addressed past a stretch that no longer belongs
+    /// to anything - which lights the wrong part of the house. Closing it pulls them back down.
+    /// </para>
+    /// </summary>
     [RelayCommand]
-    private void DeleteSegment()
+    private async Task DeleteSegmentAsync(SegmentRow? row)
     {
-        if (SelectedSegment is not { } segment)
+        Segment? segment = row?.Segment ?? SelectedSegment;
+
+        if (segment is null || Ask is not { } ask)
         {
             return;
         }
 
+        // Only worth offering when something comes after it on the same controller; removing the
+        // last run leaves no hole to close.
+        IReadOnlyList<Segment> onController = Project.SegmentsOn(segment.ControllerKey ?? string.Empty);
+        bool leavesAHole = onController.Any(other =>
+            !ReferenceEquals(other, segment) && other.Start > segment.Start);
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: $"Remove '{segment.Name}'?",
+            Message: leavesAHole
+                ? $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. This cannot be undone, " +
+                  "and nothing reaches the controllers until you save."
+                : $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. This cannot be undone, " +
+                  "and nothing reaches the controllers until you save.",
+            AcceptText: "Remove",
+            CancelText: "Keep it",
+            OptionText: leavesAHole
+                ? "Close the gap, pulling the runs after it back down the wire"
+                : null));
+
+        if (!answer.Accepted)
+        {
+            return;
+        }
+
+        string? key = segment.ControllerKey;
+
         Project.Segments.Remove(segment);
         SelectedSegment = Project.Segments.FirstOrDefault();
 
-        AfterProjectChanged($"Removed '{segment.Name}'. Re-lay end to end to close the gap it left.");
+        if (leavesAHole && answer.OptionChecked && key is not null)
+        {
+            Project.Repack(key);
+            AfterProjectChanged($"Removed '{segment.Name}' and closed the gap it left.");
+            return;
+        }
+
+        AfterProjectChanged(leavesAHole
+            ? $"Removed '{segment.Name}', leaving a gap of {segment.Count} LEDs on the wire."
+            : $"Removed '{segment.Name}'.");
     }
 
     [RelayCommand]
@@ -1735,6 +1793,13 @@ public sealed partial class MainViewModel : ViewModelBase
         _selectedRow = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, keep))
                        ?? (keep is null ? null : SegmentRows.FirstOrDefault());
 
+        // The rows were just rebuilt, so the one that should look picked is a different object
+        // from the one that did. Assigning the field skips the property that would have said so.
+        foreach (SegmentRow row in SegmentRows)
+        {
+            row.IsSelected = ReferenceEquals(row, _selectedRow);
+        }
+
         // Clearing the list above made it write a null selection back through the binding, which
         // left the row looking selected with nothing behind it: an empty editor, an empty name in
         // the drawing hint, and clicks on the photo landing nowhere. Put the selection back.
@@ -1805,14 +1870,43 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Saves anything outstanding as the window closes, so shutting the app is never how a
     /// morning's tracing gets lost.
     /// </summary>
-    public async Task SaveBeforeClosingAsync()
+    /// <summary>
+    /// Asks whether to save on the way out, and does it if told to.
+    /// </summary>
+    /// <returns>False when the user would rather not close after all.</returns>
+    public async Task<bool> ConfirmClosingAsync()
     {
         if (!HasUnsavedChanges || SyncTargets().Count == 0)
         {
-            return;
+            return true;
         }
 
-        await SaveAsync(force: false);
+        if (Ask is not { } ask)
+        {
+            // Nothing can be asked, so nothing is assumed: close, and leave the controllers as
+            // they are. Losing an unsaved edit beats writing one nobody confirmed.
+            return true;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: "Save the layout before closing?",
+            Message: "The house has changes the controllers have not been told about. " +
+                     "Saving writes them to every controller, which takes a few seconds.",
+            AcceptText: "Save and close",
+            CancelText: "Don't close",
+            AlternateText: "Close without saving"));
+
+        if (answer.Choice == ConfirmChoice.Cancel)
+        {
+            return false;
+        }
+
+        if (answer.Choice == ConfirmChoice.Accept)
+        {
+            await SaveAsync(force: false);
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -1850,10 +1944,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// house lit because a window got closed is a worse surprise than it going dark.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Puts the lights out on the way out. Does not save.
+    /// <para>
+    /// It used to save whatever was outstanding, without asking. That made the Save button and the
+    /// unsaved badge decorative, made closing slow enough to look hung while two controllers wrote
+    /// to flash, and meant a change someone was in the middle of regretting was written to the
+    /// house by shutting the app. Whether to save is a question, and the window asks it.
+    /// </para>
+    /// </summary>
     public async Task ShutDownAsync()
     {
-        await SaveBeforeClosingAsync();
-
         Status = "Turning the lights off...";
         await TurnEverythingOffAsync();
     }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
@@ -15,6 +15,15 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+
+        // The view model asks its questions through here, so it never has to know what a window is.
+        DataContextChanged += (_, _) =>
+        {
+            if (ViewModel is { } viewModel)
+            {
+                viewModel.Ask = request => ConfirmDialog.AskAsync(this, request);
+            }
+        };
     }
 
     private bool _shutDown;
@@ -22,10 +31,10 @@ public partial class MainWindow : Window
     private MainViewModel? ViewModel => DataContext as MainViewModel;
 
     /// <summary>
-    /// Saves outstanding edits and puts the lights out on the way out.
+    /// Asks about unsaved work, then puts the lights out on the way out.
     /// <para>
-    /// The close is cancelled once so the work can finish, then re-issued. Both steps need a
-    /// response from the controllers, and neither survives the process exiting underneath them.
+    /// The close is cancelled once so the question can be put and the lights answered, then
+    /// re-issued. Neither step survives the process exiting underneath it.
     /// </para>
     /// </summary>
     protected override async void OnClosing(WindowClosingEventArgs e)
@@ -33,6 +42,23 @@ public partial class MainWindow : Window
         if (!_shutDown && ViewModel is { } viewModel)
         {
             e.Cancel = true;
+
+            bool close;
+            try
+            {
+                close = await viewModel.ConfirmClosingAsync();
+            }
+            catch
+            {
+                // A controller that has gone away must not trap the window open.
+                close = true;
+            }
+
+            if (!close)
+            {
+                return;
+            }
+
             _shutDown = true;
 
             try

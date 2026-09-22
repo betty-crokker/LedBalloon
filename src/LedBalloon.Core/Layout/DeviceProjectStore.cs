@@ -110,6 +110,20 @@ public sealed class DeviceProjectStore : IProjectStore, IDisposable
                 await _files.DeleteAsync(LegacyPhotoFile, cancellationToken).ConfigureAwait(false);
             }
 
+            // Carried across rather than dropped. It is the only record of the layout before
+            // the previous save, and deleting it took away the one thing that could have undone
+            // a mistake made in the save that deleted it.
+            byte[]? oldBackup = await _files.DownloadAsync(LegacyBackupFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (oldBackup is { Length: > 0 } &&
+                await _files.DownloadAsync(BackupFile, cancellationToken).ConfigureAwait(false)
+                    is not { Length: > 0 })
+            {
+                await _files.UploadAsync(BackupFile, oldBackup, "application/json", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             await _files.DeleteAsync(LegacyProjectFile, cancellationToken).ConfigureAwait(false);
             await _files.DeleteAsync(LegacyBackupFile, cancellationToken).ConfigureAwait(false);
         }
@@ -120,12 +134,24 @@ public sealed class DeviceProjectStore : IProjectStore, IDisposable
         }
     }
 
-    /// <summary>Copies the stored project aside before it is replaced.</summary>
+    /// <summary>
+    /// Copies the stored project aside before it is replaced.
+    /// <para>
+    /// Falls back to the old filename, which matters more than it looks. On the first save after
+    /// the app was renamed there was no file under the new name yet, so this found nothing and
+    /// wrote no backup - and that is precisely the save that also deleted the old backup on its
+    /// way past. One save went through with no safety net at all, and a run removed during it was
+    /// gone for good. Whatever is on the device is what gets kept, whatever it is called.
+    /// </para>
+    /// </summary>
     private async Task BackUpAsync(CancellationToken cancellationToken)
     {
         try
         {
             byte[]? previous = await _files.DownloadAsync(ProjectFile, cancellationToken)
+                .ConfigureAwait(false);
+
+            previous ??= await _files.DownloadAsync(LegacyProjectFile, cancellationToken)
                 .ConfigureAwait(false);
 
             if (previous is { Length: > 0 })
