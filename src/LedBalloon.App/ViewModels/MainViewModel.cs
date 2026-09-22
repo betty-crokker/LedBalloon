@@ -220,8 +220,6 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<PresetGap> PresetGaps { get; } = [];
 
-    public ObservableCollection<string> LayoutProblems { get; } = [];
-
     public ObservableCollection<string> LayoutConflicts { get; } = [];
 
     /// <summary>The segment list, each row knowing which controller drives it.</summary>
@@ -257,9 +255,9 @@ public sealed partial class MainViewModel : ViewModelBase
             ? $"Drawing '{drawing.Name}'. Click along the segment, starting at the end where LED 1 is. " +
               "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
             : "Pick a segment on the left before tracing it."
-        : SelectedSegment is { HasGeometry: false } undrawn
-            ? $"'{undrawn.Name}' has not been traced yet. Open it with the pencil, then press Trace it on the photo."
-            : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
+        // No "not traced yet" line here: the segment's own row in the panel already says that,
+        // under the segment it is about, where it is not competing with the photo.
+        : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
 
     /// <summary>True while the selected run has no line on the photo.</summary>
     public bool SelectedSegmentNeedsDrawing => SelectedSegment is { HasGeometry: false };
@@ -308,6 +306,7 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnEditingRowChanged(SegmentRow? value)
     {
         OnPropertyChanged(nameof(IsEditingSegment));
+        RefreshSpareOffer();
 
         // Editing one is also picking it: the photo highlights it, and tracing acts on it.
         if (value is not null)
@@ -1700,15 +1699,20 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    // ---- Health ---------------------------------------------------------------------------------
+    // ---- Checking the presets -------------------------------------------------------------------
 
+    /// <summary>
+    /// Lists presets that would leave LEDs dark.
+    /// <para>
+    /// This used to also re-run the layout check and fill a second list beside this one. The Setup
+    /// panel runs that same check continuously as lengths are typed, so all the button added there
+    /// was a staler copy of what was already on screen.
+    /// </para>
+    /// </summary>
     [RelayCommand]
     private void Audit()
     {
         PresetGaps.Clear();
-        LayoutProblems.Clear();
-
-        var ledCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
         foreach (DeviceViewModel device in Devices)
         {
@@ -1718,7 +1722,6 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             int ledCount = device.Capabilities?.LedCount ?? 0;
-            ledCounts[key] = ledCount;
 
             foreach (PresetGap gap in PresetAudit.FindGaps(device.Presets, ledCount))
             {
@@ -1726,13 +1729,8 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
 
-        foreach (string problem in Project.Validate(ledCounts))
-        {
-            LayoutProblems.Add(problem);
-        }
-
         Status = PresetGaps.Count == 0
-            ? "Every preset covers its whole strip."
+            ? "Every preset lights every LED its controller has."
             : $"{PresetGaps.Count} preset(s) would leave LEDs dark after a length change.";
     }
 
@@ -1883,9 +1881,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
         // One row per physical controller. Discovery can hand back the same box more than once,
         // and a list with two Norths in it is worse than useless.
+        //
+        // By name, because discovery order is whichever box answered first and that changes run to
+        // run. The cards moving around between launches makes the panel unreadable from memory.
         foreach (IGrouping<string, DeviceViewModel> group in Devices
                      .Where(d => d.DeviceKey is not null)
-                     .GroupBy(d => d.DeviceKey!, StringComparer.OrdinalIgnoreCase))
+                     .GroupBy(d => d.DeviceKey!, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(g => g.First().DisplayName, StringComparer.CurrentCultureIgnoreCase))
         {
             DeviceViewModel device = group.First();
             string key = group.Key;
@@ -1899,6 +1901,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 device.Capabilities?.LedCount ?? 0)
             {
                 Owner = this,
+                Host = device.Host,
+                IsConnected = device.IsConnected,
             });
         }
 
@@ -1988,12 +1992,83 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         HasUnsavedChanges = true;
 
-        // Lengths and starts are exactly what create overlaps, so say so while it is being typed
-        // rather than waiting for someone to go looking under Health.
+        // Correcting a length is the one edit whose whole point is that the number was wrong, so
+        // it is allowed to move its neighbours. A start is a deliberate placement at an address
+        // you know, so that one moves nothing and any collision is left to the warnings.
+        if (e.PropertyName is nameof(Segment.Count) && sender is Segment corrected)
+        {
+            IReadOnlyList<Segment> pushed = Project.MakeRoomAfter(corrected);
+
+            if (pushed.Count > 0)
+            {
+                Status = $"'{corrected.Name}' now runs to LED {corrected.StopExclusive}, so " +
+                         $"{Name(pushed)} moved down the wire to make room.";
+                LayoutRevision++;
+            }
+        }
+
+        // Lengths and starts are exactly what create overlaps, so say so as it happens rather than
+        // waiting for someone to go looking for it.
         if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Start) or nameof(Segment.ControllerKey))
         {
             RefreshLayoutWarnings();
+            RefreshSpareOffer();
         }
+    }
+
+    private static string Name(IReadOnlyList<Segment> segments) => segments.Count == 1
+        ? $"'{segments[0].Name}'"
+        : $"{segments.Count} segments after it";
+
+    /// <summary>
+    /// Unused LEDs sitting right behind the segment being edited, worded for the offer to close
+    /// them up, or null when there are none.
+    /// <para>
+    /// An offer rather than something done for you, because unlike an overlap a gap is not broken.
+    /// Shortening a run usually does mean the rest should come back down the wire, but not when
+    /// the next run is plugged in at an address you already know.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private string? _spareNotice;
+
+    public bool HasSpareOffer => SpareNotice is not null;
+
+    partial void OnSpareNoticeChanged(string? value) => OnPropertyChanged(nameof(HasSpareOffer));
+
+    private void RefreshSpareOffer()
+    {
+        if (EditingRow?.Segment is not { } segment)
+        {
+            SpareNotice = null;
+            return;
+        }
+
+        int spare = Project.SpareAfter(segment);
+
+        SpareNotice = spare > 0
+            ? $"{spare} unused LED{(spare == 1 ? string.Empty : "s")} between '{segment.Name}' and the next segment."
+            : null;
+    }
+
+    /// <summary>Takes the offer: everything after this segment comes back down the wire.</summary>
+    [RelayCommand]
+    private void CloseSpare()
+    {
+        if (EditingRow?.Segment is not { } segment)
+        {
+            return;
+        }
+
+        IReadOnlyList<Segment> moved = Project.CloseSpareAfter(segment);
+
+        if (moved.Count == 0)
+        {
+            SpareNotice = null;
+            return;
+        }
+
+        AfterProjectChanged($"Closed the gap after '{segment.Name}'; {Name(moved)} came back down the wire.");
+        RefreshSpareOffer();
     }
 
     /// <summary>Recomputes the overlap and gap warnings shown beside the segment list.</summary>

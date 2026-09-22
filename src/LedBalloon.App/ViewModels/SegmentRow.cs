@@ -23,9 +23,29 @@ public sealed partial class SegmentRow : ObservableObject
         Segment = segment;
         _controllerName = controllerName;
         Owner = owner;
+
+        Segment.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Start) or nameof(Segment.StopExclusive))
+            {
+                OnPropertyChanged(nameof(Placement));
+            }
+        };
     }
 
     public Segment Segment { get; }
+
+    /// <summary>
+    /// Where this segment sits on the wire, as one string.
+    /// <para>
+    /// One string rather than the numbers stitched together from several bound
+    /// <c>&lt;Run&gt;</c> inlines in the row template. Inlines are built once and do not re-bind, so
+    /// the moment a length was corrected - or a neighbour was pushed along by one - the row went
+    /// blank and stayed blank until the whole list was rebuilt.
+    /// </para>
+    /// </summary>
+    public string Placement =>
+        $"{Segment.Count} LEDs · LED {Segment.Start} to {Segment.StopExclusive}";
 
     /// <summary>
     /// The view model, reachable from the row itself.
@@ -56,6 +76,15 @@ public sealed partial class ControllerCoverage(
     public string Key { get; } = Key;
 
     public string Name { get; } = Name;
+
+    /// <summary>
+    /// Where it answers, for the card to show. The panel used to list the found controllers a
+    /// second time at the foot of it purely to carry this one string.
+    /// </summary>
+    public string? Host { get; init; }
+
+    /// <summary>Whether it is answering right now, for the dot beside the name.</summary>
+    public bool IsConnected { get; init; }
 
     public int SegmentCount { get; } = SegmentCount;
 

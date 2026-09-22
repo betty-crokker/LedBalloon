@@ -272,6 +272,23 @@
 
                 <TextBlock Classes="hint" TextWrapping="Wrap"
                            Text="Effects LedBalloon knows are run properly, at the frame rate the controller is set to. The rest are stood in for by sliding the segment's palette along it, which gets the colors right and the movement only roughly." />
+
+                <!-- Checking the presets is a preset job, so it lives with the presets. It spent a
+                     while under a "Health" heading over in Setup, next to the layout, which is a
+                     different question about different things. -->
+                <Button Classes="block" Content="Check the presets" Margin="0,10,0,0"
+                        Command="{Binding AuditCommand}" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,4,0,0"
+                           Text="A preset saved when you thought a run was shorter puts that old length back when it is recalled, so the LEDs you found later stay dark. This reads every preset on every controller and lists the ones that would." />
+
+                <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,6,0,0">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
+                                 Foreground="#C9821B" Text="{Binding}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
 
               <!-- Tuning one run by hand is the less common job, so it folds away. -->
@@ -368,7 +385,7 @@
                 </Border>
               </StackPanel>
               <TextBlock Classes="hint"
-                         Text="Controllers, segments and where they hang. Saving stores the layout on the controllers and re-cuts them to match." />
+                         Text="Controllers, segments and where they hang. Saving writes it to every controller and moves their segment boundaries to match." />
             </StackPanel>
           </DockPanel>
         </Border>
@@ -383,8 +400,6 @@
 
               <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,10">
                 <TextBlock Classes="panelTitle" Text="The house" />
-                <TextBlock Classes="hint"
-                           Text="Every controller, with the segments plugged into it. The pencil opens one; the bin removes it." />
               </StackPanel>
 
               <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
@@ -463,7 +478,13 @@
                             </Button>
 
                             <StackPanel Spacing="2" Margin="2,0,0,0" VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                                         Fill="{Binding IsConnected, Converter={x:Static vm:Converters.ConnectionBrush}}" />
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                <TextBlock Classes="hint" VerticalAlignment="Center"
+                                           Text="{Binding Host}" />
+                              </StackPanel>
                               <TextBlock Classes="hint" Text="{Binding Summary}" />
                             </StackPanel>
                           </DockPanel>
@@ -498,9 +519,7 @@
                                         <StackPanel Spacing="1">
                                           <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
                                                      TextTrimming="CharacterEllipsis" />
-                                          <TextBlock Classes="hint">
-                                            <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs &#183; LED " /><Run Text="{Binding Segment.Start}" /><Run Text=" to " /><Run Text="{Binding Segment.StopExclusive}" />
-                                          </TextBlock>
+                                          <TextBlock Classes="hint" Text="{Binding Placement}" />
                                           <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
                                                      IsVisible="{Binding !Segment.HasGeometry}"
                                                      Text="not traced on the photo yet" />
@@ -550,47 +569,13 @@
                   <Button Grid.Column="2" Content="Add" Command="{Binding AddManualCommand}" />
                 </Grid>
 
-                <ItemsControl ItemsSource="{Binding Devices}" Margin="0,8,0,0">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:DeviceViewModel">
-                      <StackPanel Spacing="1" Margin="0,3">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
-                          <Ellipse Width="8" Height="8" VerticalAlignment="Center"
-                                   Fill="{Binding IsConnected, Converter={x:Static vm:Converters.ConnectionBrush}}" />
-                          <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" FontSize="12"
-                                     TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-                        <TextBlock Classes="hint" Margin="14,0,0,0" TextTrimming="CharacterEllipsis">
-                          <Run Text="{Binding Host}" /><Run Text="  ·  " /><Run Text="{Binding Status}" />
-                        </TextBlock>
-                      </StackPanel>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- The list of found controllers that used to sit here said the same thing as the
+                     cards above it, twice. The cards carry the address instead. The preset check
+                     that sat here has gone to the panel where presets are chosen. What is left is
+                     the one thing with nowhere else to be: disagreements found while working a
+                     controller's segments out from its presets. -->
 
-                <Separator Margin="0,12,0,10" />
-
-                <TextBlock Classes="heading" Text="Health" />
-                <TextBlock Classes="hint" Margin="0,3,0,8"
-                           Text="Reads every preset back and says where they disagree with the strips they run on." />
-                <Button Classes="block" Content="Check presets against the strips"
-                        Command="{Binding AuditCommand}" />
-
-                <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,8,0,0">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <ItemsControl ItemsSource="{Binding LayoutProblems}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap" Text="{Binding}" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <ItemsControl ItemsSource="{Binding LayoutConflicts}" Margin="0,0,0,8">
+                <ItemsControl ItemsSource="{Binding LayoutConflicts}" Margin="0,10,0,8">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>
                       <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
@@ -632,6 +617,20 @@
                       <TextBox Text="{Binding EditingRow.Segment.Start}" />
                     </StackPanel>
                   </Grid>
+
+                  <!-- Shortening a run leaves LEDs stranded behind it. Usually you want the rest
+                       pulled back; not always, which is why this asks instead of just doing it.
+                       Growing a run needs no offer - it would overlap, so the rest are already
+                       pushed out of the way by the time you get here. -->
+                  <Border Classes="card" Background="#33C9821B" Padding="8"
+                          IsVisible="{Binding HasSpareOffer}">
+                    <StackPanel Spacing="6">
+                      <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SpareNotice}" />
+                      <Button Classes="block" FontSize="12" Padding="6,3"
+                              Content="Close the gap"
+                              Command="{Binding CloseSpareCommand}" />
+                    </StackPanel>
+                  </Border>
 
                   <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
 
