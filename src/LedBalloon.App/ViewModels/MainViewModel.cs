@@ -241,12 +241,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     public string PhotoHint => IsDrawingSegment
         ? SelectedSegment is { } drawing
-            ? $"Drawing '{drawing.Name}'. Click along the run, starting at the end where LED 1 is. " +
+            ? $"Drawing '{drawing.Name}'. Click along the segment, starting at the end where LED 1 is. " +
               "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
-            : "Pick a run on the left before tracing it."
+            : "Pick a segment on the left before tracing it."
         : SelectedSegment is { HasGeometry: false } undrawn
             ? $"'{undrawn.Name}' has not been traced yet. Press Draw selected segment, then click along it on the photo."
-            : "Click a run on the photo to select it. To move or re-trace one, select it and press Draw selected segment.";
+            : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
 
     /// <summary>True while the selected run has no line on the photo.</summary>
     public bool SelectedSegmentNeedsDrawing => SelectedSegment is { HasGeometry: false };
@@ -279,6 +279,47 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void PickSegmentRow(SegmentRow? row) => SelectedRow = row;
 
+    /// <summary>
+    /// The segment the panel is editing, or null while it is showing the list.
+    /// <para>
+    /// The editor takes over the panel rather than floating above it. As a popup it covered the
+    /// photo, which ruled out putting the tracing buttons in it - and tracing is the one thing in
+    /// there that needs the photo. In the panel there is room for them and nothing is hidden.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private SegmentRow? _editingRow;
+
+    /// <summary>True while the panel is showing one segment instead of the list.</summary>
+    public bool IsEditingSegment => EditingRow is not null;
+
+    partial void OnEditingRowChanged(SegmentRow? value)
+    {
+        OnPropertyChanged(nameof(IsEditingSegment));
+
+        // Editing one is also picking it: the photo highlights it, and tracing acts on it.
+        if (value is not null)
+        {
+            SelectedRow = value;
+        }
+    }
+
+    /// <summary>Opens the editor on a segment.</summary>
+    [RelayCommand]
+    private void EditSegment(SegmentRow? row) => EditingRow = row;
+
+    /// <summary>Goes back to the list. Nothing to apply - the fields edit the segment directly.</summary>
+    [RelayCommand]
+    private void CloseSegmentEditor()
+    {
+        // Leaving mid-trace would strand the photo in drawing mode with nothing to finish it.
+        if (IsDrawingSegment)
+        {
+            FinishDrawingSegment();
+        }
+
+        EditingRow = null;
+    }
+
     /// <summary>Picks a controller, expanding its runs underneath it.</summary>
     [RelayCommand]
     private void PickController(ControllerCoverage? controller)
@@ -295,11 +336,39 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Brings in one controller's outputs as segments, named after it.</summary>
     [RelayCommand]
-    private async Task ImportFromControllerAsync()
+    private async Task ImportFromControllerAsync(ControllerCoverage? controller)
     {
-        if (_fallbackController is not { } coverage || DeviceFor(coverage.Key) is not { } device)
+        ControllerCoverage? coverage = controller ?? _fallbackController;
+
+        if (coverage is null || DeviceFor(coverage.Key) is not { } device)
         {
             return;
+        }
+
+        // It replaces rather than adds, and what it replaces includes the lines traced on the
+        // photo - which are the slowest thing here to redo. Nothing about the button's name says
+        // that, so the question does.
+        int existing = Project.SegmentsOn(coverage.Key).Count;
+
+        if (existing > 0)
+        {
+            if (Ask is not { } ask)
+            {
+                return;
+            }
+
+            ConfirmResult answer = await ask(new ConfirmRequest(
+                Title: $"Replace {coverage.Name}'s segments?",
+                Message: $"{coverage.Name} already has {existing} segment(s) described. Reading its " +
+                         "wiring replaces all of them, including where they are traced on the photo, " +
+                         "and that cannot be undone.",
+                AcceptText: "Replace them",
+                CancelText: "Leave them alone"));
+
+            if (!answer.Accepted)
+            {
+                return;
+            }
         }
 
         SelectedDevice = device;
@@ -368,8 +437,8 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         Mode = AppMode.Design;
         Status = HasSegments
-            ? "Click a run on the photo to change it, or pick a color for the whole house."
-            : "Nothing described yet — describe at least one run in Setup first.";
+            ? "Click a segment on the photo to change it, or pick a color for the whole house."
+            : "Nothing described yet — describe at least one segment in Setup first.";
     }
 
     /// <summary>Points the color controls back at the whole house.</summary>
@@ -541,7 +610,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             if (_starting)
             {
-                Step($"Found {Project.Segments.Count} run(s) across {Project.TotalLeds} LEDs");
+                Step($"Found {Project.Segments.Count} segment(s) across {Project.TotalLeds} LEDs");
             }
             else
             {
@@ -646,8 +715,8 @@ public sealed partial class MainViewModel : ViewModelBase
         Mode = HasSegments ? AppMode.Design : AppMode.Setup;
 
         Status = HasSegments
-            ? "Click a run on the photo to change it, or pick a color for the whole house."
-            : "Describe the runs plugged into each controller to get started.";
+            ? "Click a segment on the photo to change it, or pick a color for the whole house."
+            : "Describe the segments plugged into each controller to get started.";
     }
 
     /// <summary>Gives up waiting for a controller to answer and goes to Setup to add one by hand.</summary>
@@ -809,8 +878,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 index++;
             }
 
-            AfterProjectChanged($"Imported {buses.Count} run(s) from {device.DisplayName}. " +
-                                "Split them into the runs you actually hung, then draw them on the photo.");
+            AfterProjectChanged($"Imported {buses.Count} segment(s) from {device.DisplayName}. " +
+                                "Split them into the segments you actually hung, then trace them on the photo.");
         }
         catch (Exception ex)
         {
@@ -935,7 +1004,7 @@ public sealed partial class MainViewModel : ViewModelBase
             AcceptText: "Remove",
             CancelText: "Keep it",
             OptionText: leavesAHole
-                ? "Close the gap, pulling the runs after it back down the wire"
+                ? "Close the gap, pulling the segments after it back down the wire"
                 : null));
 
         if (!answer.Accepted)
@@ -985,7 +1054,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Project.Repack(controller.Key);
 
         AfterProjectChanged(
-            $"Re-laid {Project.SegmentsOn(controller.Key).Count} run(s) on {controller.Name}.");
+            $"Re-laid {Project.SegmentsOn(controller.Key).Count} segment(s) on {controller.Name}.");
     }
 
     /// <summary>
@@ -1413,7 +1482,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public void PickSegment(Segment segment)
     {
         SelectedSegment = segment;
-        Status = $"'{segment.Name}' selected. Choose a color, or click the photo again to pick another run.";
+        Status = $"'{segment.Name}' selected. Choose a color, or click the photo again to pick another segment.";
     }
 
     partial void OnIsDrawingSegmentChanged(bool value) => OnPropertyChanged(nameof(PhotoHint));
