@@ -99,8 +99,8 @@ public class LayoutTests
         Assert.Equal(2, states.Count);
         Assert.Equal(0, states[Front].Segments![0].Id);
         Assert.Equal(0, states[Garage].Segments![0].Id);
-        Assert.Equal(308, states[Front].Segments[0].Stop);
-        Assert.Equal(120, states[Garage].Segments[0].Stop);
+        Assert.Equal(308, states[Front].Segments![0].Stop);
+        Assert.Equal(120, states[Garage].Segments![0].Stop);
     }
 
     [Fact]

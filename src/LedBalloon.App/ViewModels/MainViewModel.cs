@@ -2729,6 +2729,32 @@ public sealed partial class MainViewModel : ViewModelBase
             });
         }
 
+        // A controller the project knows about that is not answering. Its runs are in the loaded
+        // document -- the whole house is mirrored onto every box -- so they can be seen, and edited,
+        // while it is away, and they reach it when it comes back. Before mirroring there was
+        // genuinely nothing to show, and these runs were added to the list as orphans that the
+        // panel then rendered nowhere.
+        foreach (ControllerRef stored in Project.Controllers
+                     .Where(c => !Coverage.Any(x =>
+                         string.Equals(x.Key, c.Key, StringComparison.OrdinalIgnoreCase)))
+                     .OrderBy(c => c.DisplayName(), StringComparer.CurrentCultureIgnoreCase))
+        {
+            IReadOnlyList<Segment> mine = Project.SegmentsOn(stored.Key);
+
+            Coverage.Add(new ControllerCoverage(
+                stored.Key,
+                stored.DisplayName(),
+                mine.Count,
+                mine.Sum(s => s.Count),
+                0)
+            {
+                Owner = this,
+                Host = stored.LastHost,
+                IsConnected = false,
+                IsAbsent = true,
+            });
+        }
+
         // Land back on the same controller across a rebuild, so a button pressed a moment ago
         // still means the box it was pressed on.
         _fallbackController =
@@ -2778,8 +2804,8 @@ public sealed partial class MainViewModel : ViewModelBase
             controller.RunsChanged();
         }
 
-        // Anything whose controller is not in the list at all - unassigned, or a box that has not
-        // answered yet - would otherwise vanish rather than be fixable.
+        // A run belonging to no controller at all. Every box the project knows about now has a
+        // card whether or not it is answering, so what is left here is genuinely unassigned.
         foreach (Segment orphan in Project.Segments.Where(
                      s => !Coverage.Any(c => string.Equals(c.Key, s.ControllerKey, StringComparison.OrdinalIgnoreCase))))
         {

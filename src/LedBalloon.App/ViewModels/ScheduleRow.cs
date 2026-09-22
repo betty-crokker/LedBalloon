@@ -4,7 +4,10 @@ using LedBalloon.Core;
 
 namespace LedBalloon.App.ViewModels;
 
-/// <summary>A preset on one controller, as something to pick from a list.</summary>
+/// <summary>
+/// Something one controller can be told to show, as an entry in a picker: the name a person
+/// knows it by, and the slot that box happens to keep it in.
+/// </summary>
 public sealed record PresetChoice(int Id, string Name)
 {
     public override string ToString() => Name;
@@ -26,9 +29,10 @@ public sealed record TriggerChoice(SunTrigger Sun, string Name)
 /// <summary>
 /// One line of a controller's timetable, editable.
 /// <para>
-/// Presets are listed per controller rather than merged, unlike everywhere else in the app. A
-/// timer stores a slot number and the controller runs whatever is in that slot, so this is the one
-/// place where which box holds a preset genuinely matters.
+/// The choices are listed per controller rather than merged, unlike everywhere else in the app.
+/// A timer stores a slot number and the controller runs whatever is in that slot, so this is the
+/// one place where which box holds a scene genuinely matters — and a scene that has not been
+/// saved is not on any box yet, so it is not there to be fired.
 /// </para>
 /// </summary>
 public sealed partial class ScheduleRow : ObservableObject
@@ -39,7 +43,7 @@ public sealed partial class ScheduleRow : ObservableObject
     /// <summary>What that controller is called, for the row's heading.</summary>
     public required string ControllerName { get; init; }
 
-    /// <summary>The presets that controller holds, which is what a timer can point at.</summary>
+    /// <summary>What that controller holds, which is what a timer can point at.</summary>
     public required IReadOnlyList<PresetChoice> Presets { get; init; }
 
     public IReadOnlyList<TriggerChoice> Triggers => TriggerChoice.All;

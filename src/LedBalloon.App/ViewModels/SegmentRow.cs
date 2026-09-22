@@ -88,6 +88,22 @@ public sealed partial class ControllerCoverage(
     /// <summary>Whether it is answering right now, for the dot beside the name.</summary>
     public bool IsConnected { get; init; }
 
+    /// <summary>
+    /// True for a controller the project knows about that has not answered at all this session.
+    /// <para>
+    /// Shown rather than omitted. The whole house is mirrored onto every box, so an absent one's
+    /// runs are in the loaded document and hiding them would make part of the house unfixable for
+    /// no reason -- and leave it looking like the layout had lost them.
+    /// </para>
+    /// </summary>
+    public bool IsAbsent { get; init; }
+
+    /// <summary>Why this card is greyed, for the card to say rather than leave to be guessed.</summary>
+    public string AbsenceNote => IsAbsent
+        ? "Not answering. Its runs are here because the layout is kept on every controller, so they " +
+          "can be changed now and reach it when it comes back."
+        : string.Empty;
+
     /// <summary>Its LED outputs as the controller itself reports them, in its own order.</summary>
     public IReadOnlyList<LedBus> Wiring { get; init; } = [];
 
