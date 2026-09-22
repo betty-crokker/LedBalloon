@@ -15,9 +15,25 @@ were current when you saved it. Correct a run from 100 LEDs to 105 and the prese
 `stop: 100`, so the last five stay dark. This is real and measurable — `ledballoon audit` against the
 development hardware found the boot preset covering 257 of 356 LEDs, leaving 99 unlit on every power-up.
 
-LedBalloon's own saved appearances, called **looks**, store no LED indices at all. They name segments;
-the indices are resolved from the project at the moment the look is applied. Fix a length in one
-place and every look follows.
+LedBalloon's own saved appearances, called **scenes**, store no LED indices at all. They name runs;
+the indices are resolved from the project at the moment the scene is applied. Fix a length in one
+place and every scene follows.
+
+Two words cover the whole of it:
+
+| Word | Means | Example |
+| --- | --- | --- |
+| **Look** | a named appearance for **one** run: effect, palette, speed, colors | "Warm white" |
+| **Scene** | what each run wears, across the whole house | "Christmas" |
+
+**Preset** is not a third idea. It is what a WLED controller calls the thing LedBalloon writes onto
+it when a scene is saved, so that the 23:30 timer and the wall button can recall it with no PC
+running. On the hardware a scene *is* a preset, under the same name. Nobody using the app has to
+know the word.
+
+Presets somebody made in the WLED app appear in the same list, read-only, because to whoever is
+reading it they are the same kind of thing. Adopting one turns it into a scene, matching runs by
+what the preset actually lights and saying up front whatever the layout cannot account for.
 
 **You cannot tell what a color will look like from the street.** So the app takes a photo of the
 house at dusk, lets you draw each run onto it as a line, and paints the live colors back onto that
@@ -124,10 +140,9 @@ Controllers are a setup concern. You find them once, give each one a name, descr
 hanging off them, and then they get out of the way:
 
 - **Segments** are the permanent left-hand panel — the gable, the porch rail, whatever you hung.
-- **Presets** from every controller are merged into one list, de-duplicated by name. If both boxes
-  store "Winter both" it appears once and recalling it sends the right slot number to each, even
-  when the slot numbers differ. A preset only one controller has is still listed, and applying it
-  says so rather than silently lighting half the house.
+- **Scenes** are one list spanning every controller. Saving one writes it to each box the house is
+  wired to, under the same name; the slots differ per box and nobody is shown them. Presets that
+  were made in the WLED app are merged into that same list by name, read-only until adopted.
 - **Controllers** live in a Setup tab and a quiet "2 of 2 controllers connected" in the status bar.
 
 A house is not a controller: segments carry the MAC of the box that drives them, so a project spans

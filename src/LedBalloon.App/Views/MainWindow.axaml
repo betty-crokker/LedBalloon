@@ -555,6 +555,12 @@
                                            Text="{Binding Host}" />
                               </StackPanel>
                               <TextBlock Classes="hint" Text="{Binding Summary}" />
+
+                              <!-- Shown rather than omitted: the layout is kept on every
+                                   controller, so an absent one's runs are here and fixable. -->
+                              <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
+                                         IsVisible="{Binding IsAbsent}"
+                                         Text="{Binding AbsenceNote}" />
                             </StackPanel>
                           </DockPanel>
 
@@ -889,6 +895,8 @@
                 </StackPanel>
                 <TextBlock Classes="hint"
                            Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
+                <TextBlock Classes="hint"
+                           Text="One line per controller, because each box runs its own timetable. A scene only appears here once it has been saved — that is when it reaches the controllers, and a timer can only fire what its own box holds." />
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
                   <Button Content="Add a timer" Command="{Binding AddScheduleEntryCommand}" />
                   <Button Content="Save to controllers"
@@ -927,7 +935,7 @@
                             <TextBlock Text="show" VerticalAlignment="Center" Classes="hint" />
                             <ComboBox ItemsSource="{Binding Presets}"
                                       SelectedItem="{Binding Preset}"
-                                      PlaceholderText="pick a preset" MinWidth="200" />
+                                      PlaceholderText="pick a scene" MinWidth="200" />
                           </StackPanel>
 
                         </StackPanel>
