@@ -111,6 +111,62 @@ public class LedOutputWriterTests
         Assert.Equal(305, config["hw"]!["led"]!["total"]!.GetValue<int>());
     }
 
+    /// <summary>
+    /// South's first output is RGB where the board ships GRB, so somebody changed it deliberately
+    /// for that strip. Settings like this are the reason the outputs need an editor at all.
+    /// </summary>
+    [Fact]
+    public void One_outputs_settings_change_and_the_others_do_not()
+    {
+        JsonObject config = Config();
+
+        Assert.True(LedOutputWriter.ApplySettings(
+            config, 1, new LedOutputSettings(ColorOrder: 1, MilliampsPerLed: 55, Reversed: true,
+                SkipFirst: 2, OffRefresh: true)));
+
+        Assert.Equal(1, Value(config, 1, "order"));
+        Assert.Equal(55, Value(config, 1, "ledma"));
+        Assert.Equal(2, Value(config, 1, "skip"));
+        Assert.True(Outputs(config)[1]!["rev"]!.GetValue<bool>());
+        Assert.True(Outputs(config)[1]!["ref"]!.GetValue<bool>());
+
+        // The other output, and this one's length and pin, are none of its business.
+        Assert.Equal(1, Value(config, 0, "order"));
+        Assert.Equal(30, Value(config, 0, "ledma"));
+        Assert.Equal(285, Value(config, 1, "len"));
+        Assert.Equal(2, Outputs(config)[1]!["pin"]![0]!.GetValue<int>());
+        Assert.Equal(42, config["hw"]!["led"]!["fps"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public void Settings_it_already_has_change_nothing_and_write_nothing()
+    {
+        JsonObject config = Config();
+
+        // Output 2 as it stands: GRB, 30 mA, not reversed, nothing skipped, no off-refresh.
+        Assert.False(LedOutputWriter.ApplySettings(
+            config, 1, new LedOutputSettings(0, 30, false, 0, false)));
+    }
+
+    [Fact]
+    public void An_output_that_is_not_there_is_not_written_to()
+    {
+        JsonObject config = Config();
+
+        Assert.False(LedOutputWriter.ApplySettings(config, 7, new LedOutputSettings(1, 30, false, 0, false)));
+        Assert.False(LedOutputWriter.ApplySettings(config, -1, new LedOutputSettings(1, 30, false, 0, false)));
+    }
+
+    [Fact]
+    public void A_colour_order_out_of_range_is_pulled_back_in()
+    {
+        JsonObject config = Config();
+
+        LedOutputWriter.ApplySettings(config, 0, new LedOutputSettings(99, 30, false, 0, false));
+
+        Assert.InRange(Value(config, 0, "order"), 0, LedOutputWriter.ColorOrders.Count - 1);
+    }
+
     [Fact]
     public void A_configuration_with_no_outputs_is_left_alone()
     {

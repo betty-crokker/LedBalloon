@@ -396,7 +396,7 @@
           <Grid>
 
             <!-- ============ the house: controllers, each with its segments ============ -->
-            <DockPanel IsVisible="{Binding !IsEditingSegment}">
+            <DockPanel IsVisible="{Binding IsShowingControllers}">
 
               <!-- Not "The house": that is the name of a tab a few inches to the right, and two
                    different things under one name is worse than a dull name. -->
@@ -489,18 +489,41 @@
                               <DataTemplate x:DataType="vm:OutputGroup">
                                 <StackPanel Spacing="2" Margin="0,4,0,0">
 
-                                  <StackPanel Orientation="Horizontal" Spacing="6" Margin="4,0,0,2">
-                                    <TextBlock Text="{Binding Header}" FontSize="11" FontWeight="SemiBold"
-                                               Opacity="0.75" />
-                                    <TextBlock Text="{Binding Summary}" Classes="hint" FontSize="11" />
-                                  </StackPanel>
+                                  <DockPanel Margin="4,0,0,2">
+                                    <Button DockPanel.Dock="Right" Classes="icon"
+                                            ToolTip.Tip="Add a segment to this output"
+                                            Command="{Binding Owner.AddSegmentToOutputCommand}"
+                                            CommandParameter="{Binding}">
+                                      <TextBlock Text="+" />
+                                    </Button>
+                                    <Button DockPanel.Dock="Right" Classes="icon"
+                                            ToolTip.Tip="Colour order and the rest of this output's settings"
+                                            IsVisible="{Binding IsReal}"
+                                            Command="{Binding Owner.EditOutputCommand}"
+                                            CommandParameter="{Binding}">
+                                      <TextBlock Text="&#x270E;" />
+                                    </Button>
 
-                                  <Border Margin="6,0,0,0" Padding="10,2,0,2"
-                                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="2,0,0,0">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                      <TextBlock Text="{Binding Header}" FontSize="11" FontWeight="SemiBold"
+                                                 Opacity="0.75" />
+                                      <TextBlock Text="{Binding Summary}" Classes="hint" FontSize="11" />
+                                    </StackPanel>
+                                  </DockPanel>
+
+                                  <!-- The whole block takes a drop, so a run can be dragged onto an
+                                       output that has nothing on it yet. -->
+                                  <Border Margin="6,0,0,0" Padding="10,2,0,6" MinHeight="24"
+                                          Background="Transparent"
+                                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="2,0,0,0"
+                                          DragDrop.AllowDrop="True"
+                                          DragDrop.DragOver="OnOutputDragOver"
+                                          DragDrop.Drop="OnOutputDrop">
                                     <ItemsControl ItemsSource="{Binding Runs}">
                                       <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:SegmentRow">
-                                          <DockPanel Margin="0,2">
+                                          <DockPanel Margin="0,2" Background="Transparent"
+                                                     PointerPressed="OnSegmentDragStart">
 
                                             <Button DockPanel.Dock="Right" Classes="icon"
                                                     ToolTip.Tip="Remove this segment"
@@ -516,19 +539,13 @@
                                               <TextBlock Text="&#x270E;" />
                                             </Button>
 
-                                            <Button DockPanel.Dock="Right" Classes="icon"
-                                                    ToolTip.Tip="Later along this output"
-                                                    Command="{Binding Owner.MoveSegmentLaterCommand}"
-                                                    CommandParameter="{Binding}">
-                                              <TextBlock Text="&#x25BC;" FontSize="10" />
-                                            </Button>
-
-                                            <Button DockPanel.Dock="Right" Classes="icon"
-                                                    ToolTip.Tip="Earlier along this output"
-                                                    Command="{Binding Owner.MoveSegmentEarlierCommand}"
-                                                    CommandParameter="{Binding}">
-                                              <TextBlock Text="&#x25B2;" FontSize="10" />
-                                            </Button>
+                                            <!-- Drag the grip to move it along the output, or onto
+                                                 another one. The arrows this replaced could only
+                                                 ever shuffle by one. -->
+                                            <TextBlock DockPanel.Dock="Left" Text="&#x2630;"
+                                                       Margin="0,0,6,0" VerticalAlignment="Center"
+                                                       FontSize="11" Opacity="0.4"
+                                                       ToolTip.Tip="Drag to reorder, or onto another output" />
 
                                             <Button Classes="row"
                                                     Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}"
@@ -557,13 +574,9 @@
                                      IsVisible="{Binding !HasRuns}"
                                      Text="Nothing described on this controller yet. Add a segment below, or use the pencil to read its wiring." />
 
-                          <!-- On the card rather than only in the pencil menu: adding a segment is
-                               the ordinary thing you do here, and it says which controller it
-                               lands on by sitting under that controller's own list. -->
-                          <Button Classes="block" FontSize="12" Padding="6,3"
-                                  Content="+  Add a segment"
-                                  Command="{Binding Owner.AddSegmentCommand}"
-                                  CommandParameter="{Binding}" />
+                          <!-- The controller-wide "Add a segment" that used to sit here had to
+                               guess which output the new run belonged on. Each output has its own
+                               + now, so the question does not come up. -->
 
                         </StackPanel>
                       </Border>
@@ -643,17 +656,10 @@
                         <TextBlock Classes="hint" Text="LEDs" />
                         <TextBox Text="{Binding Segment.Count}" />
 
-                        <TextBlock Classes="heading" Text="Where it is plugged in" Margin="0,10,0,4" />
-
-                        <ComboBox ItemsSource="{Binding Owner.OutputChoices}"
-                                  SelectedItem="{Binding Owner.OutputChoice}"
-                                  PlaceholderText="Which output"
-                                  HorizontalAlignment="Stretch" />
-
-                        <!-- Nothing here about the order. It is set in the list, under the output
-                             heading, where you can see what you are moving among; a line saying
-                             "number 2 of 2" told you a number you could not use and could not
-                             act on from this panel. -->
+                        <!-- Nothing here about which output it is on, or where it comes in the
+                             order. Both are one thing - where the run sits in the wiring - and
+                             both are answered by dragging it there in the list, which is the only
+                             place either can be seen. -->
 
 
                         <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
@@ -692,6 +698,63 @@
                           <Slider Minimum="0.02" Maximum="0.6"
                                   Value="{Binding Segment.Fixture.ThrowLength}" />
                         </StackPanel>
+
+                      </StackPanel>
+                    </ScrollViewer>
+                  </DockPanel>
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
+
+            <!-- ============ one LED output's own settings ============
+                 These describe the strip rather than the layout - what order its chips want their
+                 colours in, what one LED draws - so they go straight to the controller rather than
+                 waiting for Save. Length is not here: that is the runs plugged in, added up. -->
+            <ContentControl Content="{Binding EditingOutput}">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:OutputGroup">
+                  <DockPanel>
+
+                    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+                      <Button HorizontalAlignment="Left" Padding="8,3"
+                              Command="{Binding Owner.CloseOutputEditorCommand}">
+                        <TextBlock Text="&#x2190;  All controllers" />
+                      </Button>
+                      <TextBlock Classes="panelTitle" Text="{Binding Header}"
+                                 TextTrimming="CharacterEllipsis" />
+                      <TextBlock Classes="hint" Text="{Binding Summary}" />
+                    </StackPanel>
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                      <StackPanel Spacing="6" Margin="0,0,6,0">
+
+                        <TextBlock Classes="hint" Text="Colour order" />
+                        <ComboBox ItemsSource="{Binding Owner.ColorOrders}"
+                                  SelectedItem="{Binding Owner.OutputColorOrder}"
+                                  HorizontalAlignment="Stretch" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                                   Text="If the reds and greens come out swapped, this is why. It is a property of the chips on that strip, so two outputs on one controller can want different answers - and on this house they do." />
+
+                        <TextBlock Classes="hint" Text="Milliamps per LED" />
+                        <TextBox Text="{Binding Owner.OutputMilliampsPerLed}" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                                   Text="What one LED is budgeted at, so the controller can hold the whole strip inside its power limit." />
+
+                        <TextBlock Classes="hint" Text="Skip the first N LEDs" />
+                        <TextBox Text="{Binding Owner.OutputSkipFirst}" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,0,0,4"
+                                   Text="For LEDs at the near end that are wired but not wanted - hidden behind a downpipe, say." />
+
+                        <CheckBox Content="Strip runs the other way"
+                                  IsChecked="{Binding Owner.OutputReversed}" />
+                        <CheckBox Content="Keep refreshing while off"
+                                  IsChecked="{Binding Owner.OutputOffRefresh}" />
+
+                        <Button Classes="block" Content="Write it to the controller" Margin="0,10,0,0"
+                                Command="{Binding Owner.SaveOutputCommand}"
+                                IsEnabled="{Binding !Owner.IsBusy}" />
+                        <TextBlock Classes="hint" TextWrapping="Wrap"
+                                   Text="This one goes straight to the controller rather than waiting for Save, because it is not part of the layout." />
 
                       </StackPanel>
                     </ScrollViewer>

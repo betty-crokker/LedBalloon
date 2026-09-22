@@ -11,8 +11,72 @@ namespace LedBalloon.Core;
 /// and uncaps the frame rate.
 /// </para>
 /// </summary>
+/// <summary>
+/// The electrical facts about one LED output that no amount of looking at the layout can tell you.
+/// <para>
+/// Length is deliberately not here. That one is worked out from the runs plugged in, and offering
+/// it as a field to type would be offering a way to disagree with them.
+/// </para>
+/// </summary>
+/// <param name="ColorOrder">WLED's code: 0 GRB, 1 RGB, 2 BRG, 3 RBG, 4 BGR, 5 GBR.</param>
+/// <param name="MilliampsPerLed">What one LED is budgeted at, for the power limiter.</param>
+/// <param name="Reversed">The strip is wired running the other way.</param>
+/// <param name="SkipFirst">LEDs at the head of the output that are wired but not used.</param>
+/// <param name="OffRefresh">Keep refreshing this output while it is off.</param>
+public sealed record LedOutputSettings(
+    int ColorOrder,
+    int MilliampsPerLed,
+    bool Reversed,
+    int SkipFirst,
+    bool OffRefresh);
+
 public static class LedOutputWriter
 {
+    /// <summary>The colour orders WLED knows, in its own numbering.</summary>
+    public static IReadOnlyList<string> ColorOrders { get; } =
+        ["GRB", "RGB", "BRG", "RBG", "BGR", "GBR"];
+
+    /// <summary>
+    /// Puts one output's electrical settings into the configuration, leaving its length, its pin
+    /// and every other output alone.
+    /// </summary>
+    /// <returns>True when something actually changed.</returns>
+    public static bool ApplySettings(JsonObject configuration, int index, LedOutputSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (configuration["hw"]?["led"] is not JsonObject led ||
+            led["ins"] is not JsonArray outputs ||
+            index < 0 || index >= outputs.Count ||
+            outputs[index] is not JsonObject output)
+        {
+            return false;
+        }
+
+        bool changed = Set(output, "order", Math.Clamp(settings.ColorOrder, 0, ColorOrders.Count - 1));
+        changed |= Set(output, "ledma", Math.Clamp(settings.MilliampsPerLed, 0, 255));
+        changed |= Set(output, "skip", Math.Max(0, settings.SkipFirst));
+        changed |= SetFlag(output, "rev", settings.Reversed);
+        changed |= SetFlag(output, "ref", settings.OffRefresh);
+
+        return changed;
+    }
+
+    private static bool SetFlag(JsonObject holder, string key, bool value)
+    {
+        bool current = holder[key] is { } node &&
+                       node.GetValueKind() is System.Text.Json.JsonValueKind.True;
+
+        if (current == value && holder[key] is not null)
+        {
+            return false;
+        }
+
+        holder[key] = value;
+        return true;
+    }
+
     /// <summary>
     /// Sets each output's length, then recomputes everything that follows from it: where each
     /// output starts, the controller's total, and how the power budget is divided between them.

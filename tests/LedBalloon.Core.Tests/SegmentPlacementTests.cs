@@ -155,6 +155,95 @@ public class SegmentPlacementTests
     }
 
     [Fact]
+    public void Dropping_a_run_earlier_on_its_own_output_reorders_it()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(garage, porch);
+
+        project.PlaceOnOutput(porch, 1, 0);
+
+        Assert.Equal(0, porch.Start);
+        Assert.Equal(5, garage.Start);
+        Assert.Equal([porch, garage], project.SegmentsOn(Key, 1));
+    }
+
+    [Fact]
+    public void Dropping_a_run_onto_another_output_moves_it_there()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        Segment roofline = Run("Roofline", 2, 285);
+        LedBalloonProject project = House(garage, porch, roofline);
+
+        project.PlaceOnOutput(porch, 2, 0);
+
+        Assert.Equal(2, porch.Output);
+        Assert.Equal([(1, 20), (2, 290)], project.OutputLengths(Key));
+
+        // Output 1 is just the garage now, and output 2 starts where it ends.
+        Assert.Equal(0, garage.Start);
+        Assert.Equal(20, porch.Start);
+        Assert.Equal(25, roofline.Start);
+    }
+
+    [Fact]
+    public void Dropping_past_the_end_puts_it_last()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(garage, porch);
+
+        project.PlaceOnOutput(garage, 1, 99);
+
+        Assert.Equal([porch, garage], project.SegmentsOn(Key, 1));
+        Assert.Equal(0, porch.Start);
+        Assert.Equal(5, garage.Start);
+    }
+
+    [Fact]
+    public void Dropping_a_run_onto_an_output_with_nothing_on_it()
+    {
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(porch);
+
+        project.PlaceOnOutput(porch, 2, 0);
+
+        Assert.Equal(2, porch.Output);
+        Assert.Equal(0, porch.Start);
+        Assert.Single(project.OutputLengths(Key));
+    }
+
+    [Fact]
+    public void Dropping_a_run_where_it_already_is_changes_nothing()
+    {
+        Segment garage = Run("Garage", 1, 20);
+        Segment porch = Run("Porch", 1, 5);
+        LedBalloonProject project = House(garage, porch);
+
+        project.PlaceOnOutput(porch, 1, 1);
+
+        Assert.Equal([garage, porch], project.SegmentsOn(Key, 1));
+        Assert.Equal(20, porch.Start);
+    }
+
+    [Fact]
+    public void A_run_placed_on_an_output_keeps_the_others_in_their_order()
+    {
+        Segment a = Run("A", 1, 10);
+        Segment b = Run("B", 1, 20);
+        Segment c = Run("C", 1, 30);
+        LedBalloonProject project = House(a, b, c);
+
+        project.PlaceOnOutput(c, 1, 0);
+
+        Assert.Equal([c, a, b], project.SegmentsOn(Key, 1));
+        Assert.Equal(0, c.Start);
+        Assert.Equal(30, a.Start);
+        Assert.Equal(40, b.Start);
+    }
+
+    [Fact]
     public void Removing_a_run_closes_the_output_up()
     {
         Segment garage = Run("Garage", 1, 20);
