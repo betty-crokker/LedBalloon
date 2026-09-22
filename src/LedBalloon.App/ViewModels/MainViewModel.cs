@@ -360,8 +360,8 @@ public sealed partial class MainViewModel : ViewModelBase
             ConfirmResult answer = await ask(new ConfirmRequest(
                 Title: $"Replace {coverage.Name}'s segments?",
                 Message: $"{coverage.Name} already has {existing} segment(s) described. Reading its " +
-                         "wiring replaces all of them, including where they are traced on the photo, " +
-                         "and that cannot be undone.",
+                         "wiring replaces all of them, including where they are traced on the photo. " +
+                         "Nothing reaches the controllers until you save, so Revert brings them back.",
                 AcceptText: "Replace them",
                 CancelText: "Leave them alone"));
 
@@ -552,7 +552,50 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Reads the newest layout off the controllers and adopts it.</summary>
     [RelayCommand]
-    private async Task LoadProjectAsync()
+    private Task LoadProjectAsync() => ReloadFromControllersAsync(keepMode: false);
+
+    /// <summary>
+    /// Throws away edits the controllers have not been told about.
+    /// <para>
+    /// There is no undo stack here, and there does not need to be one: nothing this app changes
+    /// reaches the house until it is saved, so the controllers' own copy is a standing snapshot of
+    /// the last good state. Reverting is reading it back.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task RevertAsync()
+    {
+        if (!HasUnsavedChanges)
+        {
+            Status = "Nothing to put back - the controllers already have this layout.";
+            return;
+        }
+
+        if (Ask is not { } ask)
+        {
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: "Throw away unsaved changes?",
+            Message: "The layout goes back to the copy stored on the controllers. Everything " +
+                     "changed since the last save is lost. The controllers themselves are not " +
+                     "touched either way.",
+            AcceptText: "Revert",
+            CancelText: "Keep editing"));
+
+        if (answer.Accepted)
+        {
+            await ReloadFromControllersAsync(keepMode: true);
+        }
+    }
+
+    /// <param name="keepMode">
+    /// True when reading the layout back should not also move the user somewhere else. Reverting
+    /// happens while setting the house up, and being thrown into the colors panel for it is not a
+    /// reasonable answer to "put that back".
+    /// </param>
+    private async Task ReloadFromControllersAsync(bool keepMode)
     {
         IReadOnlyList<SyncTarget> targets = SyncTargets();
         if (targets.Count == 0)
@@ -612,7 +655,7 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 Step($"Found {Project.Segments.Count} segment(s) across {Project.TotalLeds} LEDs");
             }
-            else
+            else if (!keepMode)
             {
                 Mode = HasSegments ? AppMode.Design : AppMode.Setup;
             }
@@ -996,11 +1039,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: $"Remove '{segment.Name}'?",
-            Message: leavesAHole
-                ? $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. This cannot be undone, " +
-                  "and nothing reaches the controllers until you save."
-                : $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. This cannot be undone, " +
-                  "and nothing reaches the controllers until you save.",
+            Message: $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. Nothing reaches " +
+                     "the controllers until you save, so Revert - or closing without saving - brings it back.",
             AcceptText: "Remove",
             CancelText: "Keep it",
             OptionText: leavesAHole
@@ -1025,8 +1065,8 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         AfterProjectChanged(leavesAHole
-            ? $"Removed '{segment.Name}', leaving a gap of {segment.Count} LEDs on the wire."
-            : $"Removed '{segment.Name}'.");
+            ? $"Removed '{segment.Name}', leaving a gap of {segment.Count} LEDs on the wire. Revert to put it back."
+            : $"Removed '{segment.Name}'. Revert to put it back.");
     }
 
     [RelayCommand]

@@ -335,6 +335,11 @@
                       IsVisible="{Binding HasUnsavedChanges}">
                 <TextBlock Text="Unsaved" FontSize="12" Foreground="White" />
               </Border>
+              <Button Content="Revert"
+                      ToolTip.Tip="Read the layout back off the controllers, throwing away unsaved changes"
+                      Command="{Binding RevertCommand}"
+                      IsVisible="{Binding HasUnsavedChanges}"
+                      IsEnabled="{Binding !IsBusy}" />
               <Button Content="Save to controllers"
                       Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
               <Button Content="Overwrite anyway"
