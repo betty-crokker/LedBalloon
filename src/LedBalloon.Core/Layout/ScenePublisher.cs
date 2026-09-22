@@ -71,10 +71,16 @@ public static class ScenePublisher
     /// it for nothing.
     /// </para>
     /// </summary>
+    /// <param name="previousName">
+    /// What this scene was called last time it was published, when it has since been renamed. The
+    /// new name lands in the slot the old one holds, so the timers pointing at that slot follow the
+    /// rename instead of going on firing the version of the scene it used to be.
+    /// </param>
     public static async Task<ScenePublication> PublishAsync(
         string controllerKey,
         string host,
         WledPreset preset,
+        string? previousName = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
@@ -86,7 +92,7 @@ public static class ScenePublisher
         byte[]? current = await files.DownloadAsync("presets.json", cancellationToken).ConfigureAwait(false);
         JsonObject presets = ReadPresets(host, current);
 
-        PublishPlan plan = PlanFor(presets, preset);
+        PublishPlan plan = PlanFor(presets, preset, previousName);
 
         if (!plan.Changed)
         {
@@ -118,12 +124,12 @@ public static class ScenePublisher
     /// while skipping wrongly leaves the house showing the old scene.
     /// </para>
     /// </summary>
-    public static PublishPlan PlanFor(JsonObject presets, WledPreset preset)
+    public static PublishPlan PlanFor(JsonObject presets, WledPreset preset, string? previousName = null)
     {
         ArgumentNullException.ThrowIfNull(presets);
         ArgumentNullException.ThrowIfNull(preset);
 
-        int slot = ChooseSlot(presets, preset.DisplayName);
+        int slot = ChooseSlot(presets, preset.DisplayName, previousName);
         string key = slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
         return new PublishPlan(slot, !JsonNode.DeepEquals(presets[key], ToNode(preset)));
@@ -260,11 +266,18 @@ public static class ScenePublisher
     /// ever shown them.
     /// </para>
     /// </summary>
-    private static int ChooseSlot(JsonObject presets, string name)
+    private static int ChooseSlot(JsonObject presets, string name, string? previousName)
     {
+        // The name it has now, then the name it used to have, so a rename replaces its old self
+        // rather than adding a second preset and orphaning the first.
         if (FindSlot(presets, name) is { } existing)
         {
             return existing;
+        }
+
+        if (previousName is { Length: > 0 } && FindSlot(presets, previousName) is { } renamed)
+        {
+            return renamed;
         }
 
         // Slot 0 is WLED's scratch slot and never a real preset.

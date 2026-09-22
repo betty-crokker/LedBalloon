@@ -209,26 +209,43 @@
                 <TextBlock Classes="hint" Text="{Binding ScheduleNotice}" />
               </Border>
 
-              <TextBlock Classes="heading" Text="Presets" />
+              <TextBlock Classes="heading" Text="Scenes" />
               <TextBlock Classes="hint"
-                         Text="Every preset on every controller, in one list — it does not matter which one stores it. A preset is a whole controller's worth of settings: every segment's colors, effect and palette, saved together." />
+                         Text="A scene is a named way for the whole house to look — what every run is doing, saved together. It spans the controllers, so there is one list and it does not matter which box stores what." />
 
-              <ComboBox ItemsSource="{Binding Presets}"
-                        SelectedItem="{Binding SelectedPreset}"
+              <ComboBox ItemsSource="{Binding Scenes}"
+                        SelectedItem="{Binding SelectedScene}"
                         DisplayMemberBinding="{Binding Name}"
-                        PlaceholderText="Pick a preset to look at"
+                        PlaceholderText="Pick a scene to look at"
                         HorizontalAlignment="Stretch"
                         Margin="0,4,0,0" />
 
-              <!-- No banner and no buttons: whether this has reached the lights is what the Sync
-                   switch says, in one place, for everything on this panel. -->
+              <!-- The way scenes get made: light the house by hand, then write it down. -->
+              <Button Classes="block" Content="Save how the house looks now"
+                      Command="{Binding CaptureSceneCommand}" />
+
+              <!-- No banner and no buttons for sending: whether this has reached the lights is what
+                   the Sync switch says, in one place, for everything on this panel. -->
               <StackPanel Spacing="8"
-                          IsVisible="{Binding SelectedPreset, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                          IsVisible="{Binding SelectedScene, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
 
-                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding PresetCoverage}" />
+                <!-- On losing focus rather than on every keystroke: the setter refuses a name
+                     another scene already has, and doing that mid-word would fight the typing. -->
+                <TextBox Text="{Binding SelectedScene.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         PlaceholderText="Scene name"
+                         IsEnabled="{Binding SelectedScene.IsOwn}"
+                         Margin="0,4,0,0" />
 
-                <!-- What the preset actually does, which its name does not tell you. -->
-                <ItemsControl ItemsSource="{Binding PresetDetails}">
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedScene.Origin}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Put it on the house" Command="{Binding ApplySceneCommand}" />
+                  <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
+                          IsVisible="{Binding SelectedScene.IsOwn}" />
+                </StackPanel>
+
+                <!-- What the scene actually does, which its name does not tell you. -->
+                <ItemsControl ItemsSource="{Binding SceneDetails}">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="vm:PresetDetail">
                       <Border Classes="card" Margin="0,0,0,6" Padding="10">
@@ -273,23 +290,26 @@
                 <TextBlock Classes="hint" TextWrapping="Wrap"
                            Text="Effects LedBalloon knows are run properly, at the frame rate the controller is set to. The rest are stood in for by sliding the segment's palette along it, which gets the colors right and the movement only roughly." />
 
-                <!-- Checking the presets is a preset job, so it lives with the presets. It spent a
-                     while under a "Health" heading over in Setup, next to the layout, which is a
-                     different question about different things. -->
-                <Button Classes="block" Content="Check the presets" Margin="0,10,0,0"
-                        Command="{Binding AuditCommand}" />
-                <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,4,0,0"
-                           Text="A preset saved when you thought a run was shorter puts that old length back when it is recalled, so the LEDs you found later stay dark. This reads every preset on every controller and lists the ones that would." />
-
-                <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,6,0,0">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
-                                 Foreground="#C9821B" Text="{Binding}" />
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
               </StackPanel>
+
+              <!-- A question about the whole house rather than about the scene being looked at, so
+                   it sits outside that panel. It spent a while under a "Health" heading over in
+                   Setup, next to the layout, which is a different question about different things.
+                   It still says "preset" on purpose: this is genuinely about what is on the
+                   hardware, including things LedBalloon did not put there. -->
+              <Button Classes="block" Content="Check what is on the controllers" Margin="0,14,0,0"
+                      Command="{Binding AuditCommand}" />
+              <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,4,0,0"
+                         Text="A preset saved when you thought a run was shorter puts that old length back when it is recalled, so the LEDs you found later stay dark. This reads every preset on every controller and lists the ones that would. Scenes cannot go wrong this way — they carry no LED numbers at all." />
+
+              <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,6,0,0">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
+                               Foreground="#C9821B" Text="{Binding}" />
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
 
               <!-- Tuning one run by hand is the less common job, so it folds away. -->
               <!-- A swatch that opens the picker, rather than a picker that is always open:
