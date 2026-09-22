@@ -212,65 +212,16 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> LayoutWarnings { get; } = [];
 
     /// <summary>
-    /// Which controller the segment list is showing.
+    /// Which controller a controller-level action is about.
     /// <para>
-    /// One controller at a time: a run belongs to a box, and mixing two boxes' runs in one list
-    /// makes it easy to edit the wrong one.
+    /// Passed in rather than remembered. There used to be a selected controller, because the list
+    /// showed one box's runs at a time and something had to say which. Now every controller is on
+    /// screen with its own runs, so a selection had nothing left to do but sit behind the buttons
+    /// deciding which box they applied to - which is worse than saying so outright.
     /// </para>
     /// </summary>
-    public ControllerCoverage? SelectedCoverage
-    {
-        get => _selectedCoverage;
-        set
-        {
-            if (!SetProperty(ref _selectedCoverage, value))
-            {
-                return;
-            }
+    private ControllerCoverage? _fallbackController;
 
-            OnPropertyChanged(nameof(SegmentsHeading));
-
-            SyncOpenController();
-
-            if (value is not null && DeviceFor(value.Key) is { } device)
-            {
-                SelectedDevice = device;
-            }
-
-            RebuildSegmentRows();
-
-            // A selection from the other controller is not in this list any more.
-            if (SelectedSegment is { } segment &&
-                !string.Equals(segment.ControllerKey, value?.Key, StringComparison.OrdinalIgnoreCase))
-            {
-                SelectedSegment = Project.SegmentsOn(value?.Key ?? string.Empty).FirstOrDefault();
-            }
-        }
-    }
-
-    private ControllerCoverage? _selectedCoverage;
-
-    /// <summary>
-    /// Marks the controller being worked on.
-    /// <para>
-    /// Its own method because the selection is set two ways: through the property when someone
-    /// picks a controller, and straight into the field when the list is rebuilt and has to land
-    /// back on the same one. The rebuild path skips the property entirely.
-    /// </para>
-    /// </summary>
-    private void SyncOpenController()
-    {
-        foreach (ControllerCoverage controller in Coverage)
-        {
-            controller.IsSelected = ReferenceEquals(controller, _selectedCoverage);
-        }
-    }
-
-    public string SegmentsHeading =>
-        SelectedCoverage is null ? "Segments" : $"Runs on {SelectedCoverage.Name}";
-
-    /// <summary>True when the selected controller has any runs to list.</summary>
-    public bool HasVisibleSegments => SegmentRows.Count > 0;
 
     /// <summary>
     /// What clicking the photo does right now.
@@ -321,7 +272,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Picks a controller, expanding its runs underneath it.</summary>
     [RelayCommand]
-    private void PickController(ControllerCoverage? controller) => SelectedCoverage = controller;
+    private void PickController(ControllerCoverage? controller)
+    {
+        _fallbackController = controller;
+
+        if (controller is not null && DeviceFor(controller.Key) is { } device)
+        {
+            SelectedDevice = device;
+        }
+    }
 
     private SegmentRow? _selectedRow;
 
@@ -329,7 +288,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ImportFromControllerAsync()
     {
-        if (SelectedCoverage is not { } coverage || DeviceFor(coverage.Key) is not { } device)
+        if (_fallbackController is not { } coverage || DeviceFor(coverage.Key) is not { } device)
         {
             return;
         }
@@ -903,7 +862,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void AddSegment()
     {
-        string? key = SelectedCoverage?.Key ?? SelectedSegment?.ControllerKey ?? SelectedDevice?.DeviceKey;
+        string? key = _fallbackController?.Key ?? SelectedSegment?.ControllerKey ?? SelectedDevice?.DeviceKey;
         if (key is null)
         {
             Status = "Connect a controller first.";
@@ -948,6 +907,27 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         Project.RepackAll();
         AfterProjectChanged($"Re-laid {Project.Segments.Count} segment(s) across {Project.TotalLeds} LEDs.");
+    }
+
+    /// <summary>
+    /// Re-lays one controller's runs, which is what the button on a controller ought to do.
+    /// <para>
+    /// Separate from the whole-house version on purpose: the two used to share a command, so the
+    /// button sitting on North quietly re-laid South as well.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void RepackController(ControllerCoverage? controller)
+    {
+        if (controller is null)
+        {
+            return;
+        }
+
+        Project.Repack(controller.Key);
+
+        AfterProjectChanged(
+            $"Re-laid {Project.SegmentsOn(controller.Key).Count} run(s) on {controller.Name}.");
     }
 
     /// <summary>
@@ -1665,8 +1645,8 @@ public sealed partial class MainViewModel : ViewModelBase
             SelectedSegment = Project.Segments.FirstOrDefault();
         }
 
-        // Re-entrant: assigning SelectedCoverage below makes the list write its selection back,
-        // which lands here again mid-rebuild and duplicates every row.
+        // Re-entrant: rebuilding the lists below can land here again mid-rebuild and duplicate
+        // every row.
         if (_rebuildingRows)
         {
             return;
@@ -1687,8 +1667,8 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         Segment? keep = SelectedSegment;
 
-        // Coverage first: it decides which runs the list shows.
-        string? previousKey = _selectedCoverage?.Key;
+        // Coverage first: every run is filed under one of these.
+        string? previousKey = _fallbackController?.Key;
 
         Coverage.Clear();
 
@@ -1713,15 +1693,12 @@ public sealed partial class MainViewModel : ViewModelBase
             });
         }
 
-        // Re-point at the same controller across a rebuild, rather than resetting to the first.
-        _selectedCoverage =
+        // Land back on the same controller across a rebuild, so a button pressed a moment ago
+        // still means the box it was pressed on.
+        _fallbackController =
             Coverage.FirstOrDefault(c => string.Equals(c.Key, previousKey, StringComparison.OrdinalIgnoreCase))
             ?? Coverage.FirstOrDefault(c => string.Equals(c.Key, keep?.ControllerKey, StringComparison.OrdinalIgnoreCase))
             ?? Coverage.FirstOrDefault();
-
-        OnPropertyChanged(nameof(SelectedCoverage));
-        OnPropertyChanged(nameof(SegmentsHeading));
-        SyncOpenController();
 
         // Every run, filed under the controller it is plugged into. All of them stay on screen:
         // which box drives a run is the thing the list is for, and folding them away behind a
@@ -1764,7 +1741,6 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedSegment = _selectedRow?.Segment;
 
         OnPropertyChanged(nameof(SelectedRow));
-        OnPropertyChanged(nameof(HasVisibleSegments));
     }
 
     private string ControllerNameFor(string? key) =>

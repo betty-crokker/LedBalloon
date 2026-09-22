@@ -76,9 +76,6 @@ public sealed partial class ControllerCoverage(
     /// </summary>
     public ObservableCollection<SegmentRow> Runs { get; } = [];
 
-    /// <summary>True for the controller being worked on, so the card can say which that is.</summary>
-    [ObservableProperty] private bool _isSelected;
-
     public bool HasRuns => Runs.Count > 0;
 
     /// <summary>Call after refilling <see cref="Runs"/>, which is a collection and says nothing itself.</summary>
