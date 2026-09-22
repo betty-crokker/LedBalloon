@@ -218,16 +218,41 @@ upload whose part carries no explicit content type**, answering 500 with nothing
 the "500 on success" case already documented in `WledFileSystemClient` — the file genuinely does not
 appear. `WledFileSystemClient.UploadAsync` sets the type and is fine; hand-rolled `curl` is not.
 
-## Open decisions
+## Settled
 
-- **A scene covering a controller that is offline when you save.** Publish to the ones that answer
-  and mark the scene incomplete, or refuse the save? The layout save already tolerates a missing
-  box, so probably the former, but it needs saying out loud in the UI.
-- **Deleting a scene.** Does it remove the published preset from the boxes, or leave it? Removing is
-  tidier; leaving it means a timer pointing at that slot keeps working rather than silently firing
-  nothing.
-- **Renaming a scene.** The published preset is matched by name, so a rename orphans the old one
-  unless the rename also rewrites it. Probably rewrite, and delete the old name.
+**Deleting a scene is refused while a timer points at it.** The Schedule tab names the timer and the
+controller; delete the timer first. Removing the published preset out from under a timer would leave
+it firing nothing at 23:30 with no way to notice, and leaving the preset behind would keep a scene
+alive that the app says is gone. Refusing is the only option that cannot surprise anyone in the
+dark.
+
+**Renaming a scene rewrites the published preset and deletes the old name.** Publishing matches by
+name, so anything else orphans the old preset — and an orphan is worse than usual here, because a
+timer pointing at its slot would go on firing the previous version of the scene forever. The rename
+has to carry the timers with it, which is possible because they are recalled by slot and the slot is
+being reused.
+
+## Offline controllers — a display gap that exists today
+
+A controller that has never answered **is not shown at all**, and its segments are unreachable:
+
+- `RebuildSegmentRowsCore` builds `Coverage` from `Devices`, filtered to those with a `DeviceKey`.
+  The key comes from the device's own info, so it only exists after a successful connect. No
+  connect, no card.
+- Its segments are still drawn on the photo — `HouseCanvas` iterates `project.Segments` and knows
+  nothing about devices — so they can be clicked there but not edited anywhere.
+- They are added to `SegmentRows` as orphans, under a comment saying they "would otherwise vanish
+  rather than be fixable". That is no longer true. The panel renders segments only through
+  `Coverage → Outputs → Runs`, so the orphan rows are not displayed anywhere. The comment describes
+  the old panel; grouping the list by output broke its intent without anyone noticing.
+
+A controller that answered and then dropped is fine: devices are only removed when a duplicate key
+appears, so the card stays with a disconnected dot.
+
+None of this is caused by scenes, and it should be fixed on its own — a segment on a box that is not
+answering still belongs to the house, and the panel should say so rather than omit it. Once it is,
+the scenes answer follows: publish to the controllers that answer, mark the scene as not fully
+published, and say which box is missing.
 
 ## Non-goals
 
