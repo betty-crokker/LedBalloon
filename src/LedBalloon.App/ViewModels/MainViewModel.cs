@@ -362,24 +362,81 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private int _outputSkipFirst;
     [ObservableProperty] private bool _outputOffRefresh;
 
+    /// <summary>
+    /// Output settings changed but not yet written, keyed by controller and output number.
+    /// <para>
+    /// Held rather than written on the spot. These are controller settings like the lengths beside
+    /// them, and one Save writing all of it is both fewer trips to flash and one story about what
+    /// "unsaved" means - Revert takes these back too.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<(string Key, int Number), LedOutputSettings> _pendingOutputSettings =
+        new();
+
+    /// <summary>True while the fields are being filled from the device, so that is not an edit.</summary>
+    private bool _loadingOutput;
+
     partial void OnEditingOutputChanged(OutputGroup? value)
     {
         OnPropertyChanged(nameof(IsEditingOutput));
         OnPropertyChanged(nameof(IsShowingControllers));
 
-        if (value?.Bus is not { } bus)
+        if (value is null)
         {
             return;
         }
 
-        OutputColorOrder = bus.ColorOrder >= 0 && bus.ColorOrder < ColorOrders.Count
-            ? ColorOrders[bus.ColorOrder]
-            : ColorOrders[0];
+        _loadingOutput = true;
+        try
+        {
+            // Whatever is staged for this output wins over what the controller last said, so
+            // stepping out of the editor and back in does not quietly undo an edit.
+            LedOutputSettings settings = _pendingOutputSettings.TryGetValue(
+                (value.ControllerKey, value.Number), out LedOutputSettings? staged)
+                ? staged
+                : value.Bus is { } bus
+                    ? new LedOutputSettings(bus.ColorOrder, bus.MilliampsPerLed, bus.Reversed,
+                        bus.SkipFirst, bus.OffRefresh)
+                    : new LedOutputSettings(0, 30, false, 0, false);
 
-        OutputMilliampsPerLed = bus.MilliampsPerLed;
-        OutputReversed = bus.Reversed;
-        OutputSkipFirst = bus.SkipFirst;
-        OutputOffRefresh = bus.OffRefresh;
+            OutputColorOrder = settings.ColorOrder >= 0 && settings.ColorOrder < ColorOrders.Count
+                ? ColorOrders[settings.ColorOrder]
+                : ColorOrders[0];
+
+            OutputMilliampsPerLed = settings.MilliampsPerLed;
+            OutputReversed = settings.Reversed;
+            OutputSkipFirst = settings.SkipFirst;
+            OutputOffRefresh = settings.OffRefresh;
+        }
+        finally
+        {
+            _loadingOutput = false;
+        }
+    }
+
+    partial void OnOutputColorOrderChanged(string? value) => StageOutputSettings();
+
+    partial void OnOutputMilliampsPerLedChanged(int value) => StageOutputSettings();
+
+    partial void OnOutputReversedChanged(bool value) => StageOutputSettings();
+
+    partial void OnOutputSkipFirstChanged(int value) => StageOutputSettings();
+
+    partial void OnOutputOffRefreshChanged(bool value) => StageOutputSettings();
+
+    private void StageOutputSettings()
+    {
+        if (_loadingOutput || EditingOutput is not { } output)
+        {
+            return;
+        }
+
+        int order = Math.Max(0, ColorOrders.ToList().IndexOf(OutputColorOrder ?? ColorOrders[0]));
+
+        _pendingOutputSettings[(output.ControllerKey, output.Number)] = new LedOutputSettings(
+            order, OutputMilliampsPerLed, OutputReversed, OutputSkipFirst, OutputOffRefresh);
+
+        HasUnsavedChanges = true;
     }
 
     /// <summary>Opens the settings for one LED output.</summary>
@@ -392,54 +449,49 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Goes back to the controllers without writing anything.</summary>
+    /// <summary>Goes back to the controllers. The edits stay staged until Save.</summary>
     [RelayCommand]
     private void CloseOutputEditor() => EditingOutput = null;
 
     /// <summary>
-    /// Writes this output's settings to the controller.
+    /// Writes any staged output settings to their controllers.
     /// <para>
-    /// Straight through rather than held until Save, because these are not part of the layout -
-    /// they describe the strip itself, and there is nothing to keep them in step with.
+    /// Part of Save rather than a button of its own. They are controller settings exactly like the
+    /// output lengths written beside them, and splitting them off left two kinds of unsaved change
+    /// with two different ways to undo them.
     /// </para>
     /// </summary>
-    [RelayCommand]
-    private async Task SaveOutputAsync()
+    /// <returns>How many outputs were actually written.</returns>
+    private async Task<int> PushOutputSettingsAsync()
     {
-        if (EditingOutput is not { } output || DeviceFor(output.ControllerKey) is not { } device)
+        if (_pendingOutputSettings.Count == 0)
         {
-            return;
+            return 0;
         }
 
-        int order = Math.Max(0, ColorOrders.ToList().IndexOf(OutputColorOrder ?? ColorOrders[0]));
+        int written = 0;
 
-        IsBusy = true;
-        try
+        foreach (((string key, int number), LedOutputSettings settings) in _pendingOutputSettings.ToList())
         {
-            bool written = await new WledConfigClient(device.Host).SetLedOutputSettingsAsync(
-                output.Number - 1,
-                new LedOutputSettings(order, OutputMilliampsPerLed, OutputReversed, OutputSkipFirst, OutputOffRefresh));
-
-            if (written)
+            if (DeviceFor(key) is not { } device)
             {
-                await device.RefreshOutputsAsync();
-                RebuildSegmentRows();
+                continue;
             }
 
-            Status = written
-                ? $"Output {output.Number} on {ControllerNameFor(output.ControllerKey)} updated."
-                : $"Output {output.Number} on {ControllerNameFor(output.ControllerKey)} was already set that way.";
+            if (await new WledConfigClient(device.Host).SetLedOutputSettingsAsync(number - 1, settings))
+            {
+                written++;
+            }
+        }
 
-            EditingOutput = null;
-        }
-        catch (Exception ex)
+        _pendingOutputSettings.Clear();
+
+        foreach (DeviceViewModel device in Devices)
         {
-            Status = $"Could not change that output: {ex.Message}";
+            await device.RefreshOutputsAsync();
         }
-        finally
-        {
-            IsBusy = false;
-        }
+
+        return written;
     }
 
     /// <summary>
@@ -723,6 +775,7 @@ public sealed partial class MainViewModel : ViewModelBase
             try
             {
                 int lengthened = await PushOutputLengthsAsync();
+                int settings = await PushOutputSettingsAsync();
                 int count = await PushGeometryAsync();
 
                 pushed = count > 0 ? $" {count} controller(s) re-cut to match." : string.Empty;
@@ -732,6 +785,11 @@ public sealed partial class MainViewModel : ViewModelBase
                     // Not "lengthened": correcting a count downwards shortens the output, and the
                     // message was written the day it only ever went one way.
                     pushed += $" LED output lengths written to {lengthened} controller(s).";
+                }
+
+                if (settings > 0)
+                {
+                    pushed += $" {settings} output(s) had their settings written.";
                 }
             }
             catch (Exception ex)
@@ -906,6 +964,10 @@ public sealed partial class MainViewModel : ViewModelBase
                     "This layout has a house photo that was too large for the controllers. " +
                     "Load the same picture once and it will be remembered on this machine.";
             }
+
+            // Reverting has to take back staged output settings too, or they would survive a
+            // "throw away unsaved changes" and land on the controller at the next save.
+            _pendingOutputSettings.Clear();
 
             MatchSegmentsToWiring();
 
