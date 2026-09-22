@@ -104,16 +104,25 @@ What is missing is mostly naming, references and UI — not the hard part.
 2. `LedBalloonProject` gains `Scenes`; `Looks` comes to mean the named per-segment looks.
 3. A scene's segment entry becomes a reference-or-inline union.
 
-### Migration hazard: the `"looks"` key changes meaning
+### The `"looks"` key is free
 
-Existing project files store whole-house looks under `"looks"`. After this, `"looks"` means named
-per-segment looks. A file written before the change would be read as a list of looks whose fields
-are all absent.
+`"looks"` currently means whole-house looks, and after this it means named per-segment looks. That
+would normally need a migration at `ProjectSerialization.FromUtf8`, where `RetireFlipAim` lives.
 
-Rule, applied where `RetireFlipAim` is applied — `ProjectSerialization.FromUtf8`, the one chokepoint
-every load passes through: **a `"looks"` entry carrying a `segments` dictionary is an old
-whole-house look; move it to `scenes`.** The two shapes are trivially distinguishable, and the
-conversion is lossless because an old look's per-segment values become anonymous entries.
+It does not, because nobody ever made one. Looks were modelled, resolved and tested but never
+reachable from the UI, and the project file lives on the controllers rather than on any PC — so the
+only copies that exist anywhere are the four on the hardware, and all four are empty:
+
+| File | Revision | `looks` |
+| --- | --- | --- |
+| South `ledballoon.json` | 15 | `[]` |
+| South `ledballoon.bak.json` | 14 | `[]` |
+| North `ledballoon.json` | 15 | `[]` |
+| North `ledballoon.bak.json` | 14 | `[]` |
+
+So the key changes meaning outright, with no migration and no compatibility shim. Worth re-checking
+this holds before the change lands: if a look gets made in the meantime, the rule is that a `"looks"`
+entry carrying a `segments` dictionary is an old whole-house look and belongs in `scenes`.
 
 ## Publishing a scene to the controllers
 
