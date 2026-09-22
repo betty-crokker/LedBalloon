@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -230,6 +230,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
             OnPropertyChanged(nameof(SegmentsHeading));
 
+            SyncOpenController();
+
             if (value is not null && DeviceFor(value.Key) is { } device)
             {
                 SelectedDevice = device;
@@ -247,6 +249,22 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     private ControllerCoverage? _selectedCoverage;
+
+    /// <summary>
+    /// Marks the controller being worked on.
+    /// <para>
+    /// Its own method because the selection is set two ways: through the property when someone
+    /// picks a controller, and straight into the field when the list is rebuilt and has to land
+    /// back on the same one. The rebuild path skips the property entirely.
+    /// </para>
+    /// </summary>
+    private void SyncOpenController()
+    {
+        foreach (ControllerCoverage controller in Coverage)
+        {
+            controller.IsSelected = ReferenceEquals(controller, _selectedCoverage);
+        }
+    }
 
     public string SegmentsHeading =>
         SelectedCoverage is null ? "Segments" : $"Runs on {SelectedCoverage.Name}";
@@ -281,12 +299,29 @@ public sealed partial class MainViewModel : ViewModelBase
         get => _selectedRow;
         set
         {
-            if (SetProperty(ref _selectedRow, value))
+            if (!SetProperty(ref _selectedRow, value))
             {
-                SelectedSegment = value?.Segment;
+                return;
             }
+
+            // The rows are buttons rather than list items now, so which one looks picked is the
+            // row's own business.
+            foreach (SegmentRow row in SegmentRows)
+            {
+                row.IsSelected = ReferenceEquals(row, value);
+            }
+
+            SelectedSegment = value?.Segment;
         }
     }
+
+    /// <summary>Picks a run from the list. Bound to the row itself, which is a button.</summary>
+    [RelayCommand]
+    private void PickSegmentRow(SegmentRow? row) => SelectedRow = row;
+
+    /// <summary>Picks a controller, expanding its runs underneath it.</summary>
+    [RelayCommand]
+    private void PickController(ControllerCoverage? controller) => SelectedCoverage = controller;
 
     private SegmentRow? _selectedRow;
 
@@ -1672,7 +1707,10 @@ public sealed partial class MainViewModel : ViewModelBase
                 device.DisplayName,
                 mine.Count,
                 mine.Sum(s => s.Count),
-                device.Capabilities?.LedCount ?? 0));
+                device.Capabilities?.LedCount ?? 0)
+            {
+                Owner = this,
+            });
         }
 
         // Re-point at the same controller across a rebuild, rather than resetting to the first.
@@ -1683,16 +1721,33 @@ public sealed partial class MainViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(SelectedCoverage));
         OnPropertyChanged(nameof(SegmentsHeading));
+        SyncOpenController();
 
-        // Only the selected controller's runs, so there is no chance of editing the wrong box's.
-        IEnumerable<Segment> visible = _selectedCoverage is { } showing
-            ? Project.SegmentsOn(showing.Key)
-            : Project.Segments;
-
+        // Every run, filed under the controller it is plugged into. All of them stay on screen:
+        // which box drives a run is the thing the list is for, and folding them away behind a
+        // selection made that the one question it could not answer at a glance.
         SegmentRows.Clear();
-        foreach (Segment segment in visible)
+
+        foreach (ControllerCoverage controller in Coverage)
         {
-            SegmentRows.Add(new SegmentRow(segment, ControllerNameFor(segment.ControllerKey)));
+            controller.Runs.Clear();
+
+            foreach (Segment segment in Project.SegmentsOn(controller.Key))
+            {
+                var row = new SegmentRow(segment, controller.Name, this);
+                controller.Runs.Add(row);
+                SegmentRows.Add(row);
+            }
+
+            controller.RunsChanged();
+        }
+
+        // Anything whose controller is not in the list at all - unassigned, or a box that has not
+        // answered yet - would otherwise vanish rather than be fixable.
+        foreach (Segment orphan in Project.Segments.Where(
+                     s => !Coverage.Any(c => string.Equals(c.Key, s.ControllerKey, StringComparison.OrdinalIgnoreCase))))
+        {
+            SegmentRows.Add(new SegmentRow(orphan, ControllerNameFor(orphan.ControllerKey), this));
         }
 
         RefreshLayoutWarnings();
