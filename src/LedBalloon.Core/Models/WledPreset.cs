@@ -29,6 +29,13 @@ public sealed class WledPreset
     // fetch the preset by applying it if you need the rest.
     [JsonPropertyName("on")] public bool? On { get; set; }
     [JsonPropertyName("bri")] public byte? Brightness { get; set; }
+
+    /// <summary>
+    /// Crossfade into this preset, in 100 ms units. Carried because a scene can ask for one, and a
+    /// preset body is a state snapshot like any other.
+    /// </summary>
+    [JsonPropertyName("transition")] public int? Transition { get; set; }
+
     [JsonPropertyName("seg")] public List<WledSegment>? Segments { get; set; }
 
     [JsonIgnore] public bool IsPlaylist => Playlist is not null;
