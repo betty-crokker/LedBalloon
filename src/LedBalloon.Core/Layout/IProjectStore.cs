@@ -39,6 +39,27 @@ internal static class ProjectSerialization
     internal static byte[] ToUtf8(LedBalloonProject project) =>
         Encoding.UTF8.GetBytes(JsonSerializer.Serialize(project, TypeInfo));
 
-    internal static LedBalloonProject? FromUtf8(byte[]? utf8) =>
-        utf8 is null or { Length: 0 } ? null : JsonSerializer.Deserialize(utf8, TypeInfo);
+    /// <summary>
+    /// Reads a project back, folding retired settings onto the ones that replaced them.
+    /// <para>
+    /// Every path into the app goes through here - both stores, and the copies pulled off other
+    /// controllers - so this is the one place a migration has to be written.
+    /// </para>
+    /// </summary>
+    internal static LedBalloonProject? FromUtf8(byte[]? utf8)
+    {
+        if (utf8 is null or { Length: 0 })
+        {
+            return null;
+        }
+
+        LedBalloonProject? project = JsonSerializer.Deserialize(utf8, TypeInfo);
+
+        foreach (Segment segment in project?.Segments ?? [])
+        {
+            segment.Fixture.RetireFlipAim();
+        }
+
+        return project;
+    }
 }
