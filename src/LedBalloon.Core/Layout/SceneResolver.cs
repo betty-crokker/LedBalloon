@@ -167,8 +167,12 @@ public static class SceneResolver
         };
     }
 
-    private static void Apply(WledSegment segment, Appearance appearance)
+    /// <summary>Writes an appearance onto a WLED segment, leaving its bounds alone.</summary>
+    public static void Apply(WledSegment segment, Appearance appearance)
     {
+        ArgumentNullException.ThrowIfNull(segment);
+        ArgumentNullException.ThrowIfNull(appearance);
+
         segment.On = appearance.On ?? true;
         segment.Brightness = appearance.Brightness;
         segment.Effect = appearance.Effect;

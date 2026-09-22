@@ -111,6 +111,72 @@ public sealed class LedBalloonProject
         Scenes.Count(scene => scene.Segments.Values.Any(e =>
             string.Equals(e.LookId, lookId, StringComparison.Ordinal)));
 
+    /// <summary>The named look that says exactly this, or null when nothing does.</summary>
+    public Look? LookMatching(Appearance appearance)
+    {
+        ArgumentNullException.ThrowIfNull(appearance);
+        return Looks.FirstOrDefault(look => look.Matches(appearance));
+    }
+
+    /// <summary>
+    /// Points a scene's one-off entries at the named looks that say the same thing.
+    /// <para>
+    /// Run after capturing a house. Without it a segment already showing "Warm white" would be
+    /// written down as another copy of that description, and editing the look afterwards would
+    /// reach every scene except the ones captured from it — which is exactly backwards.
+    /// </para>
+    /// </summary>
+    /// <returns>How many entries became references.</returns>
+    public int BindLooks(Scene scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+
+        int bound = 0;
+
+        foreach (SceneEntry entry in scene.Segments.Values)
+        {
+            if (entry.LookId is not null || LookMatching(entry) is not { } look)
+            {
+                continue;
+            }
+
+            // The fields are cleared, so the reference is the only description. Leaving them would
+            // be two answers to one question, and the stale one would win the day the look changed.
+            new Appearance().CopyTo(entry);
+            entry.LookId = look.Id;
+            bound++;
+        }
+
+        return bound;
+    }
+
+    /// <summary>
+    /// A look name nothing else is using, for the same reason scene names have to be unique: the
+    /// name is how a person tells two of them apart.
+    /// </summary>
+    public string UniqueLookName(string wanted, string? ignoringId = null)
+    {
+        string trimmed = string.IsNullOrWhiteSpace(wanted) ? "Look" : wanted.Trim();
+
+        bool Taken(string candidate) => Looks.Any(l =>
+            !string.Equals(l.Id, ignoringId, StringComparison.Ordinal) &&
+            string.Equals(l.Name.Trim(), candidate, StringComparison.OrdinalIgnoreCase));
+
+        if (!Taken(trimmed))
+        {
+            return trimmed;
+        }
+
+        for (int n = 2; ; n++)
+        {
+            string candidate = $"{trimmed} {n}";
+            if (!Taken(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     /// <summary>
     /// A scene name nothing else is using, by adding a number until it is free.
     /// <para>

@@ -72,6 +72,35 @@ public class Appearance
         other.Custom2 = Custom2;
         other.Custom3 = Custom3;
     }
+
+    /// <summary>
+    /// True when two appearances would put exactly the same thing on a run.
+    /// <para>
+    /// Used to notice that a segment is already wearing a named look, so capturing a house stores
+    /// a reference rather than another copy of the same description — which is what makes editing
+    /// the look afterwards reach the scenes that use it.
+    /// </para>
+    /// </summary>
+    public bool Matches(Appearance other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        return On == other.On
+            && Brightness == other.Brightness
+            && SameHex(PrimaryHex, other.PrimaryHex)
+            && SameHex(SecondaryHex, other.SecondaryHex)
+            && SameHex(TertiaryHex, other.TertiaryHex)
+            && Effect == other.Effect
+            && Palette == other.Palette
+            && Speed == other.Speed
+            && Intensity == other.Intensity
+            && Custom1 == other.Custom1
+            && Custom2 == other.Custom2
+            && Custom3 == other.Custom3;
+    }
+
+    private static bool SameHex(string? a, string? b) =>
+        string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>

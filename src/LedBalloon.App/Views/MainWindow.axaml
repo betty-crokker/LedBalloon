@@ -268,10 +268,18 @@
                           <TextBlock Text="{Binding RunName}" FontWeight="SemiBold" FontSize="12"
                                      TextTrimming="CharacterEllipsis" />
 
-                          <!-- The preset still stores an effect and a color for a segment it turns
-                               off. Showing them here read as a promise the house would not keep. -->
+                          <!-- Says where this appearance comes from, so that changing the look
+                               later is not a surprise arriving from nowhere. -->
                           <TextBlock Classes="hint" FontStyle="Italic"
-                                     Text="off in this preset"
+                                     IsVisible="{Binding WearsLook}"
+                                     TextTrimming="CharacterEllipsis">
+                            <Run Text="wearing " /><Run Text="{Binding LookName}" FontWeight="SemiBold" />
+                          </TextBlock>
+
+                          <!-- A scene still carries an effect and a color for a run it turns off.
+                               Showing them here read as a promise the house would not keep. -->
+                          <TextBlock Classes="hint" FontStyle="Italic"
+                                     Text="switched off here"
                                      IsVisible="{Binding IsOff}" />
 
                           <StackPanel Orientation="Horizontal" Spacing="6"
@@ -363,6 +371,41 @@
                           SelectedItem="{Binding SegmentPaletteChoice}"
                           PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
+              </StackPanel>
+
+              <!-- Naming is a promotion, not a requirement: most runs in most scenes are one-offs.
+                   This is here rather than up with the scenes because a look is one run's
+                   appearance, and the run it is taken from is the one selected on the photo. -->
+              <TextBlock Classes="heading" Text="Looks" Margin="0,14,0,0" />
+              <TextBlock Classes="hint"
+                         Text="A look is a named way for one run to look — its effect, palette, speed and colors, written down once. Use it on as many runs and in as many scenes as you like; change it here and all of them follow." />
+
+              <ComboBox ItemsSource="{Binding Looks}"
+                        SelectedItem="{Binding SelectedLook}"
+                        DisplayMemberBinding="{Binding Name}"
+                        PlaceholderText="Pick a look"
+                        HorizontalAlignment="Stretch"
+                        Margin="0,4,0,0" />
+
+              <Button Classes="block" Content="Write this run down as a look"
+                      Command="{Binding NameThisLookCommand}"
+                      IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}" />
+
+              <StackPanel Spacing="8"
+                          IsVisible="{Binding SelectedLook, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+
+                <TextBox Text="{Binding SelectedLook.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                         PlaceholderText="Look name" Margin="0,4,0,0" />
+
+                <!-- The reach is the point and also the surprise, so it is said while the look is
+                     being changed rather than afterwards. -->
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedLook.Reach}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Button Content="Put it on this run" Command="{Binding ApplyLookCommand}" />
+                  <Button Content="Take it from this run" Command="{Binding UpdateLookCommand}" />
+                  <Button Content="Remove" Command="{Binding DeleteLookCommand}" />
+                </StackPanel>
               </StackPanel>
 
             </StackPanel>
