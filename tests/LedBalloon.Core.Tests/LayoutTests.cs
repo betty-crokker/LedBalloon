@@ -25,23 +25,22 @@ public class LayoutTests
     };
 
     [Fact]
-    public void Resolving_a_look_takes_bounds_from_the_current_layout()
+    public void Resolving_a_scene_takes_bounds_from_the_current_layout()
     {
         LedBalloonProject project = TwoSegmentHouse();
-        var look = new Look
-        {
+        var look = new Scene {
             Name = "Warm",
-            Segments = { ["gable"] = new SegmentLook { Primary = new RgbColor(255, 120, 0) } },
+            Segments = { ["gable"] = new SceneEntry { Primary = new RgbColor(255, 120, 0) } },
         };
 
-        WledState before = LookResolver.Resolve(project, look)[Front];
+        WledState before = SceneResolver.Resolve(project, look)[Front];
         Assert.Equal(308, before.Segments![0].Stop);
 
         // The run turns out to be five LEDs longer than anyone thought.
         project.Segments[0].Count = 313;
         project.Reflow(Front);
 
-        WledState after = LookResolver.Resolve(project, look)[Front];
+        WledState after = SceneResolver.Resolve(project, look)[Front];
 
         // The same unchanged look now covers the longer run, and the porch shifted to follow it.
         Assert.Equal(313, after.Segments![0].Stop);
@@ -50,7 +49,7 @@ public class LayoutTests
     }
 
     [Fact]
-    public void A_look_stores_no_led_indices_at_all()
+    public void A_scene_stores_no_led_indices_at_all()
     {
         LedBalloonProject project = TwoSegmentHouse();
         var state = new WledState
@@ -60,7 +59,7 @@ public class LayoutTests
             Segments = [new WledSegment { Id = 0, Start = 0, Stop = 308, Effect = 74, Colors = [[255, 0, 0]] }],
         };
 
-        Look captured = LookResolver.Capture(
+        Scene captured = SceneResolver.Capture(
             project,
             new Dictionary<string, WledState> { [Front] = state },
             "Captured");
@@ -70,7 +69,7 @@ public class LayoutTests
     }
 
     [Fact]
-    public void A_look_spans_every_controller_the_house_is_wired_to()
+    public void A_scene_spans_every_controller_the_house_is_wired_to()
     {
         var project = new LedBalloonProject
         {
@@ -86,16 +85,15 @@ public class LayoutTests
             ],
         };
 
-        var look = new Look
-        {
+        var look = new Scene {
             Segments =
             {
-                ["gable"] = new SegmentLook { Primary = RgbColor.White },
-                ["eaves"] = new SegmentLook { Primary = RgbColor.White },
+                ["gable"] = new SceneEntry { Primary = RgbColor.White },
+                ["eaves"] = new SceneEntry { Primary = RgbColor.White },
             },
         };
 
-        IReadOnlyDictionary<string, WledState> states = LookResolver.Resolve(project, look);
+        IReadOnlyDictionary<string, WledState> states = SceneResolver.Resolve(project, look);
 
         // One patch per controller, each numbered in its own segment-id space.
         Assert.Equal(2, states.Count);
@@ -106,16 +104,15 @@ public class LayoutTests
     }
 
     [Fact]
-    public void Unlisted_segments_are_switched_off_so_a_look_is_a_complete_scene()
+    public void Unlisted_segments_are_switched_off_so_a_scene_is_a_complete_description()
     {
         LedBalloonProject project = TwoSegmentHouse();
-        var look = new Look
-        {
-            Segments = { ["gable"] = new SegmentLook { Primary = RgbColor.White } },
+        var look = new Scene {
+            Segments = { ["gable"] = new SceneEntry { Primary = RgbColor.White } },
             UnlistedSegmentsOff = true,
         };
 
-        WledState state = LookResolver.Resolve(project, look)[Front];
+        WledState state = SceneResolver.Resolve(project, look)[Front];
 
         Assert.True(state.Segments![0].On);
         Assert.False(state.Segments[1].On);

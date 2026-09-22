@@ -72,14 +72,13 @@ public class ResizeWorkflowTests
     }
 
     [Fact]
-    public void A_look_saved_before_the_correction_still_covers_the_longer_run()
+    public void A_scene_saved_before_the_correction_still_covers_the_longer_run()
     {
         LedBalloonProject project = House();
 
-        var look = new Look
-        {
+        var look = new Scene {
             Name = "Warm",
-            Segments = { ["roof"] = new SegmentLook { PrimaryHex = "#FF7700" } },
+            Segments = { ["roof"] = new SceneEntry { PrimaryHex = "#FF7700" } },
             UnlistedSegmentsOff = false,
         };
 
@@ -87,7 +86,7 @@ public class ResizeWorkflowTests
         project.Segments.Remove(project.FindSegment("spare")!);
         project.Reflow(South);
 
-        WledState state = LookResolver.Resolve(project, look)[South];
+        WledState state = SceneResolver.Resolve(project, look)[South];
         WledSegment roof = state.Segments!.Single(s => s.Start == 25);
 
         // The look was written before anyone knew the run was 285 long, and it covers it anyway.

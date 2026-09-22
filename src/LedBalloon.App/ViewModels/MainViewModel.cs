@@ -1429,7 +1429,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private async Task<int> PushGeometryAsync()
     {
-        IReadOnlyDictionary<string, WledState> byController = LookResolver.ResolveGeometry(Project);
+        IReadOnlyDictionary<string, WledState> byController = SceneResolver.ResolveGeometry(Project);
         int sent = 0;
 
         foreach ((string key, WledState state) in byController)
