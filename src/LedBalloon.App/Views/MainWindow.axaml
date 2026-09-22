@@ -238,10 +238,25 @@
 
                 <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedScene.Origin}" />
 
+                <!-- What the layout cannot account for, said before the adopt button rather than
+                     only when it is pressed. -->
+                <ItemsControl ItemsSource="{Binding SceneNotes}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
+                                 Foreground="#C9821B" Text="{Binding}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Button Content="Put it on the house" Command="{Binding ApplySceneCommand}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
                           IsVisible="{Binding SelectedScene.IsOwn}" />
+                  <!-- Deliberate, and it says what it will cost first: a preset made against an
+                       older layout may light ranges no run agrees with any more. -->
+                  <Button Content="Make it a scene" Command="{Binding AdoptPresetCommand}"
+                          IsVisible="{Binding SelectedScene.NeedsAdopting}" />
                 </StackPanel>
 
                 <!-- What the scene actually does, which its name does not tell you. -->
