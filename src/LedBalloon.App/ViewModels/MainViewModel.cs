@@ -1473,6 +1473,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         var published = new HashSet<string>(StringComparer.Ordinal);
+        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool anyPalettes = false;
 
         foreach (Scene scene in Project.Scenes)
@@ -1481,6 +1482,20 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 if (device.DeviceKey is not { } key || Project.SegmentsOn(key).Count == 0)
                 {
+                    continue;
+                }
+
+                // A scene that names no run on this box has nothing to say here. Publishing anyway
+                // would put an adopted "Bpm" on North that blacks it out, which is neither what the
+                // scene means nor what the preset it came from does.
+                if (!Mentions(scene, key))
+                {
+                    if (scene.PublishedAs is { Length: > 0 } stale &&
+                        await ScenePublisher.RemoveAsync(device.Host, stale) is not null)
+                    {
+                        removed.Add(stale);
+                    }
+
                     continue;
                 }
 
@@ -1513,8 +1528,6 @@ public sealed partial class MainViewModel : ViewModelBase
 
         // Scenes deleted since the last save. Their published copies go now, which is safe because
         // deleting is refused while a timer points at one.
-        var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
         foreach (string name in _scenesToUnpublish)
         {
             foreach (DeviceViewModel device in Devices)
@@ -1698,6 +1711,12 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<PresetDetail> SceneDetails { get; } = [];
 
     /// <summary>
+    /// What the layout cannot account for in the chosen preset. Empty for a scene, which has no
+    /// LED numbers in it to disagree with anything.
+    /// </summary>
+    public ObservableCollection<string> SceneNotes { get; } = [];
+
+    /// <summary>
     /// Saves what the house is doing right now under a name.
     /// <para>
     /// The way scenes get made. Get the house looking right by hand, then write it down — which is
@@ -1758,6 +1777,67 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Turns a preset somebody made in the WLED app into a scene.
+    /// <para>
+    /// A deliberate act rather than something that happens on first edit, because it cannot always
+    /// be exact — a preset made against a layout that has since changed lights ranges the runs no
+    /// longer agree with. What it would cost is put to the user before anything changes.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task AdoptPresetAsync()
+    {
+        if (SelectedScene is not { Scene: null, Preset: { } preset } || Ask is not { } ask)
+        {
+            return;
+        }
+
+        AdoptionReport report = PresetAdoption.Plan(Project, preset);
+
+        string message = report.IsClean
+            ? "Everything it does matches a run, so nothing is lost. From then on it follows the " +
+              "layout: correct a run's length and the scene covers the new length by itself, " +
+              "instead of leaving the LEDs you found later dark."
+            : "Most of it carries across. These are the parts the layout cannot account for:\n\n" +
+              string.Join("\n\n", report.Notes.Select(Spell));
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: $"Adopt '{preset.Name}' as a scene?",
+            Message: message,
+            AcceptText: "Adopt it",
+            CancelText: "Leave it alone"));
+
+        if (!answer.Accepted)
+        {
+            return;
+        }
+
+        report.Scene.Name = Project.UniqueSceneName(preset.Name);
+
+        // It is already on the controllers under this name, in slots the timers may point at, so
+        // saving has to land in those slots rather than adding a second copy beside it.
+        if (string.Equals(report.Scene.Name, preset.Name, StringComparison.Ordinal))
+        {
+            report.Scene.PublishedAs = preset.Name;
+        }
+
+        Project.Scenes.Add(report.Scene);
+
+        RebuildScenes();
+        SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, report.Scene));
+
+        AfterProjectChanged(
+            $"'{report.Scene.Name}' is a scene now. Save to write it back the way the layout " +
+            "describes it.");
+    }
+
+    /// <summary>An adoption note with the controller named the way the rest of the app names it.</summary>
+    private string Spell(AdoptionNote note) =>
+        DeviceFor(note.ControllerKey) is { } device
+            ? $"• {device.DisplayName}: {note.Message}"
+            : $"• {note.Message}";
+
+    /// <summary>
     /// Removes a scene, unless a timer is pointing at it.
     /// <para>
     /// Taking the published preset out from under a timer would leave it firing nothing at 23:30
@@ -1805,6 +1885,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
         AfterProjectChanged($"Removed '{scene.Name}'. Revert to put it back.");
     }
+
+    /// <summary>True when a scene has anything to say about the runs on one controller.</summary>
+    private bool Mentions(Scene scene, string controllerKey) =>
+        scene.UnlistedSegmentsOff ||
+        Project.SegmentsOn(controllerKey).Any(run => scene.Segments.ContainsKey(run.Id));
 
     /// <summary>
     /// Scenes whose published copies are to be deleted on the next save. Held rather than acted on
@@ -1881,16 +1966,27 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSelectedSceneChanged(SceneRow? value)
     {
         SceneDetails.Clear();
+        SceneNotes.Clear();
 
-        if (value?.Scene is not { } scene)
+        Scene? scene = value?.Scene;
+
+        // An un-adopted preset is described through what adopting it would produce, so the cards
+        // and the "Make it a scene" button agree. Reading its segments by id instead would repeat
+        // the positional fallacy in miniature: Bpm's second segment covers the porch and most of
+        // the roofline, but it is id 1, so by id it would claim only the porch.
+        if (scene is null && value?.Preset is { } preset)
         {
-            // An un-adopted preset describes itself out of what the controllers hold.
-            RebuildPresetDetails(value?.Preset);
-            foreach (PresetDetail detail in PresetDetails)
-            {
-                SceneDetails.Add(detail);
-            }
+            AdoptionReport report = PresetAdoption.Plan(Project, preset);
+            scene = report.Scene;
 
+            foreach (AdoptionNote note in report.Notes)
+            {
+                SceneNotes.Add(Spell(note));
+            }
+        }
+
+        if (scene is null)
+        {
             return;
         }
 
@@ -1901,6 +1997,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
             foreach (Segment run in Project.SegmentsOn(key))
             {
+                // A scene that leaves unlisted runs alone has nothing to say about them, so they
+                // get no card rather than one reading "unchanged".
+                if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(run.Id))
+                {
+                    continue;
+                }
+
                 int id = Project.WledSegmentIdFor(run);
 
                 if (state.Segments?.FirstOrDefault(s => s.Id == id) is { } wled)
