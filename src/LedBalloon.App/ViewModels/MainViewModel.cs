@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -597,6 +597,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             await LoadPalettesAsync();
             await LoadFrameTimesAsync();
+            await LoadScheduleAsync();
 
             // The controllers hold the layout, so a fresh machine finds the house already described.
             await LoadProjectAsync();
@@ -1122,6 +1123,7 @@ public sealed partial class MainViewModel : ViewModelBase
             // from that list.
             await LoadPalettesAsync();
             await LoadFrameTimesAsync();
+            await LoadScheduleAsync();
         }
 
         return copied;
@@ -1914,6 +1916,175 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty]
     private IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>? _palettes;
+
+    /// <summary>
+    /// The timetable the controllers keep for themselves, one row per entry.
+    /// <para>
+    /// Worth having in here at all because the house changes on its own. The controllers hold a
+    /// schedule as well as a layout, and it will turn the lights on at dusk and off at dawn
+    /// whether or not this app is running - so an app that cannot see it looks broken at exactly
+    /// the moment it is working correctly.
+    /// </para>
+    /// </summary>
+    public ObservableCollection<ScheduleRow> Schedule { get; } = [];
+
+    /// <summary>The timetable in a sentence, for the panel that is about colors rather than setup.</summary>
+    [ObservableProperty] private string _scheduleNotice = string.Empty;
+
+    /// <summary>True once a row has been touched and the controllers have not been told.</summary>
+    [ObservableProperty] private bool _scheduleChanged;
+
+    /// <summary>Reads each controller's timetable and the presets its entries can point at.</summary>
+    private async Task LoadScheduleAsync()
+    {
+        var rows = new List<ScheduleRow>();
+        var said = new List<string>();
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            try
+            {
+                var config = new WledConfigClient(device.Host);
+                IReadOnlyList<ScheduledChange> entries = await config.GetScheduleAsync();
+
+                IReadOnlyList<PresetChoice> presets =
+                [
+                    .. device.Presets
+                        .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
+                        .Select(p => new PresetChoice(p.Id, p.DisplayName)),
+                ];
+
+                foreach (ScheduledChange entry in entries)
+                {
+                    rows.Add(ScheduleRow.From(entry, key, device.DisplayName, presets));
+                }
+
+                string sentence = WledSchedule.Describe(
+                    entries,
+                    id => presets.FirstOrDefault(p => p.Id == id)?.Name);
+
+                if (sentence.Length > 0)
+                {
+                    said.Add($"{device.DisplayName}: {sentence}");
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // A controller that will not show its timetable is not a reason to stop.
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            Schedule.Clear();
+            foreach (ScheduleRow row in rows)
+            {
+                row.PropertyChanged += (_, _) => ScheduleChanged = true;
+                Schedule.Add(row);
+            }
+
+            ScheduleNotice = said.Count == 0
+                ? string.Empty
+                : $"The house changes on its own \u2014 {string.Join("; ", said)}.";
+
+            ScheduleChanged = false;
+        });
+    }
+
+    /// <summary>Adds a blank entry to whichever controller is in hand.</summary>
+    [RelayCommand]
+    private void AddScheduleEntry()
+    {
+        DeviceViewModel? device = SelectedDevice ?? Devices.FirstOrDefault();
+
+        if (device?.DeviceKey is not { } key)
+        {
+            Status = "No controller to put a timer on yet.";
+            return;
+        }
+
+        IReadOnlyList<PresetChoice> presets =
+        [
+            .. device.Presets
+                .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
+                .Select(p => new PresetChoice(p.Id, p.DisplayName)),
+        ];
+
+        var row = new ScheduleRow
+        {
+            ControllerKey = key,
+            ControllerName = device.DisplayName,
+            Presets = presets,
+            Hour = 18,
+            Minute = 0,
+            Preset = presets.FirstOrDefault(),
+        };
+
+        row.PropertyChanged += (_, _) => ScheduleChanged = true;
+
+        Schedule.Add(row);
+        ScheduleChanged = true;
+    }
+
+    /// <summary>Drops an entry. It is not gone from the controller until the timetable is saved.</summary>
+    [RelayCommand]
+    private void RemoveScheduleEntry(ScheduleRow? row)
+    {
+        if (row is not null && Schedule.Remove(row))
+        {
+            ScheduleChanged = true;
+        }
+    }
+
+    /// <summary>
+    /// Writes each controller's timetable back.
+    /// <para>
+    /// Every controller that has rows gets written, including ones whose rows did not change -
+    /// the entries are stored by position, so a controller has to be sent its whole timetable or
+    /// the slots nobody mentioned keep running what they used to.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task SaveScheduleAsync()
+    {
+        IsBusy = true;
+
+        try
+        {
+            foreach (IGrouping<string, ScheduleRow> byController in
+                     Schedule.GroupBy(row => row.ControllerKey, StringComparer.OrdinalIgnoreCase))
+            {
+                if (DeviceFor(byController.Key) is not { } device)
+                {
+                    continue;
+                }
+
+                List<ScheduledChange> entries =
+                    [.. byController.Where(row => row.Preset is not null).Select(row => row.ToChange())];
+
+                var config = new WledConfigClient(device.Host);
+                await config.SetScheduleAsync(entries);
+            }
+
+            ScheduleChanged = false;
+            Status = "Timetable saved to the controllers.";
+
+            await LoadScheduleAsync();
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not save the timetable: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
 
     /// <summary>
     /// Each controller's effect list, keyed by controller, so the photo can tell which effect a
