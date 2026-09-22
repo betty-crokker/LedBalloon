@@ -71,8 +71,14 @@ public sealed class Fixture : INotifyPropertyChanged
     }
 
     /// <summary>
-    /// Which side of the drawn line the light points at. A line has two perpendiculars and only you
-    /// know which one is the wall.
+    /// Retired. Which side of the drawn line the light points at.
+    /// <para>
+    /// This turned out to be a second spelling of the fixture style. <see cref="AimFrom"/> settles
+    /// a downlight and an uplight on exactly opposite perpendiculars, and the two are drawn the
+    /// same way otherwise, so flipping either one always produced the other. Nothing sets it any
+    /// more; it is still read so that layouts written before it was dropped come back looking the
+    /// way they did, and <see cref="RetireFlipAim"/> folds them onto the matching style on load.
+    /// </para>
     /// </summary>
     [JsonPropertyName("flipAim")]
     public bool FlipAim
@@ -126,6 +132,25 @@ public sealed class Fixture : INotifyPropertyChanged
         }
 
         return FlipAim ? new LayoutPoint(-normal.X, -normal.Y) : normal;
+    }
+
+    /// <summary>
+    /// Turns a set <see cref="FlipAim"/> into the fixture style that means the same thing, leaving
+    /// the aim direction exactly where it was. Does nothing to a fixture that does not aim.
+    /// </summary>
+    public void RetireFlipAim()
+    {
+        if (!FlipAim)
+        {
+            return;
+        }
+
+        FlipAim = false;
+
+        if (IsAimed)
+        {
+            Style = Style is FixtureStyle.Uplight ? FixtureStyle.Downlight : FixtureStyle.Uplight;
+        }
     }
 
     public Fixture Clone() => new()

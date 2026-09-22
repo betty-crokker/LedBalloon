@@ -259,13 +259,29 @@ public sealed class HouseCanvas : Control
         }
     }
 
+    /// <summary>
+    /// Whether anything on the house is moving, and so whether the clock needs to keep redrawing.
+    /// <para>
+    /// A segment moves if its effect is one we can draw outright, or - for the ones we only
+    /// approximate by sliding a gradient along the run - if it has a gradient to slide. Requiring a
+    /// palette of everything was wrong: palette 0 is "Default", meaning the segment's own colors,
+    /// which is both a real choice and the common one, and it left effects like Colortwinkles
+    /// frozen on the photo while the house itself was twinkling away.
+    /// </para>
+    /// </summary>
     private bool AnythingMoves() =>
         ControllerStates is { } states &&
-        states.Values.Any(state =>
-            state.On != false &&
-            state.Segments is { } segments &&
+        states.Any(controller =>
+            controller.Value.On != false &&
+            controller.Value.Segments is { } segments &&
             segments.Any(segment =>
-                segment.On != false && segment.Effect is > 0 && segment.Palette is > 0));
+                segment.On != false &&
+                segment.Effect is > 0 &&
+                (segment.Palette is > 0 || CanDraw(segment, controller.Key))));
+
+    /// <summary>True when the effect is one of the ported ones, which animate on their own.</summary>
+    private bool CanDraw(WledSegment segment, string controllerKey) =>
+        EffectLibrary.Find(segment.Effect, EffectNames?.GetValueOrDefault(controllerKey)) is not null;
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

@@ -56,7 +56,8 @@ public sealed record PresetDetail(
     IBrush PrimarySwatch,
     IBrush SecondarySwatch,
     bool HasSecondary,
-    string Fidelity);
+    string Fidelity,
+    bool IsOff);
 
 /// <summary>
 /// One choice in the effect or palette picker, carrying the number WLED knows it by.
@@ -143,8 +144,16 @@ public sealed partial class MainViewModel : ViewModelBase
     /// It governs the whole panel, not just the preset list. Before it existed the brightness
     /// slider went straight to the hardware while a preset did not, and nothing said so.
     /// </para>
+    /// <para>
+    /// Remembered on this machine between runs - see <see cref="AppPreferences"/> - because it says
+    /// where you are sitting rather than anything about the house. Starting every run with it on
+    /// meant someone who had deliberately turned it off got one free change to the lights before
+    /// noticing.
+    /// </para>
     /// </summary>
     [ObservableProperty] private bool _liveSync = true;
+
+    private readonly AppPreferences _preferences = AppPreferences.Load();
 
     /// <summary>
     /// Changes made while sync was off, merged per controller rather than queued: the house only
@@ -189,6 +198,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public MainViewModel()
     {
+        // Through the property, not the field, so the hint beside the checkbox agrees with it. The
+        // status line it also writes is overwritten by the startup steps a moment later.
+        LiveSync = _preferences.LiveSync;
+
         // Finding the controllers is the app's first job, so do it without being asked.
         Dispatcher.UIThread.Post(async void () => await ScanAsync());
     }
@@ -245,7 +258,7 @@ public sealed partial class MainViewModel : ViewModelBase
               "Each click adds a point; extra clicks follow a corner. Press Done drawing when you reach the end."
             : "Pick a segment on the left before tracing it."
         : SelectedSegment is { HasGeometry: false } undrawn
-            ? $"'{undrawn.Name}' has not been traced yet. Press Draw selected segment, then click along it on the photo."
+            ? $"'{undrawn.Name}' has not been traced yet. Open it with the pencil, then press Trace it on the photo."
             : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
 
     /// <summary>True while the selected run has no line on the photo.</summary>
@@ -984,11 +997,21 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Adds a run to whichever controller the list is showing.</summary>
+    /// <summary>
+    /// Adds a segment to a controller.
+    /// <para>
+    /// The controller comes from the button that was pressed. It used to be inferred from whatever
+    /// had last been clicked, which was right often enough to hide that it was a guess.
+    /// </para>
+    /// </summary>
     [RelayCommand]
-    private void AddSegment()
+    private void AddSegment(ControllerCoverage? controller)
     {
-        string? key = _fallbackController?.Key ?? SelectedSegment?.ControllerKey ?? SelectedDevice?.DeviceKey;
+        string? key = controller?.Key
+                      ?? _fallbackController?.Key
+                      ?? SelectedSegment?.ControllerKey
+                      ?? SelectedDevice?.DeviceKey;
+
         if (key is null)
         {
             Status = "Connect a controller first.";
@@ -1000,18 +1023,29 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void AddSegmentTo(string key)
     {
+        IReadOnlyList<Segment> existing = Project.SegmentsOn(key);
+
+        // Past the last LED already spoken for, not past the count of them. Adding up the lengths
+        // lands inside an existing segment whenever there is a gap earlier on the wire - which is
+        // exactly the state a house gets into after something is removed.
+        int start = existing.Count == 0 ? 0 : existing.Max(s => s.StopExclusive);
+
         // Named after its controller, because "Segment 1" on two controllers is two "Segment 1"s.
         var segment = new Segment
         {
-            Name = $"{ControllerNameFor(key)} {Project.SegmentsOn(key).Count + 1}",
+            Name = $"{ControllerNameFor(key)} {existing.Count + 1}",
             ControllerKey = key,
-            Start = Project.SegmentsOn(key).Sum(s => s.Count),
+            Start = start,
             Count = 50,
         };
 
         Project.Segments.Add(segment);
-        AfterProjectChanged($"Added '{segment.Name}'. Set its length, then draw it on the photo.");
+        AfterProjectChanged($"Added '{segment.Name}'. Set its length, then trace it on the photo.");
         SelectedSegment = segment;
+
+        // Straight into the editor: a new segment is named "South 3" and 50 LEDs long, and neither
+        // of those is right. Both fields are the first thing in there.
+        EditingRow = SegmentRows.FirstOrDefault(row => ReferenceEquals(row.Segment, segment));
     }
 
     /// <summary>
@@ -1466,6 +1500,9 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnLiveSyncChanged(bool value)
     {
         OnPropertyChanged(nameof(SyncHint));
+
+        _preferences.LiveSync = value;
+        _preferences.Save();
 
         if (!value)
         {
@@ -2574,6 +2611,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private static PresetDetail Describe(Segment run, WledSegment wled, DeviceViewModel? device)
     {
+        // A preset can turn a segment off, and several here do - that is what "Stairs white" is for.
+        // Its stored effect, palette and color are all still in the preset, so describing them
+        // without saying this promised an animation the house was never going to show.
+        bool isOff = wled.On == false;
+
         string effect = wled.Effect is { } fx
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
             : "unchanged";
@@ -2601,7 +2643,8 @@ public sealed partial class MainViewModel : ViewModelBase
             new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
             new SolidColorBrush(Color.FromRgb(secondary.R, secondary.G, secondary.B)),
             wled.Colors is { Length: > 1 } && secondary is not { R: 0, G: 0, B: 0 },
-            fidelity);
+            fidelity,
+            isOff);
     }
 
     /// <summary>Turns WLED's speed and intensity numbers into something you can picture.</summary>
