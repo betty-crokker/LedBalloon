@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -786,6 +786,13 @@ public sealed partial class MainViewModel : ViewModelBase
                 {
                     pushed += $" {settings} output(s) had their settings written.";
                 }
+
+                int published = await PublishScenesAsync();
+
+                if (published > 0)
+                {
+                    pushed += $" {published} scene(s) published, so the timers and the wall button can reach them.";
+                }
             }
             catch (Exception ex)
             {
@@ -1444,6 +1451,81 @@ public sealed partial class MainViewModel : ViewModelBase
         return sent;
     }
 
+    /// <summary>
+    /// Writes every scene onto the controllers it covers, as a preset of the same name.
+    /// <para>
+    /// Part of saving rather than a button, because the reason presets exist at all is that a
+    /// controller can recall one without a PC — the 23:30 timer, the wall button, the phone app.
+    /// Publishing on save buys that without charging the user a second concept to learn.
+    /// </para>
+    /// <para>
+    /// A controller already holding exactly what would be written is left alone. Flash has a finite
+    /// write budget and saving a layout is not a reason to spend one.
+    /// </para>
+    /// </summary>
+    /// <returns>How many scenes were actually written somewhere.</returns>
+    private async Task<int> PublishScenesAsync()
+    {
+        if (Project.Scenes.Count == 0)
+        {
+            return 0;
+        }
+
+        var published = new HashSet<string>(StringComparer.Ordinal);
+        bool anyPalettes = false;
+
+        foreach (Scene scene in Project.Scenes)
+        {
+            foreach (DeviceViewModel device in Devices)
+            {
+                if (device.DeviceKey is not { } key || Project.SegmentsOn(key).Count == 0)
+                {
+                    continue;
+                }
+
+                WledPreset preset = ScenePublisher.BuildFor(Project, scene, key);
+
+                // Before the comparison, not after: a palette landing in a different slot here
+                // changes the preset, and comparing the un-remapped one would call it unchanged.
+                string[] sources = [.. Devices
+                    .Where(d => !string.Equals(d.Host, device.Host, StringComparison.OrdinalIgnoreCase))
+                    .Select(d => d.Host)];
+
+                if (await ScenePublisher.CarryPalettesAsync(sources, device.Host, preset) > 0)
+                {
+                    anyPalettes = true;
+                }
+
+                ScenePublication result = await ScenePublisher.PublishAsync(key, device.Host, preset);
+
+                if (result.Written)
+                {
+                    published.Add(scene.Id);
+                }
+            }
+        }
+
+        if (published.Count > 0)
+        {
+            foreach (DeviceViewModel device in Devices)
+            {
+                await device.Device.RefreshPresetsAsync();
+            }
+
+            // The schedule names its entries by what the slots hold, and some of them just changed.
+            await LoadScheduleAsync();
+        }
+
+        if (anyPalettes)
+        {
+            // Those controllers hold palettes they did not a moment ago, and the photo draws runs
+            // from that list.
+            await LoadPalettesAsync();
+        }
+
+        return published.Count;
+    }
+
     // ---- Lights ---------------------------------------------------------------------------------
 
     /// <summary>
@@ -1527,23 +1609,18 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
             }
 
-            // Controllers that never had this preset get it now, because "apply" means the house,
-            // not the half of it that happens to store the preset.
-            List<string> copied = await CopyToMissingControllersAsync(preset);
-
-            if (copied.Count > 0)
-            {
-                RefreshPresetSelection(preset.Name);
-            }
-
             // Reality is what was asked for now, so there is nothing left held back.
             _presetIsPending = false;
             _heldPatches.Clear();
             RebuildPendingStates();
 
-            Status = copied.Count == 0
-                ? $"Applied '{preset.Name}'."
-                : $"Applied '{preset.Name}', copying it to {string.Join(", ", copied)} on the way.";
+            // Deliberately only the controllers that store it. Making the rest of the house match
+            // used to mean copying this preset onto them, pairing runs by position — which lit
+            // South's porch with what North's stairs were doing. A scene is the thing that covers
+            // every controller, because each box's part is derived rather than translated.
+            Status = preset.IsPartial(Devices.Count)
+                ? $"Applied '{preset.Name}' on the controller that stores it; the rest of the house is unchanged."
+                : $"Applied '{preset.Name}'.";
         }
         catch (Exception ex)
         {
@@ -1553,97 +1630,6 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             IsBusy = false;
             _applyingPreset = false;
-        }
-    }
-
-    /// <summary>
-    /// Stores <paramref name="preset"/> on the controllers that lack it and recalls it there,
-    /// returning what was written and where.
-    /// <para>
-    /// Written into each target's preset file rather than saved through the lights, so the copy
-    /// itself changes nothing; the recall that follows is what lights the run.
-    /// </para>
-    /// </summary>
-    private async Task<List<string>> CopyToMissingControllersAsync(HousePreset preset)
-    {
-        var copied = new List<string>();
-
-        if (preset.IsPlaylist || !preset.IsPartial(Devices.Count))
-        {
-            return copied;
-        }
-
-        // The placement worth copying is one that actually describes segments; a preset can be
-        // stored on a controller as little more than a name.
-        PresetPlacement? source =
-            preset.Placements.FirstOrDefault(p => p.Preset.Segments is { Count: > 0 }) ??
-            preset.Placements.FirstOrDefault();
-
-        if (source is null)
-        {
-            return copied;
-        }
-
-        DeviceViewModel? sourceDevice = DeviceFor(source.ControllerKey);
-
-        foreach (DeviceViewModel target in CopyTargets(preset))
-        {
-            if (target.DeviceKey is not { } key)
-            {
-                continue;
-            }
-
-            Status = $"'{preset.Name}' is not on {target.DisplayName} yet — copying it there...";
-
-            WledPreset copy = PresetCopier.BuildFor(source.Preset, Project, key, preset.Name);
-
-            // A preset built on one of the controller's own uploaded palettes has to bring that
-            // palette with it. Without this the target has never heard of the id, and WLED does
-            // not say so - it quietly falls back to plain color.
-            int palettes = 0;
-            if (sourceDevice is not null)
-            {
-                IReadOnlyDictionary<int, int> landed = await CustomPaletteCopier.CopyForAsync(
-                    sourceDevice.Host, target.Host, copy);
-
-                CustomPaletteCopier.Remap(copy, landed);
-                palettes = landed.Count;
-            }
-
-            int slot = await PresetCopier.StoreAsync(target.Host, copy);
-
-            await target.Device.RefreshPresetsAsync();
-            await target.Device.ApplyNowAsync(new WledState { Preset = slot });
-
-            copied.Add(palettes == 0
-                ? $"{target.DisplayName} (slot {slot})"
-                : $"{target.DisplayName} (slot {slot}, with its palette)");
-        }
-
-        if (copied.Count > 0)
-        {
-            // Those controllers hold palettes they did not a moment ago, and the photo draws runs
-            // from that list.
-            await LoadPalettesAsync();
-            await LoadFrameTimesAsync();
-            await LoadScheduleAsync();
-        }
-
-        return copied;
-    }
-
-    /// <summary>
-    /// Re-points the list at the merged entry that replaced <paramref name="name"/>, so it reads as
-    /// covering the whole house once it does.
-    /// </summary>
-    private void RefreshPresetSelection(string name)
-    {
-        RebuildPresetCatalog();
-
-        if (Presets.FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase))
-            is { } refreshed)
-        {
-            SelectedPreset = refreshed;
         }
     }
 
@@ -1673,19 +1659,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
             string names = have.Length > 0 ? string.Join(" and ", have) : "one controller";
 
-            return $"Only stored on {names} right now. Applying it copies it to the others so the whole house matches.";
+            return $"Only stored on {names}, so recalling it leaves the rest of the house as it was.";
         }
     }
-
-    /// <summary>
-    /// Controllers that do not store the preset and have runs drawn on them, so there is somewhere
-    /// for the copy to land.
-    /// </summary>
-    private List<DeviceViewModel> CopyTargets(HousePreset preset) =>
-        [.. Devices.Where(d =>
-            d.DeviceKey is { } key &&
-            !preset.Placements.Any(p => string.Equals(p.ControllerKey, key, StringComparison.OrdinalIgnoreCase)) &&
-            Project.SegmentsOn(key).Count > 0)];
 
     /// <summary>
     /// Sends one change to one controller, or holds it back when sync is off.
