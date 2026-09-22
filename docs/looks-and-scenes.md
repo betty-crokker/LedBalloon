@@ -256,18 +256,38 @@ So publishing needs one more requirement:
   the project revision into the published preset and compare that. The comparison is needed anyway
   for "write nothing when nothing changed".
 
-### Why the layout must stay sliced
+### Mirror the whole document instead of slicing it
 
-It is tempting to mirror the whole layout onto every controller so that a dead box does not take its
-traced lines with it. **That introduces exactly the conflict class the presets already have.** A
-mirrored South would hold North's runs, so during the outage they could be renamed or deleted; South
-would be revision 17 with the edit and North revision 15 with the original, and `Assemble` dedupes
-by segment id with first-slice-wins — where "first" is whichever box answered first. An arbitrary
-winner, chosen silently.
+An earlier draft of this note argued that the layout had to stay sliced, on the grounds that
+mirroring would let an absent controller's runs be edited and then need merging. That was wrong, and
+it was wrong for a specific reason worth writing down: it conflated *mirrored* with *needs merging*.
+Mirroring removes the need to merge.
 
-Slicing is what makes reunion safe. Mirroring is only safe with per-segment versioning, which is a
-much larger change, and the loss it protects against — a controller dying and taking its traced
-geometry with it — is better addressed by an export.
+Write one whole-house document, identical bytes, to every controller. Then the document is the unit
+and the revision orders them. North offline at 15 while South advances to 17: North cannot have
+changed, so 17 is a strict successor and **the highest revision wins wholesale**. No per-segment
+versioning, no first-slice-wins, no arbitrary winner.
+
+This is simpler than what exists. `SliceFor` is no longer needed for storage, and `Assemble` stops
+unioning and becomes "take the newest". Size is a non-argument: South's slice is 2126 bytes and
+North's 1679, so the whole house is about 3.3 KB against 943 KB and 934 KB free respectively.
+
+Three things it buys:
+
+- **The durability the code already claims.** `SaveAsync`'s own comment says "any one controller is
+  enough to rebuild the house". Today that is false. With this it is true, and a controller dying
+  costs nothing but the controller.
+- **Most of the offline display gap below.** An absent controller's runs are in the loaded document,
+  so the panel can show them — greyed, with their traced lines — and edits to them publish when it
+  returns.
+- **One write path.** The same bytes go everywhere, rather than a different document per box.
+
+The one case it does not solve is a **true partition**: two copies of the app, each able to see only
+one controller, both editing. Both reach revision 17 with different content and nothing can order
+them. That needs a network split rather than a controller merely being off, and it is detectable —
+store a content hash beside the revision, and when two boxes report the same revision with different
+hashes, say so and ask rather than guessing. The existing guard at `ProjectSync.cs:143`, which
+refuses to save over a newer revision, still covers the ordinary two-editors-at-once case.
 
 ## Offline controllers — a display gap that exists today
 
