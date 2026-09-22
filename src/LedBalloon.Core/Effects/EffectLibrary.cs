@@ -1,4 +1,4 @@
-﻿using LedBalloon.Core.Models;
+using LedBalloon.Core.Models;
 
 namespace LedBalloon.Core.Effects;
 
@@ -27,6 +27,9 @@ public static class EffectLibrary
         new BpmEffect(),
         new FlowEffect(),
         new ChunchunEffect(),
+        new ColorTwinklesEffect(),
+        new TwinkleCatEffect(),
+        new RippleEffect(),
     ];
 
     private static readonly Dictionary<string, IWledEffect> ByName =

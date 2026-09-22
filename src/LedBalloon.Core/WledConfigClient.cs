@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -28,11 +28,21 @@ public sealed record LedBus(int Start, int Length, int[] Pins, int ColorOrder, b
 /// really are.
 /// </para>
 /// <para>
-/// Reading it is safe. Writing it back is not wrapped here, for two reasons: a malformed post can
-/// leave a controller needing a factory reset, and on 0.15.3 posting a modified configuration
-/// document back does not work at all — it answers 200 and changes nothing, verified by reading it
-/// back afterwards. Settings that need changing go through the same form endpoints WLED's own
-/// settings pages use; see <see cref="SetDeviceNameAsync"/>.
+/// Reading it is safe. Writing needs care, and the rule is: post the whole document back, never
+/// part of it.
+/// </para>
+/// <para>
+/// A full round trip through <c>POST /json/cfg</c> is faithful — read <c>cfg.json</c>, post it
+/// back untouched, read it again and it is identical byte for byte, measured on 0.15.3. A partial
+/// post is not. Most of the handler assigns only the keys it finds, but a few lines read straight
+/// through a missing section, and <c>strip.setTargetFps(hw_led["fps"])</c> is one: a document
+/// without that key sets the target frame rate to zero, which uncaps it. A controller configured
+/// for 42 frames a second was left rendering flat out at 96 by a post that mentioned only timers.
+/// </para>
+/// <para>
+/// The device name is the exception that still needs a form. Posting it in the configuration
+/// answers 200 and changes nothing, so <see cref="SetDeviceNameAsync"/> goes through the same
+/// <c>/settings/ui</c> endpoint WLED's own settings page uses.
 /// </para>
 /// </summary>
 public sealed class WledConfigClient
@@ -136,6 +146,135 @@ public sealed class WledConfigClient
 
         int fps = ReadInt(led, "fps");
         return fps is > 0 and <= 255 ? fps : null;
+    }
+
+    /// <summary>The timetable this controller keeps for itself.</summary>
+    public async Task<IReadOnlyList<ScheduledChange>> GetScheduleAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using JsonDocument document = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+        return WledSchedule.Parse(document.RootElement);
+    }
+
+    /// <summary>
+    /// Replaces the controller's timetable, leaving the rest of its configuration alone.
+    /// <para>
+    /// The whole configuration is read and posted back with only the timers changed, rather than
+    /// posting the timers on their own. A partial post is not safe on 0.15.3: most of the handler
+    /// only assigns keys that are present, but a few lines do not, and
+    /// <c>strip.setTargetFps(hw_led["fps"])</c> is one of them. A document without that key reads
+    /// it as zero and uncaps the frame rate - measured on the development hardware, which went
+    /// from a configured 42 frames a second to rendering flat out at 96, and stayed that way.
+    /// </para>
+    /// <para>
+    /// Sun-based entries go last, sunrise before sunset. Their position in the list is the only
+    /// thing that records which end of the day they belong to.
+    /// </para>
+    /// </summary>
+    public async Task SetScheduleAsync(
+        IReadOnlyList<ScheduledChange> schedule,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(schedule);
+
+        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+            .ConfigureAwait(false);
+
+        if (JsonNode.Parse(current) is not JsonObject configuration)
+        {
+            throw new WledException("That controller returned a configuration that is not an object.");
+        }
+
+        if (configuration["timers"] is not JsonObject timers)
+        {
+            timers = [];
+            configuration["timers"] = timers;
+        }
+
+        var entries = new JsonArray();
+
+        List<ScheduledChange> clock =
+            [.. schedule.Where(entry => entry.Sun == SunTrigger.None)
+                .OrderBy(entry => entry.Hour)
+                .ThenBy(entry => entry.Minute)
+                .Take(ClockSlots)];
+
+        // Every clock slot, including the empty ones. The controller keeps eight and fills them by
+        // position, so writing only the ones in use leaves whatever was in the rest still there -
+        // and a timetable that loses an entry quietly keeps running the entry it lost. Watched it
+        // happen: shortening the list left a duplicate behind, and shortening it again left three.
+        for (int slot = 0; slot < ClockSlots; slot++)
+        {
+            entries.Add(slot < clock.Count ? Write(clock[slot]) : Empty());
+        }
+
+        // Then the two sun slots, in the order that records which is which.
+        entries.Add(WriteSun(schedule, SunTrigger.Sunrise));
+        entries.Add(WriteSun(schedule, SunTrigger.Sunset));
+
+        timers["ins"] = entries;
+
+        using var content = new StringContent(
+            configuration.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage response = await _http
+            .PostAsync("json/cfg", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"That controller would not take the timetable ({(int)response.StatusCode}). " +
+                "A settings PIN will block this.");
+        }
+    }
+
+    /// <summary>How many clock entries a controller keeps, before the two sun ones.</summary>
+    public const int ClockSlots = 8;
+
+    private static JsonObject Write(ScheduledChange entry) => new()
+    {
+        ["en"] = entry.Enabled ? 1 : 0,
+        ["hour"] = entry.Hour,
+        ["min"] = entry.Minute,
+        ["macro"] = entry.PresetId,
+        ["dow"] = entry.DaysOfWeek,
+        ["start"] = new JsonObject { ["mon"] = 1, ["day"] = 1 },
+        ["end"] = new JsonObject { ["mon"] = 12, ["day"] = 31 },
+    };
+
+    /// <summary>
+    /// An unused slot. Hour, minute and preset all zero is how the controller recognises one as
+    /// empty and leaves it out when it writes its configuration back.
+    /// </summary>
+    private static JsonObject Empty() => new()
+    {
+        ["en"] = 0,
+        ["hour"] = 0,
+        ["min"] = 0,
+        ["macro"] = 0,
+        ["dow"] = 0,
+        ["start"] = new JsonObject { ["mon"] = 1, ["day"] = 1 },
+        ["end"] = new JsonObject { ["mon"] = 12, ["day"] = 31 },
+    };
+
+    /// <summary>
+    /// The sunrise or sunset slot, written whether or not it is in use - its position is the only
+    /// thing that says which end of the day it belongs to, so it cannot be left out.
+    /// </summary>
+    private static JsonObject WriteSun(IReadOnlyList<ScheduledChange> schedule, SunTrigger which)
+    {
+        ScheduledChange? entry = schedule.FirstOrDefault(e => e.Sun == which);
+
+        return new JsonObject
+        {
+            ["en"] = entry?.Enabled == true ? 1 : 0,
+            ["hour"] = 255,
+            ["min"] = 0,
+            ["macro"] = entry?.PresetId ?? 0,
+            ["dow"] = entry?.DaysOfWeek ?? 0x7F,
+        };
     }
 
     /// <summary>

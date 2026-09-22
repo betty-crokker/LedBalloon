@@ -195,8 +195,31 @@ public sealed class WledDevice : INotifyPropertyChanged, IAsyncDisposable
             : $"Palette {index}";
     }
 
+    /// <summary>
+    /// Whether to stop this controller re-broadcasting what LedBalloon tells it.
+    /// <para>
+    /// On by default, and it needs to be. WLED controllers can copy state from each other over
+    /// UDP, which suits a house driven from a phone and breaks one driven from here: LedBalloon
+    /// writes a different slice of the house to each controller, so a controller that repeats what
+    /// it was just told overwrites the slice its neighbour was given. The last write wins and the
+    /// whole house ends up one look.
+    /// </para>
+    /// <para>
+    /// This suppresses the broadcast for LedBalloon's own writes only, per request. Whatever the
+    /// controllers are configured to do among themselves, and for the phone app, is left alone.
+    /// </para>
+    /// </summary>
+    public bool SuppressCrossControllerSync { get; set; } = true;
+
     private async Task SendAsync(WledState patch, CancellationToken cancellationToken)
     {
+        if (SuppressCrossControllerSync)
+        {
+            // Per request, so it never changes what the controller is configured to do.
+            patch.UdpSync ??= new WledUdpSync();
+            patch.UdpSync.NoNotify = true;
+        }
+
         // The socket is cheaper and already open; HTTP is the fallback while it reconnects.
         if (await _socket.TrySendAsync(patch, cancellationToken).ConfigureAwait(false))
         {

@@ -50,6 +50,49 @@ public sealed class EffectSegment
     /// <summary>Frames drawn since this run started, WLED's <c>SEGENV.call</c>.</summary>
     public uint Call { get; set; }
 
+    /// <summary>Two more scratch values that survive between frames, WLED's <c>aux0</c> and <c>aux1</c>.</summary>
+    public uint Aux0 { get; set; }
+
+    public uint Aux1 { get; set; }
+
+    /// <summary>The effect option checkboxes, WLED's <c>check1</c> and <c>check2</c>.</summary>
+    public bool Option1 { get; set; }
+
+    public bool Option2 { get; set; }
+
+    /// <summary>
+    /// Randomness, seeded rather than free-running.
+    /// <para>
+    /// Some effects sprinkle pixels about at random, so a preview of one can never match the strip
+    /// frame for frame - only in how much it lights and how often. Seeding it at least makes the
+    /// preview repeatable, so a test that measures those can be believed.
+    /// </para>
+    /// </summary>
+    public Random Random { get; set; } = new(11337);
+
+    private object? _scratch;
+
+    /// <summary>
+    /// Whatever this effect needs to remember between frames, created the first time it asks.
+    /// <para>
+    /// Stands in for WLED's <c>SEGENV.data</c>, which is a raw byte array an effect casts to
+    /// whatever it likes. Typed here instead, because the reason the byte array exists - a
+    /// microcontroller with no heap to spare - does not apply.
+    /// </para>
+    /// </summary>
+    public T Scratch<T>(Func<T> create) where T : class
+    {
+        ArgumentNullException.ThrowIfNull(create);
+
+        if (_scratch is not T existing)
+        {
+            existing = create();
+            _scratch = existing;
+        }
+
+        return existing;
+    }
+
     /// <summary>Whether the run is wired back to front, which some effects mirror themselves for.</summary>
     public bool Reverse { get; set; }
 
@@ -84,12 +127,16 @@ public sealed class EffectSegment
     /// </param>
     /// <param name="colorSlot">Which color slot stands in when the run is not on a palette.</param>
     /// <param name="brightness">Scales the result, which some effects use to pulse.</param>
+    /// <param name="blend">
+    /// False lands on one of the palette's own stops instead of interpolating between them.
+    /// </param>
     public RgbColor ColorFromPalette(
         int index,
         bool mapping = false,
         bool wrap = false,
         int colorSlot = 0,
-        byte brightness = 255)
+        byte brightness = 255,
+        bool blend = true)
     {
         if (PaletteId == 0 || Palette is null)
         {
@@ -110,10 +157,24 @@ public sealed class EffectSegment
             wrapped = FastLed.Scale8(wrapped, 240);
         }
 
-        RgbColor color = Palette.ColorAt(wrapped / 255d, Colors[0], Colors[1], Colors[2]);
+        // Without blending the lookup lands on one of the palette's sixteen stops rather than
+        // between two of them, which is what gives a twinkle its distinct colors instead of a wash.
+        double position = blend ? wrapped / 255d : (wrapped >> 4) / 15d;
+
+        RgbColor color = Palette.ColorAt(position, Colors[0], Colors[1], Colors[2]);
 
         return brightness == 255 ? color : Fade(color, brightness);
     }
+
+    /// <summary>How bright a color reads overall, which is how WLED decides what shows through what.</summary>
+    public static byte AverageLight(RgbColor color) =>
+        (byte)((color.R + color.G + color.B) / 3);
+
+    /// <summary>Scales a color down with no floor, unlike <see cref="Fade"/>.</summary>
+    public static RgbColor Scale(RgbColor color, byte amount) => new(
+        (byte)(color.R * amount >> 8),
+        (byte)(color.G * amount >> 8),
+        (byte)(color.B * amount >> 8));
 
     /// <summary>Scales a color down, never quite to nothing while it is still lit.</summary>
     public static RgbColor Fade(RgbColor color, byte amount)
@@ -200,6 +261,8 @@ public sealed class EffectSegment
         PaletteId = wled.Palette ?? 0;
         Palette = palette;
         Reverse = wled.Reverse ?? false;
+        Option1 = wled.Option1 ?? false;
+        Option2 = wled.Option2 ?? false;
 
         Colors =
         [

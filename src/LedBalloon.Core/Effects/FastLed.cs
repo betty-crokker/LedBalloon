@@ -96,6 +96,38 @@ public static class FastLed
         return (byte)(lowest + Scale8(wave, (byte)(highest - lowest)));
     }
 
+    /// <summary>A symmetrical triangle wave over a byte: up to 255 and back down.</summary>
+    public static byte TriWave8(byte input)
+    {
+        if ((input & 0x80) != 0)
+        {
+            input = (byte)(255 - input);
+        }
+
+        return (byte)(input << 1);
+    }
+
+    /// <summary>A triangle wave with its corners rounded off, which reads as a swell rather than a ramp.</summary>
+    public static byte CubicWave8(byte input) => EaseInOutCubic8(TriWave8(input));
+
+    /// <summary>Eases a value in and out, the cubic curve FastLED uses.</summary>
+    public static byte EaseInOutCubic8(byte i)
+    {
+        int squared = i * i / 256;
+        int cubed = squared * i / 256;
+
+        int result = (3 * squared) - (2 * cubed);
+
+        return (byte)Math.Min(result, 255);
+    }
+
+    /// <summary>Subtraction that stops at zero instead of wrapping round to 255.</summary>
+    public static byte QSub8(byte from, int amount)
+    {
+        int result = from - amount;
+        return (byte)(result < 0 ? 0 : result);
+    }
+
     /// <summary>Moves one channel a fraction of the way toward another, never stalling short of it.</summary>
     /// <param name="mappedRate">How far to move, out of 256.</param>
     public static byte FadeChannel(byte from, byte to, int mappedRate)
