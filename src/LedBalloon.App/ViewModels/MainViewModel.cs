@@ -358,7 +358,6 @@ public sealed partial class MainViewModel : ViewModelBase
 
     [ObservableProperty] private string? _outputColorOrder;
     [ObservableProperty] private int _outputMilliampsPerLed;
-    [ObservableProperty] private bool _outputReversed;
     [ObservableProperty] private int _outputSkipFirst;
     [ObservableProperty] private bool _outputOffRefresh;
 
@@ -395,16 +394,14 @@ public sealed partial class MainViewModel : ViewModelBase
                 (value.ControllerKey, value.Number), out LedOutputSettings? staged)
                 ? staged
                 : value.Bus is { } bus
-                    ? new LedOutputSettings(bus.ColorOrder, bus.MilliampsPerLed, bus.Reversed,
-                        bus.SkipFirst, bus.OffRefresh)
-                    : new LedOutputSettings(0, 30, false, 0, false);
+                    ? new LedOutputSettings(bus.ColorOrder, bus.MilliampsPerLed, bus.SkipFirst, bus.OffRefresh)
+                    : new LedOutputSettings(0, 30, 0, false);
 
             OutputColorOrder = settings.ColorOrder >= 0 && settings.ColorOrder < ColorOrders.Count
                 ? ColorOrders[settings.ColorOrder]
                 : ColorOrders[0];
 
             OutputMilliampsPerLed = settings.MilliampsPerLed;
-            OutputReversed = settings.Reversed;
             OutputSkipFirst = settings.SkipFirst;
             OutputOffRefresh = settings.OffRefresh;
         }
@@ -417,8 +414,6 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnOutputColorOrderChanged(string? value) => StageOutputSettings();
 
     partial void OnOutputMilliampsPerLedChanged(int value) => StageOutputSettings();
-
-    partial void OnOutputReversedChanged(bool value) => StageOutputSettings();
 
     partial void OnOutputSkipFirstChanged(int value) => StageOutputSettings();
 
@@ -434,7 +429,7 @@ public sealed partial class MainViewModel : ViewModelBase
         int order = Math.Max(0, ColorOrders.ToList().IndexOf(OutputColorOrder ?? ColorOrders[0]));
 
         _pendingOutputSettings[(output.ControllerKey, output.Number)] = new LedOutputSettings(
-            order, OutputMilliampsPerLed, OutputReversed, OutputSkipFirst, OutputOffRefresh);
+            order, OutputMilliampsPerLed, OutputSkipFirst, OutputOffRefresh);
 
         HasUnsavedChanges = true;
     }
@@ -2346,6 +2341,23 @@ public sealed partial class MainViewModel : ViewModelBase
         foreach (string problem in Project.Validate(ledCounts))
         {
             LayoutWarnings.Add(problem);
+        }
+
+        // LedBalloon never sets an output's own "reversed" flag, but WLED's settings page can, and
+        // this app cannot see it when it draws the photo - so every run on that output would be
+        // drawn from the wrong end with nothing to say why.
+        foreach (DeviceViewModel device in Devices)
+        {
+            for (int i = 0; i < device.Outputs.Count; i++)
+            {
+                if (device.Outputs[i].Reversed)
+                {
+                    LayoutWarnings.Add(
+                        $"{device.DisplayName}: output {i + 1} is set to run reversed in the controller's own " +
+                        "LED settings. The photo cannot show that, so turn it off there and put the runs in " +
+                        "the other order here instead.");
+                }
+            }
         }
 
         OnPropertyChanged(nameof(HasLayoutWarnings));

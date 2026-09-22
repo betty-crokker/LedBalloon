@@ -20,13 +20,19 @@ namespace LedBalloon.Core;
 /// </summary>
 /// <param name="ColorOrder">WLED's code: 0 GRB, 1 RGB, 2 BRG, 3 RBG, 4 BGR, 5 GBR.</param>
 /// <param name="MilliampsPerLed">What one LED is budgeted at, for the power limiter.</param>
-/// <param name="Reversed">The strip is wired running the other way.</param>
 /// <param name="SkipFirst">LEDs at the head of the output that are wired but not used.</param>
 /// <param name="OffRefresh">Keep refreshing this output while it is off.</param>
+/// <remarks>
+/// The output's own "reversed" flag is deliberately absent, and deliberately never written. It
+/// flips the whole output, so on an output carrying more than one run it does not merely turn each
+/// run around - it swaps which physical LEDs belong to which run. The same physical fact, a data
+/// line entering at the far end, is already sayable in terms this app can show you: put the runs in
+/// the other order and flip each one. Both of those are visible in the panel. That flag is not, and
+/// the photo preview cannot see it, so it would quietly draw every run on the output backwards.
+/// </remarks>
 public sealed record LedOutputSettings(
     int ColorOrder,
     int MilliampsPerLed,
-    bool Reversed,
     int SkipFirst,
     bool OffRefresh);
 
@@ -57,9 +63,9 @@ public static class LedOutputWriter
         bool changed = Set(output, "order", Math.Clamp(settings.ColorOrder, 0, ColorOrders.Count - 1));
         changed |= Set(output, "ledma", Math.Clamp(settings.MilliampsPerLed, 0, 255));
         changed |= Set(output, "skip", Math.Max(0, settings.SkipFirst));
-        changed |= SetFlag(output, "rev", settings.Reversed);
         changed |= SetFlag(output, "ref", settings.OffRefresh);
 
+        // "rev" is left exactly as found - see the remarks on LedOutputSettings.
         return changed;
     }
 

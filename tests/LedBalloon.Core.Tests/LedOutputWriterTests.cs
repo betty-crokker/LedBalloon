@@ -121,13 +121,12 @@ public class LedOutputWriterTests
         JsonObject config = Config();
 
         Assert.True(LedOutputWriter.ApplySettings(
-            config, 1, new LedOutputSettings(ColorOrder: 1, MilliampsPerLed: 55, Reversed: true,
+            config, 1, new LedOutputSettings(ColorOrder: 1, MilliampsPerLed: 55,
                 SkipFirst: 2, OffRefresh: true)));
 
         Assert.Equal(1, Value(config, 1, "order"));
         Assert.Equal(55, Value(config, 1, "ledma"));
         Assert.Equal(2, Value(config, 1, "skip"));
-        Assert.True(Outputs(config)[1]!["rev"]!.GetValue<bool>());
         Assert.True(Outputs(config)[1]!["ref"]!.GetValue<bool>());
 
         // The other output, and this one's length and pin, are none of its business.
@@ -138,14 +137,29 @@ public class LedOutputWriterTests
         Assert.Equal(42, config["hw"]!["led"]!["fps"]!.GetValue<int>());
     }
 
+    /// <summary>
+    /// The output's own reversal is never written. It says the same thing as ordering the runs the
+    /// other way and flipping each, but the photo cannot see it, so this app leaves it where it
+    /// found it rather than having two ways to say one thing and disagreeing with itself.
+    /// </summary>
+    [Fact]
+    public void The_outputs_own_reversal_is_left_exactly_as_it_was()
+    {
+        JsonObject config = Config();
+        Outputs(config)[1]!["rev"] = true;
+
+        LedOutputWriter.ApplySettings(config, 1, new LedOutputSettings(1, 55, 2, true));
+
+        Assert.True(Outputs(config)[1]!["rev"]!.GetValue<bool>());
+    }
+
     [Fact]
     public void Settings_it_already_has_change_nothing_and_write_nothing()
     {
         JsonObject config = Config();
 
-        // Output 2 as it stands: GRB, 30 mA, not reversed, nothing skipped, no off-refresh.
-        Assert.False(LedOutputWriter.ApplySettings(
-            config, 1, new LedOutputSettings(0, 30, false, 0, false)));
+        // Output 2 as it stands: GRB, 30 mA, nothing skipped, no off-refresh.
+        Assert.False(LedOutputWriter.ApplySettings(config, 1, new LedOutputSettings(0, 30, 0, false)));
     }
 
     [Fact]
@@ -153,8 +167,8 @@ public class LedOutputWriterTests
     {
         JsonObject config = Config();
 
-        Assert.False(LedOutputWriter.ApplySettings(config, 7, new LedOutputSettings(1, 30, false, 0, false)));
-        Assert.False(LedOutputWriter.ApplySettings(config, -1, new LedOutputSettings(1, 30, false, 0, false)));
+        Assert.False(LedOutputWriter.ApplySettings(config, 7, new LedOutputSettings(1, 30, 0, false)));
+        Assert.False(LedOutputWriter.ApplySettings(config, -1, new LedOutputSettings(1, 30, 0, false)));
     }
 
     [Fact]
@@ -162,7 +176,7 @@ public class LedOutputWriterTests
     {
         JsonObject config = Config();
 
-        LedOutputWriter.ApplySettings(config, 0, new LedOutputSettings(99, 30, false, 0, false));
+        LedOutputWriter.ApplySettings(config, 0, new LedOutputSettings(99, 30, 0, false));
 
         Assert.InRange(Value(config, 0, "order"), 0, LedOutputWriter.ColorOrders.Count - 1);
     }
