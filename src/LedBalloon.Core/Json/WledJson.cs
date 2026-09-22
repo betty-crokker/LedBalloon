@@ -36,8 +36,10 @@ namespace LedBalloon.Core.Json;
 [JsonSerializable(typeof(LedBalloonProject))]
 [JsonSerializable(typeof(Segment))]
 [JsonSerializable(typeof(ControllerRef))]
+[JsonSerializable(typeof(Appearance))]
 [JsonSerializable(typeof(Look))]
-[JsonSerializable(typeof(SegmentLook))]
+[JsonSerializable(typeof(Scene))]
+[JsonSerializable(typeof(SceneEntry))]
 public sealed partial class WledJson : JsonSerializerContext
 {
     private static JsonSerializerOptions? _pretty;

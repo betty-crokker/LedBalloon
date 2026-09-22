@@ -75,7 +75,41 @@ public sealed class LedBalloonProject
 
     [JsonPropertyName("segments")] public List<Segment> Segments { get; set; } = [];
 
+    /// <summary>
+    /// Named appearances, each defined once and worn by as many segments in as many scenes as you
+    /// like.
+    /// </summary>
     [JsonPropertyName("looks")] public List<Look> Looks { get; set; } = [];
+
+    /// <summary>Named appearances for the whole house.</summary>
+    [JsonPropertyName("scenes")] public List<Scene> Scenes { get; set; } = [];
+
+    /// <summary>The named look with this id, or null.</summary>
+    public Look? FindLook(string? id) =>
+        id is null ? null : Looks.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.Ordinal));
+
+    /// <summary>The scene with this id, or null.</summary>
+    public Scene? FindScene(string? id) =>
+        id is null ? null : Scenes.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.Ordinal));
+
+    /// <summary>
+    /// What a segment actually wears: the named look this entry points at, or the entry itself when
+    /// it is a one-off.
+    /// <para>
+    /// A reference to a look that has since been deleted falls back to the entry's own fields, which
+    /// are empty — so the segment goes dark rather than inheriting something arbitrary.
+    /// </para>
+    /// </summary>
+    public Appearance Wearing(SceneEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return FindLook(entry.LookId) ?? (Appearance)entry;
+    }
+
+    /// <summary>How many scenes wear a given look, which is what makes editing one reach backwards.</summary>
+    public int ScenesWearing(string lookId) =>
+        Scenes.Count(scene => scene.Segments.Values.Any(e =>
+            string.Equals(e.LookId, lookId, StringComparison.Ordinal)));
 
     /// <summary>True once there is enough here to stop asking about hardware and start lighting.</summary>
     [JsonIgnore]
@@ -406,62 +440,6 @@ public sealed class LedBalloonProject
     }
 
     /// <summary>
-    /// The part of this project that belongs to one controller, and nothing else.
-    /// <para>
-    /// A controller has no business holding another controller's runs, name or LED counts. Each one
-    /// stores its own slice, so a box is a complete and honest description of what is plugged into
-    /// it — readable on its own, and meaningless to nobody.
-    /// </para>
-    /// <para>
-    /// The photo is the exception, and it is stored as a separate file rather than in here: it is a
-    /// picture of the whole house and cannot be divided.
-    /// </para>
-    /// </summary>
-    public LedBalloonProject SliceFor(string controllerKey)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
-
-        IReadOnlyList<Segment> mine = SegmentsOn(controllerKey);
-        var ids = mine.Select(s => s.Id).ToHashSet(StringComparer.Ordinal);
-
-        var slice = new LedBalloonProject
-        {
-            Schema = Schema,
-            Name = Name,
-            Revision = Revision,
-            SavedUtc = SavedUtc,
-            PhotoPath = PhotoPath,
-            PhotoHash = PhotoHash,
-            PhotoOnDevice = PhotoOnDevice,
-            Controllers = [.. Controllers.Where(c => KeyEquals(c.Key, controllerKey))],
-            Segments = [.. mine],
-        };
-
-        // A look spans the house, so each controller keeps only the part about its own runs.
-        foreach (Look look in Looks)
-        {
-            var trimmed = new Look
-            {
-                Id = look.Id,
-                Name = look.Name,
-                On = look.On,
-                Brightness = look.Brightness,
-                Transition = look.Transition,
-                UnlistedSegmentsOff = look.UnlistedSegmentsOff,
-            };
-
-            foreach ((string segmentId, SegmentLook appearance) in look.Segments.Where(p => ids.Contains(p.Key)))
-            {
-                trimmed.Segments[segmentId] = appearance;
-            }
-
-            slice.Looks.Add(trimmed);
-        }
-
-        return slice;
-    }
-
-    /// <summary>
     /// Everything about this house except when it was written, hashed.
     /// <para>
     /// For telling two copies apart when their revisions match, which means either that they are
@@ -525,21 +503,17 @@ public sealed class LedBalloonProject
                 house.Segments.Add(segment);
             }
 
-            foreach (Look look in slice.Looks)
+            // Named looks and scenes are unioned by id. Schema 1 had neither in practice - the
+            // whole-house looks it could store were never reachable from the UI, and all four
+            // copies on the hardware carried an empty list - so there is nothing here to lose.
+            foreach (Look look in slice.Looks.Where(l => house.FindLook(l.Id) is null))
             {
-                Look? existing = house.Looks.FirstOrDefault(l =>
-                    string.Equals(l.Id, look.Id, StringComparison.Ordinal));
+                house.Looks.Add(look);
+            }
 
-                if (existing is null)
-                {
-                    house.Looks.Add(look);
-                    continue;
-                }
-
-                foreach ((string segmentId, SegmentLook appearance) in look.Segments)
-                {
-                    existing.Segments[segmentId] = appearance;
-                }
+            foreach (Scene scene in slice.Scenes.Where(s => house.FindScene(s.Id) is null))
+            {
+                house.Scenes.Add(scene);
             }
         }
 
