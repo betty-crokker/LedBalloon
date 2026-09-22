@@ -26,17 +26,19 @@ public class ResizeWorkflowTests
     };
 
     [Fact]
-    public void Growing_a_run_reports_the_overlap_it_creates()
+    public void Growing_a_run_carries_the_ones_after_it_along()
     {
         LedBalloonProject project = House();
 
         // The roofline is really 285, not 280.
         project.FindSegment("roof")!.Count = 285;
+        project.Reflow(South);
 
-        IReadOnlyList<string> problems = project.Validate(new Dictionary<string, int> { [South] = 310 });
-
-        // It now runs into the spare, and that has to be said before anything is pushed to a device.
-        Assert.Contains(problems, p => p.Contains("overlaps") && p.Contains("South 4"));
+        // There is no overlap to report. The spare is simply five LEDs further along the wire, and
+        // the output it is on is five LEDs longer than the controller currently thinks.
+        Assert.Equal(310, project.FindSegment("spare")!.Start);
+        Assert.Empty(project.Validate());
+        Assert.Equal(315, project.OutputLengths(South).Single().Length);
     }
 
     [Fact]
@@ -46,7 +48,7 @@ public class ResizeWorkflowTests
 
         project.FindSegment("roof")!.Count = 285;
         project.Segments.Remove(project.FindSegment("spare")!);
-        project.Repack(South);
+        project.Reflow(South);
 
         Assert.Empty(project.Validate(new Dictionary<string, int> { [South] = 310 }));
 
@@ -62,7 +64,7 @@ public class ResizeWorkflowTests
 
         // Correct the porch instead, and the two runs after it should move up.
         project.FindSegment("porch")!.Count = 10;
-        project.Repack(South);
+        project.Reflow(South);
 
         Assert.Equal(20, project.FindSegment("porch")!.Start);
         Assert.Equal(30, project.FindSegment("roof")!.Start);
@@ -83,7 +85,7 @@ public class ResizeWorkflowTests
 
         project.FindSegment("roof")!.Count = 285;
         project.Segments.Remove(project.FindSegment("spare")!);
-        project.Repack(South);
+        project.Reflow(South);
 
         WledState state = LookResolver.Resolve(project, look)[South];
         WledSegment roof = state.Segments!.Single(s => s.Start == 25);
@@ -107,7 +109,7 @@ public class ResizeWorkflowTests
         };
 
         project.FindSegment("a")!.Count = 150;
-        project.Repack(South);
+        project.Reflow(South);
 
         // The north controller has its own address space and must not shift.
         Assert.Equal(0, project.FindSegment("b")!.Start);

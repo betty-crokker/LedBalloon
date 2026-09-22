@@ -48,6 +48,16 @@ public enum AppMode
 /// before sending it to the house: which run, what pattern, what colors, and how it moves.
 /// </para>
 /// </summary>
+/// <summary>One of a controller's LED outputs, as the segment editor offers it.</summary>
+/// <param name="Number">1-based, matching the order the controller lists its outputs in.</param>
+/// <param name="Bus">What the controller says about it, or null when it has not answered yet.</param>
+public sealed record OutputChoice(int Number, LedBus? Bus)
+{
+    public override string ToString() => Bus is null
+        ? $"Output {Number}"
+        : $"Output {Number}  ·  GPIO {string.Join(", ", Bus.Pins)}";
+}
+
 public sealed record PresetDetail(
     string RunName,
     string Effect,
@@ -306,7 +316,7 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnEditingRowChanged(SegmentRow? value)
     {
         OnPropertyChanged(nameof(IsEditingSegment));
-        RefreshSpareOffer();
+        RefreshOutputChoices(value?.Segment);
 
         // Editing one is also picking it: the photo highlights it, and tracing acts on it.
         if (value is not null)
@@ -318,6 +328,125 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Opens the editor on a segment.</summary>
     [RelayCommand]
     private void EditSegment(SegmentRow? row) => EditingRow = row;
+
+    /// <summary>
+    /// The outputs on the controller driving the segment being edited.
+    /// <para>
+    /// Straight from that controller, never typed and never guessed from a model number. The two
+    /// boxes here both have outputs on GPIO 16 and GPIO 2, and they are not even the same way
+    /// round - on one the short run is on 16, on the other the long one is - so anything other than
+    /// asking the hardware would be wrong half the time.
+    /// </para>
+    /// </summary>
+    public ObservableCollection<OutputChoice> OutputChoices { get; } = [];
+
+    /// <summary>Which output the segment being edited is plugged into.</summary>
+    [ObservableProperty] private OutputChoice? _outputChoice;
+
+    partial void OnOutputChoiceChanged(OutputChoice? value)
+    {
+        if (_suppressPush || value is null || EditingRow?.Segment is not { } segment)
+        {
+            return;
+        }
+
+        if (segment.Output == value.Number)
+        {
+            return;
+        }
+
+        segment.Output = value.Number;
+
+        if (segment.ControllerKey is { } key)
+        {
+            Project.Reflow(key);
+        }
+
+        AfterProjectChanged($"'{segment.Name}' is on output {value.Number} now.");
+    }
+
+    /// <summary>
+    /// Points every segment at the output it is plugged into, and works the starts out again.
+    /// <para>
+    /// Layouts written before outputs were modelled carry a start and nothing else, so the output
+    /// has to be read back out of that start against the controller's own wiring. For a layout that
+    /// already agreed with its hardware this changes no number at all.
+    /// </para>
+    /// </summary>
+    private void MatchSegmentsToWiring()
+    {
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key || device.Outputs.Count == 0)
+            {
+                continue;
+            }
+
+            Project.AssignOutputs(key, [.. device.Outputs]);
+            Project.Reflow(key);
+        }
+    }
+
+    private void RefreshOutputChoices(Segment? segment)
+    {
+        _suppressPush = true;
+        try
+        {
+            OutputChoices.Clear();
+
+            IReadOnlyList<LedBus> outputs = DeviceFor(segment?.ControllerKey)?.Outputs.ToList() ?? [];
+
+            for (int i = 0; i < outputs.Count; i++)
+            {
+                OutputChoices.Add(new OutputChoice(i + 1, outputs[i]));
+            }
+
+            // A controller that has not answered yet still has to offer the one it is on, or the
+            // picker would silently move the segment when it loads.
+            if (OutputChoices.Count == 0 && segment is not null)
+            {
+                OutputChoices.Add(new OutputChoice(Math.Max(1, segment.Output), null));
+            }
+
+            OutputChoice = segment is null
+                ? null
+                : OutputChoices.FirstOrDefault(o => o.Number == Math.Max(1, segment.Output));
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+    }
+
+    /// <summary>Moves the segment being edited one place earlier along its output.</summary>
+    [RelayCommand]
+    private void MoveSegmentEarlier() => MoveEditingSegment(-1);
+
+    /// <summary>Moves the segment being edited one place later along its output.</summary>
+    [RelayCommand]
+    private void MoveSegmentLater() => MoveEditingSegment(1);
+
+    private void MoveEditingSegment(int delta)
+    {
+        if (EditingRow?.Segment is not { } segment)
+        {
+            return;
+        }
+
+        if (!Project.MoveWithinOutput(segment, delta))
+        {
+            Status = delta < 0
+                ? $"'{segment.Name}' is already first on that output."
+                : $"'{segment.Name}' is already last on that output.";
+            return;
+        }
+
+        SegmentRow? keep = EditingRow;
+        AfterProjectChanged($"Moved '{segment.Name}' {(delta < 0 ? "earlier" : "later")} along output {Math.Max(1, segment.Output)}.");
+
+        // The rows are rebuilt, so the editor has to be pointed at the new one for the same segment.
+        EditingRow = SegmentRows.FirstOrDefault(row => ReferenceEquals(row.Segment, segment)) ?? keep;
+    }
 
     /// <summary>Goes back to the list. Nothing to apply - the fields edit the segment directly.</summary>
     [RelayCommand]
@@ -661,11 +790,14 @@ public sealed partial class MainViewModel : ViewModelBase
                     "Load the same picture once and it will be remembered on this machine.";
             }
 
+            MatchSegmentsToWiring();
+
             AfterProjectChanged(
                 $"Loaded revision {Project.Revision} from {result.LoadedFrom} — " +
                 $"{Project.Segments.Count} segment(s), {Project.TotalLeds} LEDs.");
 
-            // Freshly loaded is not unsaved.
+            // Freshly loaded is not unsaved. Working the starts out again is not a change: for a
+            // layout that already agreed with its wiring it lands on the same numbers.
             HasUnsavedChanges = false;
 
             if (_starting)
@@ -1024,21 +1156,21 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IReadOnlyList<Segment> existing = Project.SegmentsOn(key);
 
-        // Past the last LED already spoken for, not past the count of them. Adding up the lengths
-        // lands inside an existing segment whenever there is a gap earlier on the wire - which is
-        // exactly the state a house gets into after something is removed.
-        int start = existing.Count == 0 ? 0 : existing.Max(s => s.StopExclusive);
+        // On the end of the same output as the run before it, which is where another length of
+        // lights most often goes. Its start is not set here at all - Reflow works that out.
+        int output = existing.Count == 0 ? 1 : Math.Max(1, existing[^1].Output);
 
         // Named after its controller, because "Segment 1" on two controllers is two "Segment 1"s.
         var segment = new Segment
         {
             Name = $"{ControllerNameFor(key)} {existing.Count + 1}",
             ControllerKey = key,
-            Start = start,
+            Output = output,
             Count = 50,
         };
 
         Project.Segments.Add(segment);
+        Project.Reflow(key);
         AfterProjectChanged($"Added '{segment.Name}'. Set its length, then trace it on the photo.");
         SelectedSegment = segment;
 
@@ -1069,21 +1201,15 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        // Only worth offering when something comes after it on the same controller; removing the
-        // last run leaves no hole to close.
-        IReadOnlyList<Segment> onController = Project.SegmentsOn(segment.ControllerKey ?? string.Empty);
-        bool leavesAHole = onController.Any(other =>
-            !ReferenceEquals(other, segment) && other.Start > segment.Start);
-
+        // No "close the gap" to offer any more: the runs left on the output simply close up, since
+        // their starts are worked out from the lengths rather than stored.
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: $"Remove '{segment.Name}'?",
-            Message: $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. Nothing reaches " +
-                     "the controllers until you save, so Revert - or closing without saving - brings it back.",
+            Message: $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. The runs after it " +
+                     "on that output move back to close up. Nothing reaches the controllers until you save, " +
+                     "so Revert - or closing without saving - brings it back.",
             AcceptText: "Remove",
-            CancelText: "Keep it",
-            OptionText: leavesAHole
-                ? "Close the gap, pulling the segments after it back down the wire"
-                : null));
+            CancelText: "Keep it"));
 
         if (!answer.Accepted)
         {
@@ -1095,44 +1221,12 @@ public sealed partial class MainViewModel : ViewModelBase
         Project.Segments.Remove(segment);
         SelectedSegment = Project.Segments.FirstOrDefault();
 
-        if (leavesAHole && answer.OptionChecked && key is not null)
+        if (key is not null)
         {
-            Project.Repack(key);
-            AfterProjectChanged($"Removed '{segment.Name}' and closed the gap it left.");
-            return;
+            Project.Reflow(key);
         }
 
-        AfterProjectChanged(leavesAHole
-            ? $"Removed '{segment.Name}', leaving a gap of {segment.Count} LEDs on the wire. Revert to put it back."
-            : $"Removed '{segment.Name}'. Revert to put it back.");
-    }
-
-    [RelayCommand]
-    private void RepackSegments()
-    {
-        Project.RepackAll();
-        AfterProjectChanged($"Re-laid {Project.Segments.Count} segment(s) across {Project.TotalLeds} LEDs.");
-    }
-
-    /// <summary>
-    /// Re-lays one controller's runs, which is what the button on a controller ought to do.
-    /// <para>
-    /// Separate from the whole-house version on purpose: the two used to share a command, so the
-    /// button sitting on North quietly re-laid South as well.
-    /// </para>
-    /// </summary>
-    [RelayCommand]
-    private void RepackController(ControllerCoverage? controller)
-    {
-        if (controller is null)
-        {
-            return;
-        }
-
-        Project.Repack(controller.Key);
-
-        AfterProjectChanged(
-            $"Re-laid {Project.SegmentsOn(controller.Key).Count} segment(s) on {controller.Name}.");
+        AfterProjectChanged($"Removed '{segment.Name}'. Revert to put it back.");
     }
 
     /// <summary>
@@ -1621,11 +1715,20 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        string? from = segment.ControllerKey;
         segment.ControllerKey = key;
 
-        // Its old address range means nothing on the new controller.
+        // Its old address range means nothing on the new controller, and the output it was plugged
+        // into does not exist there either.
         segment.SegmentId = null;
-        Project.Repack(key);
+        segment.Output = 1;
+
+        Project.Reflow(key);
+
+        if (from is not null)
+        {
+            Project.Reflow(from);
+        }
 
         AfterProjectChanged($"Moved '{segment.Name}' to {value.DisplayName}.");
     }
@@ -1992,86 +2095,24 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         HasUnsavedChanges = true;
 
-        // Correcting a length is the one edit whose whole point is that the number was wrong, so
-        // it is allowed to move its neighbours. A start is a deliberate placement at an address
-        // you know, so that one moves nothing and any collision is left to the warnings.
-        if (e.PropertyName is nameof(Segment.Count) && sender is Segment corrected)
+        // Correcting a length is the only input here, so it is also the only thing that can move
+        // anything: every start on the controller is worked out again from the lengths. There used
+        // to be machinery to push overlapping runs apart and offer to close the gap left behind,
+        // and it all went when the starts stopped being typed.
+        if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Output) &&
+            sender is Segment { ControllerKey: { } key })
         {
-            IReadOnlyList<Segment> pushed = Project.MakeRoomAfter(corrected);
-
-            if (pushed.Count > 0)
-            {
-                Status = $"'{corrected.Name}' now runs to LED {corrected.StopExclusive}, so " +
-                         $"{Name(pushed)} moved down the wire to make room.";
-                LayoutRevision++;
-            }
+            Project.Reflow(key);
+            LayoutRevision++;
         }
 
-        // Lengths and starts are exactly what create overlaps, so say so as it happens rather than
-        // waiting for someone to go looking for it.
-        if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Start) or nameof(Segment.ControllerKey))
+        if (e.PropertyName is nameof(Segment.Count) or nameof(Segment.Output) or nameof(Segment.ControllerKey))
         {
             RefreshLayoutWarnings();
-            RefreshSpareOffer();
         }
     }
 
-    private static string Name(IReadOnlyList<Segment> segments) => segments.Count == 1
-        ? $"'{segments[0].Name}'"
-        : $"{segments.Count} segments after it";
-
-    /// <summary>
-    /// Unused LEDs sitting right behind the segment being edited, worded for the offer to close
-    /// them up, or null when there are none.
-    /// <para>
-    /// An offer rather than something done for you, because unlike an overlap a gap is not broken.
-    /// Shortening a run usually does mean the rest should come back down the wire, but not when
-    /// the next run is plugged in at an address you already know.
-    /// </para>
-    /// </summary>
-    [ObservableProperty] private string? _spareNotice;
-
-    public bool HasSpareOffer => SpareNotice is not null;
-
-    partial void OnSpareNoticeChanged(string? value) => OnPropertyChanged(nameof(HasSpareOffer));
-
-    private void RefreshSpareOffer()
-    {
-        if (EditingRow?.Segment is not { } segment)
-        {
-            SpareNotice = null;
-            return;
-        }
-
-        int spare = Project.SpareAfter(segment);
-
-        SpareNotice = spare > 0
-            ? $"{spare} unused LED{(spare == 1 ? string.Empty : "s")} between '{segment.Name}' and the next segment."
-            : null;
-    }
-
-    /// <summary>Takes the offer: everything after this segment comes back down the wire.</summary>
-    [RelayCommand]
-    private void CloseSpare()
-    {
-        if (EditingRow?.Segment is not { } segment)
-        {
-            return;
-        }
-
-        IReadOnlyList<Segment> moved = Project.CloseSpareAfter(segment);
-
-        if (moved.Count == 0)
-        {
-            SpareNotice = null;
-            return;
-        }
-
-        AfterProjectChanged($"Closed the gap after '{segment.Name}'; {Name(moved)} came back down the wire.");
-        RefreshSpareOffer();
-    }
-
-    /// <summary>Recomputes the overlap and gap warnings shown beside the segment list.</summary>
+    /// <summary>Recomputes the warnings shown beside the segment list.</summary>
     private void RefreshLayoutWarnings()
     {
         var ledCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

@@ -39,7 +39,7 @@ public class LayoutTests
 
         // The run turns out to be five LEDs longer than anyone thought.
         project.Segments[0].Count = 313;
-        project.Repack(Front);
+        project.Reflow(Front);
 
         WledState after = LookResolver.Resolve(project, look)[Front];
 
@@ -122,11 +122,11 @@ public class LayoutTests
     }
 
     [Fact]
-    public void Repack_closes_gaps_left_by_a_corrected_length()
+    public void Working_the_layout_out_closes_up_after_a_corrected_length()
     {
         LedBalloonProject project = TwoSegmentHouse();
         project.Segments[0].Count = 100;
-        project.Repack(Front);
+        project.Reflow(Front);
 
         Assert.Equal(0, project.Segments[0].Start);
         Assert.Equal(100, project.Segments[1].Start);
@@ -150,23 +150,30 @@ public class LayoutTests
         Assert.Equal(200, project.TotalLeds);
     }
 
+    /// <summary>
+    /// There used to be a test here that overlaps and runs past the end of the strip were reported.
+    /// Neither can be expressed now: starts are worked out from the lengths, and a controller's
+    /// configured length is the sum of the runs plugged in rather than a limit on them. What an old
+    /// file can still arrive in is overlapping stored starts, so what matters is that they settle.
+    /// </summary>
     [Fact]
-    public void Validate_reports_overlaps_and_runs_past_the_end_of_the_strip()
+    public void Overlapping_stored_starts_are_settled_by_working_them_out()
     {
         var project = new LedBalloonProject
         {
             Controllers = [new ControllerRef { Key = Front, Name = "Front" }],
             Segments =
             [
-                new Segment { Id = "a", Name = "A", ControllerKey = Front, Start = 0, Count = 100 },
-                new Segment { Id = "b", Name = "B", ControllerKey = Front, Start = 50, Count = 100 },
+                new Segment { Id = "a", Name = "A", ControllerKey = Front, Start = 0, Count = 100, Output = 1 },
+                new Segment { Id = "b", Name = "B", ControllerKey = Front, Start = 50, Count = 100, Output = 1 },
             ],
         };
 
-        IReadOnlyList<string> problems = project.Validate(new Dictionary<string, int> { [Front] = 120 });
+        project.Reflow(Front);
 
-        Assert.Contains(problems, p => p.Contains("overlaps"));
-        Assert.Contains(problems, p => p.Contains("drives 120"));
+        Assert.Equal(0, project.FindSegment("a")!.Start);
+        Assert.Equal(100, project.FindSegment("b")!.Start);
+        Assert.Empty(project.Validate());
     }
 
     [Fact]

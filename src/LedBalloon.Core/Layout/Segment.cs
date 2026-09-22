@@ -29,6 +29,7 @@ public sealed class Segment : INotifyPropertyChanged
     private string _name = "Segment";
     private string? _controllerKey;
     private int _start;
+    private int _output;
     private int _count;
     private int? _segmentId;
     private bool _reverse;
@@ -64,7 +65,21 @@ public sealed class Segment : INotifyPropertyChanged
         set => Set(ref _controllerKey, value);
     }
 
-    /// <summary>Index of this run's first LED in the controller's continuous address space.</summary>
+    /// <summary>
+    /// Index of this run's first LED in the controller's continuous address space.
+    /// <para>
+    /// Worked out, not chosen. A WS281x strip has no addressing: the data is shifted down the
+    /// chain and each LED takes the first 24 bits it sees, so the runs on one output are
+    /// necessarily end to end in the order they are wired. That makes this arithmetic - where the
+    /// output begins, plus the lengths of the runs ahead of this one - and
+    /// <see cref="LedBalloonProject.Reflow"/> is what does the arithmetic.
+    /// </para>
+    /// <para>
+    /// Still stored, because it is what WLED is told and what every saved look resolves against.
+    /// It is simply no longer typed by anyone, which is what makes overlaps and gaps impossible to
+    /// express rather than merely reported.
+    /// </para>
+    /// </summary>
     [JsonPropertyName("start")]
     public int Start
     {
@@ -76,6 +91,25 @@ public sealed class Segment : INotifyPropertyChanged
                 OnPropertyChanged(nameof(StopExclusive));
             }
         }
+    }
+
+    /// <summary>
+    /// Which of the controller's LED outputs this run is plugged into, numbered from 1.
+    /// <para>
+    /// Zero means not worked out yet: layouts written before outputs were modelled have a start
+    /// and nothing else, and <see cref="LedBalloonProject.AssignOutputs"/> reads the output back
+    /// out of that start the first time the wiring is known.
+    /// </para>
+    /// <para>
+    /// This is a real physical fact rather than a label. Two outputs are two strips on two pins,
+    /// so a run cannot cross from one to the other however the numbers look.
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("output")]
+    public int Output
+    {
+        get => _output;
+        set => Set(ref _output, Math.Max(0, value));
     }
 
     /// <summary>How many LEDs are in this run. Correct this one number when your count was wrong.</summary>

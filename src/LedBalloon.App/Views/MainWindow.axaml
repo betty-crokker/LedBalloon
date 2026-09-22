@@ -404,12 +404,13 @@
                 <TextBlock Classes="panelTitle" Text="Controllers" />
               </StackPanel>
 
-              <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
-                   reported as it happens rather than behind a button elsewhere. -->
+              <!-- What is left to warn about, now that overlaps and gaps cannot be expressed. The
+                   "Re-lay the whole house" button that used to sit here went with them: the layout
+                   is worked out from the lengths every time one changes, so it is always laid. -->
               <Border DockPanel.Dock="Bottom" Classes="card" Background="#33C9821B" Margin="0,10,0,0"
                       IsVisible="{Binding HasLayoutWarnings}">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="Needs re-laying" FontWeight="SemiBold" FontSize="12" />
+                  <TextBlock Text="Worth a look" FontWeight="SemiBold" FontSize="12" />
                   <ItemsControl ItemsSource="{Binding LayoutWarnings}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate>
@@ -417,9 +418,6 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                   </ItemsControl>
-                  <Button Classes="block" FontSize="12" Padding="6,3" Margin="0,4,0,0"
-                          Content="Re-lay the whole house end to end"
-                          Command="{Binding RepackSegmentsCommand}" />
                 </StackPanel>
               </Border>
 
@@ -464,15 +462,6 @@
                                             CommandParameter="{Binding}" />
                                     <Button Classes="block" Content="From its presets" Margin="0,6,0,0"
                                             Command="{Binding Owner.ProposeLayoutCommand}" />
-
-                                    <Separator Margin="0,14,0,12" />
-
-                                    <TextBlock Text="Close up the numbering" FontWeight="SemiBold" FontSize="12" />
-                                    <TextBlock Classes="hint" Margin="0,3,0,6"
-                                               Text="Pushes this controller's segments up against each other, closing gaps and overlaps. The other controllers are left alone." />
-                                    <Button Classes="block" Content="Re-lay this controller"
-                                            Command="{Binding Owner.RepackControllerCommand}"
-                                            CommandParameter="{Binding}" />
 
                                   </StackPanel>
                                 </Flyout>
@@ -617,31 +606,30 @@
                         <TextBlock Classes="hint" Text="Name" />
                         <TextBox Text="{Binding Segment.Name}" />
 
-                        <Grid ColumnDefinitions="*,8,*">
-                          <StackPanel Grid.Column="0" Spacing="4">
-                            <TextBlock Classes="hint" Text="LEDs" />
-                            <TextBox Text="{Binding Segment.Count}" />
-                          </StackPanel>
-                          <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Classes="hint" Text="Starts at" />
-                            <TextBox Text="{Binding Segment.Start}" />
-                          </StackPanel>
+                        <!-- The only number anyone types. Where the run starts is worked out from
+                             which output it is on and what is ahead of it, so there is no "starts
+                             at" box any more and no way to type an overlap. -->
+                        <TextBlock Classes="hint" Text="LEDs" />
+                        <TextBox Text="{Binding Segment.Count}" />
+
+                        <TextBlock Classes="heading" Text="Where it is plugged in" Margin="0,10,0,4" />
+
+                        <ComboBox ItemsSource="{Binding Owner.OutputChoices}"
+                                  SelectedItem="{Binding Owner.OutputChoice}"
+                                  PlaceholderText="Which output"
+                                  HorizontalAlignment="Stretch" />
+
+                        <TextBlock Classes="hint" Margin="0,2,0,0" Text="Order on that output" />
+                        <Grid ColumnDefinitions="*,6,*">
+                          <Button Grid.Column="0" Classes="block" FontSize="12" Padding="6,3"
+                                  Content="Move earlier"
+                                  Command="{Binding Owner.MoveSegmentEarlierCommand}" />
+                          <Button Grid.Column="2" Classes="block" FontSize="12" Padding="6,3"
+                                  Content="Move later"
+                                  Command="{Binding Owner.MoveSegmentLaterCommand}" />
                         </Grid>
 
-                        <!-- Shortening a run leaves LEDs stranded behind it. Usually you want the
-                             rest pulled back; not always, which is why this asks instead of just
-                             doing it. Growing a run needs no offer - it would overlap, so the rest
-                             are already pushed out of the way by the time you get here. -->
-                        <Border Classes="card" Background="#33C9821B" Padding="8"
-                                IsVisible="{Binding Owner.HasSpareOffer}">
-                          <StackPanel Spacing="6">
-                            <TextBlock Classes="hint" TextWrapping="Wrap"
-                                       Text="{Binding Owner.SpareNotice}" />
-                            <Button Classes="block" FontSize="12" Padding="6,3"
-                                    Content="Close the gap"
-                                    Command="{Binding Owner.CloseSpareCommand}" />
-                          </StackPanel>
-                        </Border>
+                        <TextBlock Classes="hint" Margin="0,4,0,0" Text="{Binding Placement}" />
 
                         <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
 
