@@ -142,6 +142,18 @@ public sealed partial class OutputGroup(int Number, string Pins) : ObservableObj
     /// <summary>The GPIO pins, as the controller reports them. Empty when it has not said.</summary>
     public string Pins { get; } = Pins;
 
+    /// <summary>Which controller this output belongs to. A run dropped here lands on that box.</summary>
+    public string ControllerKey { get; init; } = string.Empty;
+
+    /// <summary>What the controller says about it, or null when it has not answered.</summary>
+    public LedBus? Bus { get; init; }
+
+    /// <summary>The view model, for the same reason <see cref="SegmentRow.Owner"/> exists.</summary>
+    public MainViewModel? Owner { get; init; }
+
+    /// <summary>False for an output the controller has not told us about, which cannot be edited.</summary>
+    public bool IsReal => Bus is not null;
+
     public ObservableCollection<SegmentRow> Runs { get; } = [];
 
     public string Header => Pins.Length == 0

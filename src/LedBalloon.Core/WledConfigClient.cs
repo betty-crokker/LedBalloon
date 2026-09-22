@@ -10,11 +10,53 @@ namespace LedBalloon.Core;
 /// <param name="Pins">GPIO pins in use.</param>
 /// <param name="ColorOrder">WLED's color-order code.</param>
 /// <param name="Reversed">Whether the output is configured to run backwards.</param>
-public sealed record LedBus(int Start, int Length, int[] Pins, int ColorOrder, bool Reversed)
+/// <param name="MilliampsPerLed">Current budgeted per LED, for the power limiter.</param>
+/// <param name="SkipFirst">LEDs at the head of the output that are wired but not used.</param>
+/// <param name="OffRefresh">Whether to keep refreshing the output while it is off.</param>
+/// <param name="Type">WLED's LED type code. 22 is the common WS281x.</param>
+public sealed record LedBus(
+    int Start,
+    int Length,
+    int[] Pins,
+    int ColorOrder,
+    bool Reversed,
+    int MilliampsPerLed = 0,
+    int SkipFirst = 0,
+    bool OffRefresh = false,
+    int Type = 22)
 {
     public int StopExclusive => Start + Length;
 
     public override string ToString() => $"[{Start}..{StopExclusive}) x{Length} on pin {string.Join(",", Pins)}";
+}
+
+/// <summary>
+/// Which LED outputs a stretch of the wire lands on.
+/// <para>
+/// A run does not choose an output: it is plugged into one, and where it sits follows. Kept here
+/// so that anything wanting to say "output 2, GPIO 2" says it the same way.
+/// </para>
+/// </summary>
+public static class LedOutputMap
+{
+    /// <summary>The outputs this range touches, paired with their 1-based numbers.</summary>
+    public static IReadOnlyList<(int Number, LedBus Bus)> Covering(
+        IReadOnlyList<LedBus> outputs, int start, int stopExclusive)
+    {
+        ArgumentNullException.ThrowIfNull(outputs);
+
+        var touched = new List<(int, LedBus)>();
+
+        for (int i = 0; i < outputs.Count; i++)
+        {
+            if (start < outputs[i].StopExclusive && stopExclusive > outputs[i].Start)
+            {
+                touched.Add((i + 1, outputs[i]));
+            }
+        }
+
+        return touched;
+    }
 }
 
 /// <summary>
@@ -106,7 +148,11 @@ public sealed class WledConfigClient
                 Length: ReadInt(instance, "len"),
                 Pins: ReadIntArray(instance, "pin"),
                 ColorOrder: ReadInt(instance, "order"),
-                Reversed: ReadBool(instance, "rev")));
+                Reversed: ReadBool(instance, "rev"),
+                MilliampsPerLed: ReadInt(instance, "ledma"),
+                SkipFirst: ReadInt(instance, "skip"),
+                OffRefresh: ReadBool(instance, "ref"),
+                Type: ReadInt(instance, "type")));
         }
 
         return buses;
@@ -275,6 +321,49 @@ public sealed class WledConfigClient
             throw new WledHttpException(
                 response.StatusCode,
                 $"That controller would not take the LED output lengths ({(int)response.StatusCode}). " +
+                "A settings PIN will block this.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Changes one LED output's electrical settings - colour order, current budget, reversal,
+    /// skipped LEDs, off-refresh - and nothing else about the controller.
+    /// </summary>
+    /// <returns>True when the controller was actually written to.</returns>
+    public async Task<bool> SetLedOutputSettingsAsync(
+        int index,
+        LedOutputSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+            .ConfigureAwait(false);
+
+        if (JsonNode.Parse(current) is not JsonObject configuration)
+        {
+            throw new WledException("That controller returned a configuration that is not an object.");
+        }
+
+        if (!LedOutputWriter.ApplySettings(configuration, index, settings))
+        {
+            return false;
+        }
+
+        using var content = new StringContent(
+            configuration.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage response = await _http
+            .PostAsync("json/cfg", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"That controller would not take the output settings ({(int)response.StatusCode}). " +
                 "A settings PIN will block this.");
         }
 

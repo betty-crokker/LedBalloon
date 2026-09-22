@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -48,16 +48,6 @@ public enum AppMode
 /// before sending it to the house: which run, what pattern, what colors, and how it moves.
 /// </para>
 /// </summary>
-/// <summary>One of a controller's LED outputs, as the segment editor offers it.</summary>
-/// <param name="Number">1-based, matching the order the controller lists its outputs in.</param>
-/// <param name="Bus">What the controller says about it, or null when it has not answered yet.</param>
-public sealed record OutputChoice(int Number, LedBus? Bus)
-{
-    public override string ToString() => Bus is null
-        ? $"Output {Number}"
-        : $"Output {Number}  ·  GPIO {string.Join(", ", Bus.Pins)}";
-}
-
 public sealed record PresetDetail(
     string RunName,
     string Effect,
@@ -316,7 +306,7 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnEditingRowChanged(SegmentRow? value)
     {
         OnPropertyChanged(nameof(IsEditingSegment));
-        RefreshOutputChoices(value?.Segment);
+        OnPropertyChanged(nameof(IsShowingControllers));
 
         // Editing one is also picking it: the photo highlights it, and tracing acts on it.
         if (value is not null)
@@ -329,41 +319,6 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void EditSegment(SegmentRow? row) => EditingRow = row;
 
-    /// <summary>
-    /// The outputs on the controller driving the segment being edited.
-    /// <para>
-    /// Straight from that controller, never typed and never guessed from a model number. The two
-    /// boxes here both have outputs on GPIO 16 and GPIO 2, and they are not even the same way
-    /// round - on one the short run is on 16, on the other the long one is - so anything other than
-    /// asking the hardware would be wrong half the time.
-    /// </para>
-    /// </summary>
-    public ObservableCollection<OutputChoice> OutputChoices { get; } = [];
-
-    /// <summary>Which output the segment being edited is plugged into.</summary>
-    [ObservableProperty] private OutputChoice? _outputChoice;
-
-    partial void OnOutputChoiceChanged(OutputChoice? value)
-    {
-        if (_suppressPush || value is null || EditingRow?.Segment is not { } segment)
-        {
-            return;
-        }
-
-        if (segment.Output == value.Number)
-        {
-            return;
-        }
-
-        segment.Output = value.Number;
-
-        if (segment.ControllerKey is { } key)
-        {
-            Project.Reflow(key);
-        }
-
-        AfterProjectChanged($"'{segment.Name}' is on output {value.Number} now.");
-    }
 
     /// <summary>
     /// Points every segment at the output it is plugged into, and works the starts out again.
@@ -387,35 +342,132 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    private void RefreshOutputChoices(Segment? segment)
+
+    // ---- One LED output's own settings -----------------------------------------------------------
+
+    /// <summary>The output the panel is editing, or null while it is showing the list.</summary>
+    [ObservableProperty] private OutputGroup? _editingOutput;
+
+    public bool IsEditingOutput => EditingOutput is not null;
+
+    /// <summary>True only when the panel is showing the controllers, rather than an editor.</summary>
+    public bool IsShowingControllers => !IsEditingSegment && !IsEditingOutput;
+
+    /// <summary>Colour orders, in WLED's own numbering, for the picker.</summary>
+    public IReadOnlyList<string> ColorOrders { get; } = LedOutputWriter.ColorOrders;
+
+    [ObservableProperty] private string? _outputColorOrder;
+    [ObservableProperty] private int _outputMilliampsPerLed;
+    [ObservableProperty] private bool _outputReversed;
+    [ObservableProperty] private int _outputSkipFirst;
+    [ObservableProperty] private bool _outputOffRefresh;
+
+    partial void OnEditingOutputChanged(OutputGroup? value)
     {
-        _suppressPush = true;
+        OnPropertyChanged(nameof(IsEditingOutput));
+        OnPropertyChanged(nameof(IsShowingControllers));
+
+        if (value?.Bus is not { } bus)
+        {
+            return;
+        }
+
+        OutputColorOrder = bus.ColorOrder >= 0 && bus.ColorOrder < ColorOrders.Count
+            ? ColorOrders[bus.ColorOrder]
+            : ColorOrders[0];
+
+        OutputMilliampsPerLed = bus.MilliampsPerLed;
+        OutputReversed = bus.Reversed;
+        OutputSkipFirst = bus.SkipFirst;
+        OutputOffRefresh = bus.OffRefresh;
+    }
+
+    /// <summary>Opens the settings for one LED output.</summary>
+    [RelayCommand]
+    private void EditOutput(OutputGroup? output)
+    {
+        if (output is { IsReal: true })
+        {
+            EditingOutput = output;
+        }
+    }
+
+    /// <summary>Goes back to the controllers without writing anything.</summary>
+    [RelayCommand]
+    private void CloseOutputEditor() => EditingOutput = null;
+
+    /// <summary>
+    /// Writes this output's settings to the controller.
+    /// <para>
+    /// Straight through rather than held until Save, because these are not part of the layout -
+    /// they describe the strip itself, and there is nothing to keep them in step with.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task SaveOutputAsync()
+    {
+        if (EditingOutput is not { } output || DeviceFor(output.ControllerKey) is not { } device)
+        {
+            return;
+        }
+
+        int order = Math.Max(0, ColorOrders.ToList().IndexOf(OutputColorOrder ?? ColorOrders[0]));
+
+        IsBusy = true;
         try
         {
-            OutputChoices.Clear();
+            bool written = await new WledConfigClient(device.Host).SetLedOutputSettingsAsync(
+                output.Number - 1,
+                new LedOutputSettings(order, OutputMilliampsPerLed, OutputReversed, OutputSkipFirst, OutputOffRefresh));
 
-            IReadOnlyList<LedBus> outputs = DeviceFor(segment?.ControllerKey)?.Outputs.ToList() ?? [];
-
-            for (int i = 0; i < outputs.Count; i++)
+            if (written)
             {
-                OutputChoices.Add(new OutputChoice(i + 1, outputs[i]));
+                await device.RefreshOutputsAsync();
+                RebuildSegmentRows();
             }
 
-            // A controller that has not answered yet still has to offer the one it is on, or the
-            // picker would silently move the segment when it loads.
-            if (OutputChoices.Count == 0 && segment is not null)
-            {
-                OutputChoices.Add(new OutputChoice(Math.Max(1, segment.Output), null));
-            }
+            Status = written
+                ? $"Output {output.Number} on {ControllerNameFor(output.ControllerKey)} updated."
+                : $"Output {output.Number} on {ControllerNameFor(output.ControllerKey)} was already set that way.";
 
-            OutputChoice = segment is null
-                ? null
-                : OutputChoices.FirstOrDefault(o => o.Number == Math.Max(1, segment.Output));
+            EditingOutput = null;
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not change that output: {ex.Message}";
         }
         finally
         {
-            _suppressPush = false;
+            IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Drops a run onto an output, at a place in the chain. The one move that replaced both the
+    /// arrows and the "which output" picker.
+    /// </summary>
+    public void DropSegment(SegmentRow dragged, string controllerKey, int output, int index)
+    {
+        ArgumentNullException.ThrowIfNull(dragged);
+
+        Segment segment = dragged.Segment;
+        string? from = segment.ControllerKey;
+
+        if (!string.Equals(from, controllerKey, StringComparison.OrdinalIgnoreCase))
+        {
+            segment.ControllerKey = controllerKey;
+            segment.SegmentId = null;
+        }
+
+        Project.PlaceOnOutput(segment, output, index);
+
+        if (from is not null && !string.Equals(from, controllerKey, StringComparison.OrdinalIgnoreCase))
+        {
+            Project.Reflow(from);
+        }
+
+        AfterProjectChanged(
+            $"'{segment.Name}' is on output {output} of {ControllerNameFor(controllerKey)} now.");
     }
 
     /// <summary>Moves a run one place earlier along its output.</summary>
@@ -1217,13 +1269,28 @@ public sealed partial class MainViewModel : ViewModelBase
         AddSegmentTo(key);
     }
 
-    private void AddSegmentTo(string key)
+    /// <summary>Adds a run to the end of one output, which is the only place it can go.</summary>
+    [RelayCommand]
+    private void AddSegmentToOutput(OutputGroup? output)
+    {
+        if (output is null)
+        {
+            return;
+        }
+
+        AddSegmentTo(output.ControllerKey, output.Number);
+    }
+
+    private void AddSegmentTo(string key, int output = 0)
     {
         IReadOnlyList<Segment> existing = Project.SegmentsOn(key);
 
         // On the end of the same output as the run before it, which is where another length of
         // lights most often goes. Its start is not set here at all - Reflow works that out.
-        int output = existing.Count == 0 ? 1 : Math.Max(1, existing[^1].Output);
+        if (output <= 0)
+        {
+            output = existing.Count == 0 ? 1 : Math.Max(1, existing[^1].Output);
+        }
 
         // Named after its controller, because "Segment 1" on two controllers is two "Segment 1"s.
         var segment = new Segment
@@ -2103,7 +2170,12 @@ public sealed partial class MainViewModel : ViewModelBase
                     ? string.Join(", ", controller.Wiring[number - 1].Pins)
                     : string.Empty;
 
-                var group = new OutputGroup(number, pins);
+                var group = new OutputGroup(number, pins)
+                {
+                    ControllerKey = controller.Key,
+                    Owner = this,
+                    Bus = number - 1 < controller.Wiring.Count ? controller.Wiring[number - 1] : null,
+                };
 
                 foreach (Segment segment in Project.SegmentsOn(controller.Key, number))
                 {

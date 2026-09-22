@@ -262,6 +262,58 @@ public sealed class LedBalloonProject
         return true;
     }
 
+    /// <summary>
+    /// Puts a run on an output at a given place in the chain, moving it between outputs if that is
+    /// what is being asked.
+    /// <para>
+    /// Order lives in <see cref="Segments"/> itself, so placing a run means taking it out of that
+    /// list and putting it back somewhere else. The alternative - a position number stored on each
+    /// run - is a second copy of the same fact, and two copies of a fact drift.
+    /// </para>
+    /// </summary>
+    /// <param name="index">
+    /// Where it should land among the runs already on that output, counting from the controller.
+    /// Past the end simply means last.
+    /// </param>
+    public void PlaceOnOutput(Segment segment, int output, int index)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        string key = segment.ControllerKey ?? string.Empty;
+        output = Math.Max(1, output);
+
+        Segments.Remove(segment);
+        segment.Output = output;
+
+        IReadOnlyList<Segment> siblings = SegmentsOn(key, output);
+
+        // Before the run currently in that place; failing that, after the last run on this output;
+        // failing that, after the last run on the controller, so the flat list stays grouped.
+        int at = index < siblings.Count
+            ? Segments.IndexOf(siblings[index])
+            : siblings.Count > 0
+                ? Segments.IndexOf(siblings[^1]) + 1
+                : LastOn(key) + 1;
+
+        Segments.Insert(Math.Clamp(at, 0, Segments.Count), segment);
+        Reflow(key);
+    }
+
+    private int LastOn(string controllerKey)
+    {
+        int last = -1;
+
+        for (int i = 0; i < Segments.Count; i++)
+        {
+            if (KeyEquals(Segments[i].ControllerKey, controllerKey))
+            {
+                last = i;
+            }
+        }
+
+        return last;
+    }
+
     /// <summary>By reference: two segments can sit at the same start, and names are not unique.</summary>
     private static int IndexOf(IReadOnlyList<Segment> ordered, Segment segment)
     {
