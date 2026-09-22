@@ -650,11 +650,11 @@
                                   PlaceholderText="Which output"
                                   HorizontalAlignment="Stretch" />
 
-                        <!-- Reordering happens in the list, under the output heading, where you
-                             can see what it is moving among. So this says where it sits rather
-                             than pointing at controls this panel is covering up. -->
-                        <TextBlock Classes="hint" Margin="0,2,0,0" TextWrapping="Wrap"
-                                   Text="{Binding Owner.OrderNotice}" />
+                        <!-- Nothing here about the order. It is set in the list, under the output
+                             heading, where you can see what you are moving among; a line saying
+                             "number 2 of 2" told you a number you could not use and could not
+                             act on from this panel. -->
+
 
                         <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
 

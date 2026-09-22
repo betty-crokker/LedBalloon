@@ -387,42 +387,8 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>
-    /// Where this run comes in the chain on its output, as a sentence.
-    /// <para>
-    /// It used to say "use the arrows in the list to move it", which is advice you cannot follow
-    /// from here - this panel is covering the list those arrows are in. Saying where the run sits
-    /// is the part that was actually worth having.
-    /// </para>
-    /// </summary>
-    [ObservableProperty] private string? _orderNotice;
-
     private void RefreshOutputChoices(Segment? segment)
     {
-        if (segment is null)
-        {
-            OrderNotice = null;
-        }
-        else
-        {
-            IReadOnlyList<Segment> chain = Project.SegmentsOn(
-                segment.ControllerKey ?? string.Empty, Math.Max(1, segment.Output));
-
-            int at = 0;
-            for (int i = 0; i < chain.Count; i++)
-            {
-                if (ReferenceEquals(chain[i], segment))
-                {
-                    at = i + 1;
-                    break;
-                }
-            }
-
-            OrderNotice = chain.Count <= 1
-                ? "The only run on that output."
-                : $"Number {at} of {chain.Count} along that output, counting from the controller.";
-        }
-
         _suppressPush = true;
         try
         {
