@@ -387,8 +387,42 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Where this run comes in the chain on its output, as a sentence.
+    /// <para>
+    /// It used to say "use the arrows in the list to move it", which is advice you cannot follow
+    /// from here - this panel is covering the list those arrows are in. Saying where the run sits
+    /// is the part that was actually worth having.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private string? _orderNotice;
+
     private void RefreshOutputChoices(Segment? segment)
     {
+        if (segment is null)
+        {
+            OrderNotice = null;
+        }
+        else
+        {
+            IReadOnlyList<Segment> chain = Project.SegmentsOn(
+                segment.ControllerKey ?? string.Empty, Math.Max(1, segment.Output));
+
+            int at = 0;
+            for (int i = 0; i < chain.Count; i++)
+            {
+                if (ReferenceEquals(chain[i], segment))
+                {
+                    at = i + 1;
+                    break;
+                }
+            }
+
+            OrderNotice = chain.Count <= 1
+                ? "The only run on that output."
+                : $"Number {at} of {chain.Count} along that output, counting from the controller.";
+        }
+
         _suppressPush = true;
         try
         {
@@ -418,17 +452,17 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>Moves the segment being edited one place earlier along its output.</summary>
+    /// <summary>Moves a run one place earlier along its output.</summary>
     [RelayCommand]
-    private void MoveSegmentEarlier() => MoveEditingSegment(-1);
+    private void MoveSegmentEarlier(SegmentRow? row) => MoveEditingSegment(-1, row);
 
-    /// <summary>Moves the segment being edited one place later along its output.</summary>
+    /// <summary>Moves a run one place later along its output.</summary>
     [RelayCommand]
-    private void MoveSegmentLater() => MoveEditingSegment(1);
+    private void MoveSegmentLater(SegmentRow? row) => MoveEditingSegment(1, row);
 
-    private void MoveEditingSegment(int delta)
+    private void MoveEditingSegment(int delta, SegmentRow? row = null)
     {
-        if (EditingRow?.Segment is not { } segment)
+        if ((row ?? EditingRow)?.Segment is not { } segment)
         {
             return;
         }
@@ -665,11 +699,22 @@ public sealed partial class MainViewModel : ViewModelBase
             HasUnsavedChanges = false;
 
             // Saving the description and making the hardware match it are the same intention.
+            // The outputs go first: a segment cannot reach past the total, so lengthening the
+            // output has to happen before the segment that needs the room is pushed.
             string pushed = string.Empty;
             try
             {
+                int lengthened = await PushOutputLengthsAsync();
                 int count = await PushGeometryAsync();
+
                 pushed = count > 0 ? $" {count} controller(s) re-cut to match." : string.Empty;
+
+                if (lengthened > 0)
+                {
+                    // Not "lengthened": correcting a count downwards shortens the output, and the
+                    // message was written the day it only ever went one way.
+                    pushed += $" LED output lengths written to {lengthened} controller(s).";
+                }
             }
             catch (Exception ex)
             {
@@ -689,6 +734,60 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             IsBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Tells each controller how long its LED outputs really are, when the runs plugged into them
+    /// say something different.
+    /// <para>
+    /// This is the half that was missing. The layout knew the porch had eight LEDs and the
+    /// controller still thought that output had twenty-five on it, so WLED clamped the segment and
+    /// the last three stayed dark whatever anyone asked for.
+    /// </para>
+    /// </summary>
+    /// <returns>How many controllers were actually written to.</returns>
+    private async Task<int> PushOutputLengthsAsync()
+    {
+        int written = 0;
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            IReadOnlyList<(int Number, int Length)> wanted = Project.OutputLengths(key);
+
+            if (wanted.Count == 0)
+            {
+                continue;
+            }
+
+            // By position, and only as far as the layout has anything to say. An output with no
+            // runs on it keeps whatever length it was given.
+            var lengths = new int[wanted.Max(o => o.Number)];
+            foreach ((int number, int length) in wanted)
+            {
+                lengths[number - 1] = length;
+            }
+
+            if (await new WledConfigClient(device.Host).SetLedOutputLengthsAsync(lengths))
+            {
+                written++;
+            }
+        }
+
+        if (written > 0)
+        {
+            // The controller re-reads its wiring on a configuration write, so ours is now stale.
+            foreach (DeviceViewModel device in Devices)
+            {
+                await device.RefreshOutputsAsync();
+            }
+        }
+
+        return written;
     }
 
     /// <summary>Reads the newest layout off the controllers and adopts it.</summary>
@@ -2006,6 +2105,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 Owner = this,
                 Host = device.Host,
                 IsConnected = device.IsConnected,
+                Wiring = [.. device.Outputs],
             });
         }
 
@@ -2023,13 +2123,31 @@ public sealed partial class MainViewModel : ViewModelBase
 
         foreach (ControllerCoverage controller in Coverage)
         {
-            controller.Runs.Clear();
+            controller.Outputs.Clear();
 
-            foreach (Segment segment in Project.SegmentsOn(controller.Key))
+            // Every output the controller has, even an empty one: "output 2, nothing on it" is how
+            // you find out there is somewhere else to plug a run in.
+            int outputs = Math.Max(
+                controller.Wiring.Count,
+                Project.SegmentsOn(controller.Key).Select(s => Math.Max(1, s.Output)).DefaultIfEmpty(0).Max());
+
+            for (int number = 1; number <= outputs; number++)
             {
-                var row = new SegmentRow(segment, controller.Name, this);
-                controller.Runs.Add(row);
-                SegmentRows.Add(row);
+                string pins = number - 1 < controller.Wiring.Count
+                    ? string.Join(", ", controller.Wiring[number - 1].Pins)
+                    : string.Empty;
+
+                var group = new OutputGroup(number, pins);
+
+                foreach (Segment segment in Project.SegmentsOn(controller.Key, number))
+                {
+                    var row = new SegmentRow(segment, controller.Name, this);
+                    group.Runs.Add(row);
+                    SegmentRows.Add(row);
+                }
+
+                group.RunsChanged();
+                controller.Outputs.Add(group);
             }
 
             controller.RunsChanged();

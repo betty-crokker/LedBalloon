@@ -230,6 +230,57 @@ public sealed class WledConfigClient
         }
     }
 
+    /// <summary>
+    /// Makes the controller's LED outputs as long as the runs plugged into them.
+    /// <para>
+    /// The direction that took a while to see: a controller's configured length is not a limit the
+    /// runs have to fit inside, it is their sum. If you counted eight LEDs on the porch then that
+    /// output has eight more LEDs on it than the setting says, and the setting is what is stale.
+    /// WLED clamps any segment to the total, so until this is written the difference sits dark.
+    /// </para>
+    /// <para>
+    /// Writes nothing when the controller already agrees. Flash has a finite number of writes in
+    /// it, and saving a layout that changed nothing here is not a reason to spend one.
+    /// </para>
+    /// </summary>
+    /// <returns>True when the controller was actually written to.</returns>
+    public async Task<bool> SetLedOutputLengthsAsync(
+        IReadOnlyList<int> lengths,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(lengths);
+
+        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+            .ConfigureAwait(false);
+
+        if (JsonNode.Parse(current) is not JsonObject configuration)
+        {
+            throw new WledException("That controller returned a configuration that is not an object.");
+        }
+
+        if (!LedOutputWriter.Apply(configuration, lengths))
+        {
+            return false;
+        }
+
+        using var content = new StringContent(
+            configuration.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage response = await _http
+            .PostAsync("json/cfg", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"That controller would not take the LED output lengths ({(int)response.StatusCode}). " +
+                "A settings PIN will block this.");
+        }
+
+        return true;
+    }
+
     /// <summary>How many clock entries a controller keeps, before the two sun ones.</summary>
     public const int ClockSlots = 8;
 

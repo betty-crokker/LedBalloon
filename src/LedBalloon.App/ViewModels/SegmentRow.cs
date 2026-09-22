@@ -1,5 +1,6 @@
 ﻿using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using LedBalloon.Core;
 using LedBalloon.Core.Layout;
 
 namespace LedBalloon.App.ViewModels;
@@ -36,16 +37,17 @@ public sealed partial class SegmentRow : ObservableObject
     public Segment Segment { get; }
 
     /// <summary>
-    /// Where this segment sits on the wire, as one string.
+    /// How long this run is.
     /// <para>
-    /// One string rather than the numbers stitched together from several bound
-    /// <c>&lt;Run&gt;</c> inlines in the row template. Inlines are built once and do not re-bind, so
-    /// the moment a length was corrected - or a neighbour was pushed along by one - the row went
-    /// blank and stayed blank until the whole list was rebuilt.
+    /// It used to carry the LED range too - "5 LEDs, LED 20 to 25". Those numbers are worked out
+    /// now, and nobody types or checks them, so they were two thirds of the line saying nothing.
+    /// </para>
+    /// <para>
+    /// One bound string rather than several <c>&lt;Run&gt;</c> inlines. Inlines are built once and
+    /// do not re-bind, so the moment a length was corrected the row went blank and stayed blank.
     /// </para>
     /// </summary>
-    public string Placement =>
-        $"{Segment.Count} LEDs · LED {Segment.Start} to {Segment.StopExclusive}";
+    public string Placement => $"{Segment.Count} LEDs";
 
     /// <summary>
     /// The view model, reachable from the row itself.
@@ -86,6 +88,9 @@ public sealed partial class ControllerCoverage(
     /// <summary>Whether it is answering right now, for the dot beside the name.</summary>
     public bool IsConnected { get; init; }
 
+    /// <summary>Its LED outputs as the controller itself reports them, in its own order.</summary>
+    public IReadOnlyList<LedBus> Wiring { get; init; } = [];
+
     public int SegmentCount { get; } = SegmentCount;
 
     public int AssignedLeds { get; } = AssignedLeds;
@@ -96,29 +101,63 @@ public sealed partial class ControllerCoverage(
     public MainViewModel? Owner { get; init; }
 
     /// <summary>
-    /// The runs plugged into this controller.
+    /// The runs plugged into this controller, grouped by the output they are plugged into.
     /// <para>
-    /// Each controller keeps its own list so they can all be on screen at once. A single list
-    /// filtered to the selection would show the same runs under every controller, which is worse
-    /// than the heading it replaced.
+    /// Grouped because the order within an output is now something you set, and "move earlier" is
+    /// unusable when you cannot see what it is moving inside of. The group is also the only honest
+    /// place to show GPIO 16 against GPIO 2: it is a property of the output, not of the run.
     /// </para>
     /// </summary>
-    public ObservableCollection<SegmentRow> Runs { get; } = [];
+    public ObservableCollection<OutputGroup> Outputs { get; } = [];
 
-    public bool HasRuns => Runs.Count > 0;
+    public bool HasRuns => Outputs.Any(o => o.Runs.Count > 0);
 
-    /// <summary>Call after refilling <see cref="Runs"/>, which is a collection and says nothing itself.</summary>
+    /// <summary>Call after refilling <see cref="Outputs"/>, which says nothing itself.</summary>
     public void RunsChanged() => OnPropertyChanged(nameof(HasRuns));
 
-    public int UnassignedLeds => Math.Max(0, TotalLeds - AssignedLeds);
-
-    public bool NeedsAttention => SegmentCount == 0 || UnassignedLeds > 0;
-
-    public string Summary => SegmentCount switch
+    /// <summary>
+    /// What is plugged in. No longer "all 356 LEDs described": the controller's LED count is the
+    /// sum of the runs now, and saving writes it, so that sentence had become a tautology dressed
+    /// up as reassurance - it could never say anything but "all".
+    /// </summary>
+    public string Summary
     {
-        0 => $"{TotalLeds} LEDs, none described yet",
-        _ when UnassignedLeds > 0 =>
-            $"{SegmentCount} segment(s) · {UnassignedLeds} of {TotalLeds} LEDs not described",
-        _ => $"{SegmentCount} segment(s) · all {TotalLeds} LEDs described",
-    };
+        get
+        {
+            int leds = Outputs.Sum(o => o.Length);
+            int runs = Outputs.Sum(o => o.Runs.Count);
+
+            return runs == 0
+                ? "Nothing plugged in yet"
+                : $"{runs} segment(s) · {leds} LEDs · {Outputs.Count} output(s)";
+        }
+    }
+}
+
+/// <summary>One of a controller's LED outputs, with the runs chained off it in order.</summary>
+public sealed partial class OutputGroup(int Number, string Pins) : ObservableObject
+{
+    public int Number { get; } = Number;
+
+    /// <summary>The GPIO pins, as the controller reports them. Empty when it has not said.</summary>
+    public string Pins { get; } = Pins;
+
+    public ObservableCollection<SegmentRow> Runs { get; } = [];
+
+    public string Header => Pins.Length == 0
+        ? $"Output {Number}"
+        : $"Output {Number}  ·  GPIO {Pins}";
+
+    /// <summary>How long this output is, which is the runs plugged into it added up.</summary>
+    public int Length => Runs.Sum(r => r.Segment.Count);
+
+    public string Summary => Runs.Count == 0
+        ? "nothing on it"
+        : $"{Length} LEDs";
+
+    public void RunsChanged()
+    {
+        OnPropertyChanged(nameof(Length));
+        OnPropertyChanged(nameof(Summary));
+    }
 }
