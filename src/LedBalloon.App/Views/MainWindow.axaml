@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -49,6 +49,27 @@
       <Setter Property="HorizontalAlignment" Value="Stretch" />
       <Setter Property="HorizontalContentAlignment" Value="Center" />
     </Style>
+    <!-- A run in the list marks itself as picked and does nothing else. It used to flash the
+         theme's pressed shading, which read as a button that had done something and then thought
+         better of it - when all it does is decide what the photo highlights and what Draw
+         selected segment will trace. The pencil beside it is the thing that acts. -->
+    <Style Selector="Button.row">
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="6,3" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Cursor" Value="Arrow" />
+    </Style>
+    <Style Selector="Button.row /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.row:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="Button.row:pressed /template/ ContentPresenter#PART_ContentPresenter">
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+
     <Style Selector="Border.card">
       <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}" />
       <Setter Property="BorderThickness" Value="1" />
@@ -419,7 +440,7 @@
                                       <TextBlock Text="&#x270E;" />
                                       <Button.Flyout>
                                         <Flyout Placement="RightEdgeAlignedTop">
-                                          <ScrollViewer MaxHeight="520">
+                                          <ScrollViewer MaxHeight="380">
                                             <StackPanel Spacing="6" Width="260" Margin="0,0,6,0">
 
                                               <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
@@ -478,8 +499,9 @@
                                                         PlaceholderText="Not assigned"
                                                         HorizontalAlignment="Stretch" />
 
-                                              <Button Classes="block" Content="Remove this run"
+                                              <Button Classes="block" Content="Remove"
                                                       Command="{Binding Owner.DeleteSegmentCommand}"
+                                                      CommandParameter="{Binding}"
                                                       Margin="0,4,0,0" />
                                             </StackPanel>
                                           </ScrollViewer>
@@ -487,8 +509,7 @@
                                       </Button.Flyout>
                                     </Button>
 
-                                    <Button Padding="6,3" HorizontalAlignment="Stretch"
-                                            HorizontalContentAlignment="Left" BorderThickness="0"
+                                    <Button Classes="row"
                                             Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}"
                                             Command="{Binding Owner.PickSegmentRowCommand}"
                                             CommandParameter="{Binding}">
