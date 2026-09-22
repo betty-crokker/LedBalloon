@@ -92,20 +92,50 @@ public static class ProjectSync
             return new ProjectLoadResult(null, null, notes);
         }
 
-        // Each controller holds only its own runs, so the house is what they add up to rather than
-        // whichever copy happens to be newest.
-        LedBalloonProject house = LedBalloonProject.Assemble(found.Select(f => f.Project));
-
-        foreach ((SyncTarget target, LedBalloonProject slice) in found)
+        // Schema 1 kept a slice per controller, so the house was what they added up to. Union them
+        // once; the next save writes the mirrored shape everywhere and this never runs again.
+        if (found.Any(f => f.Project.Schema < LedBalloonProject.MirroredSchema))
         {
-            if (slice.Segments.Count == 0)
+            LedBalloonProject assembled = LedBalloonProject.Assemble(found.Select(f => f.Project));
+
+            notes.Add(
+                "Brought together the separate copies each controller used to keep. Saving stores " +
+                "the whole house on every controller from now on, so any one of them is enough to " +
+                "rebuild it.");
+
+            return new ProjectLoadResult(
+                assembled, string.Join(" and ", found.Select(f => f.Target.Name)), notes);
+        }
+
+        // Mirrored: every controller holds the same document, so the newest is the whole answer.
+        // Unioning them would be wrong - a box that was offline while a run was deleted still holds
+        // that run, and adding it back in would resurrect it.
+        (SyncTarget Target, LedBalloonProject Project) newest = found
+            .OrderByDescending(f => f.Project.Revision)
+            .First();
+
+        string fingerprint = newest.Project.Fingerprint();
+
+        foreach ((SyncTarget target, LedBalloonProject copy) in found)
+        {
+            if (copy.Revision < newest.Project.Revision)
             {
-                notes.Add($"{target.Name} has no runs described on it yet.");
+                notes.Add(
+                    $"{target.Name} holds revision {copy.Revision}, behind {newest.Target.Name}'s " +
+                    $"{newest.Project.Revision}. It will be brought up to date on the next save.");
+            }
+            else if (copy.Fingerprint() != fingerprint)
+            {
+                // Same revision, different content. Nothing can order these, so say so rather than
+                // pick one: it means two copies of LedBalloon edited while unable to see each other.
+                notes.Add(
+                    $"{target.Name} and {newest.Target.Name} both hold revision {copy.Revision}, but " +
+                    "they do not agree. Two copies of LedBalloon have edited the layout separately. " +
+                    $"Showing {newest.Target.Name}'s; saving will overwrite the other.");
             }
         }
 
-        string from = string.Join(" and ", found.Select(f => f.Target.Name));
-        return new ProjectLoadResult(house, from, notes);
+        return new ProjectLoadResult(newest.Project, newest.Target.Name, notes);
     }
 
     /// <summary>
@@ -187,9 +217,10 @@ public static class ProjectSync
             {
                 using var store = new DeviceProjectStore(target.Host);
 
-                // Only this controller's own runs, name and looks. It has no business holding
-                // another box's.
-                await store.SaveAsync(project.SliceFor(target.Key), cancellationToken).ConfigureAwait(false);
+                // The whole house, the same bytes, to every controller. A few kilobytes each buys
+                // the property that losing a box costs nothing but the box - including the traced
+                // lines on the photo, which are the slowest thing here to redo.
+                await store.SaveAsync(project, cancellationToken).ConfigureAwait(false);
 
                 if (storePhoto)
                 {
