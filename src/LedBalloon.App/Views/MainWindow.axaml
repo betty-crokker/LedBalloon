@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -340,7 +340,7 @@
             <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,10">
               <TextBlock Classes="panelTitle" Text="The house" />
               <TextBlock Classes="hint"
-                         Text="Every controller, with the runs plugged into it. Click one to work on it; the pencils are where things get changed." />
+                         Text="Every controller, with the runs plugged into it. The pencils are where things get changed." />
             </StackPanel>
 
             <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
@@ -366,8 +366,7 @@
               <ItemsControl ItemsSource="{Binding Coverage}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ControllerCoverage">
-                    <Border Classes="card" Margin="0,0,0,8" Padding="8"
-                            Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}">
+                    <Border Classes="card" Margin="0,0,0,8" Padding="8">
                       <StackPanel Spacing="6">
 
                         <!-- The controller itself. The whole row picks it; the pencil is its own. -->
@@ -387,25 +386,21 @@
                                           Command="{Binding Owner.ImportFromControllerCommand}" />
                                   <Button Classes="block" Content="Add a run by hand"
                                           Command="{Binding Owner.AddSegmentCommand}" />
-                                  <Button Classes="block" Content="Re-lay its runs end to end"
-                                          Command="{Binding Owner.RepackSegmentsCommand}" />
                                   <TextBlock Classes="hint"
-                                             Text="Re-laying closes gaps and overlaps by pushing every run up against the one before it." />
+                                             Text="Re-laying pushes this controller's runs up against each other, closing gaps and overlaps. It leaves the other controllers alone." />
+                                  <Button Classes="block" Content="Re-lay its runs end to end"
+                                          Command="{Binding Owner.RepackControllerCommand}"
+                                          CommandParameter="{Binding}" />
+
                                 </StackPanel>
                               </Flyout>
                             </Button.Flyout>
                           </Button>
 
-                          <Button Padding="4,2" HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Left" Background="Transparent"
-                                  BorderThickness="0"
-                                  Command="{Binding Owner.PickControllerCommand}"
-                                  CommandParameter="{Binding}">
-                            <StackPanel Spacing="2">
-                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                              <TextBlock Classes="hint" Text="{Binding Summary}" />
-                            </StackPanel>
-                          </Button>
+                          <StackPanel Spacing="2" Margin="2,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                            <TextBlock Classes="hint" Text="{Binding Summary}" />
+                          </StackPanel>
                         </DockPanel>
 
                         <!-- The runs on it, nested, and only for the one that is open. -->
