@@ -291,13 +291,16 @@ public sealed class LedBalloonProject
                 }
 
                 // Not a number this app made up, and not the end of the last segment either: it is
-                // what the controller is wired and configured for, added up across its outputs.
-                // LEDs past it are not on any output, so they cannot light whatever we ask.
+                // the lengths set against the controller's LED outputs, added up. WLED clamps any
+                // segment to it - ask for a stop past the total and it hands back the total - so
+                // those LEDs stay dark until the output itself is made longer. Which is a setting,
+                // not a wall, so the message says where it is rather than just complaining.
                 if (ledCount is { } max && segment.StopExclusive > max)
                 {
                     problems.Add(
                         $"{label}: '{segment.Name}' ends at LED {segment.StopExclusive} but the controller drives " +
-                        $"{max}, so its last {segment.StopExclusive - max} would stay dark.");
+                        $"{max}, so its last {segment.StopExclusive - max} stay dark until an output is made " +
+                        "longer in the controller's own LED settings.");
                 }
 
                 if (i + 1 < ordered.Count)

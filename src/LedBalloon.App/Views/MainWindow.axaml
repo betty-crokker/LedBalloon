@@ -590,90 +590,102 @@
               </ScrollViewer>
             </DockPanel>
 
-            <!-- ============ one segment, in place of the list ============ -->
-            <DockPanel IsVisible="{Binding IsEditingSegment}">
+            <!-- ============ one segment, in place of the list ============
+                 A templated ContentControl rather than a panel that is merely hidden. Hidden is
+                 still built: every control in here went on resolving EditingRow.Segment.Something
+                 against a null EditingRow whenever the list was showing, and a Slider's Value
+                 cannot be null, so closing the editor filled the log with binding errors. With no
+                 content there are no controls and nothing to resolve. -->
+            <ContentControl Content="{Binding EditingRow}">
+              <ContentControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:SegmentRow">
+                  <DockPanel>
 
-              <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
-                <Button HorizontalAlignment="Left" Padding="8,3"
-                        Command="{Binding CloseSegmentEditorCommand}">
-                  <TextBlock Text="&#x2190;  All controllers" />
-                </Button>
-                <TextBlock Classes="panelTitle" TextTrimming="CharacterEllipsis"
-                           Text="{Binding EditingRow.Segment.Name}" />
-                <TextBlock Classes="hint" Text="{Binding EditingRow.ControllerName, StringFormat='On {0}'}" />
-              </StackPanel>
-
-              <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-                <StackPanel Spacing="6" Margin="0,0,6,0">
-
-                  <TextBlock Classes="hint" Text="Name" />
-                  <TextBox Text="{Binding EditingRow.Segment.Name}" />
-
-                  <Grid ColumnDefinitions="*,8,*">
-                    <StackPanel Grid.Column="0" Spacing="4">
-                      <TextBlock Classes="hint" Text="LEDs" />
-                      <TextBox Text="{Binding EditingRow.Segment.Count}" />
+                    <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="0,0,0,10">
+                      <Button HorizontalAlignment="Left" Padding="8,3"
+                              Command="{Binding Owner.CloseSegmentEditorCommand}">
+                        <TextBlock Text="&#x2190;  All controllers" />
+                      </Button>
+                      <TextBlock Classes="panelTitle" TextTrimming="CharacterEllipsis"
+                                 Text="{Binding Segment.Name}" />
+                      <TextBlock Classes="hint" Text="{Binding ControllerName, StringFormat='On {0}'}" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Spacing="4">
-                      <TextBlock Classes="hint" Text="Starts at" />
-                      <TextBox Text="{Binding EditingRow.Segment.Start}" />
-                    </StackPanel>
-                  </Grid>
 
-                  <!-- Shortening a run leaves LEDs stranded behind it. Usually you want the rest
-                       pulled back; not always, which is why this asks instead of just doing it.
-                       Growing a run needs no offer - it would overlap, so the rest are already
-                       pushed out of the way by the time you get here. -->
-                  <Border Classes="card" Background="#33C9821B" Padding="8"
-                          IsVisible="{Binding HasSpareOffer}">
-                    <StackPanel Spacing="6">
-                      <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SpareNotice}" />
-                      <Button Classes="block" FontSize="12" Padding="6,3"
-                              Content="Close the gap"
-                              Command="{Binding CloseSpareCommand}" />
-                    </StackPanel>
-                  </Border>
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                      <StackPanel Spacing="6" Margin="0,0,6,0">
 
-                  <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
+                        <TextBlock Classes="hint" Text="Name" />
+                        <TextBox Text="{Binding Segment.Name}" />
 
-                  <!-- Here rather than over the photo: tracing needs the photo visible and the
-                       segment already picked, and both are true whenever this panel is open. -->
-                  <Button Classes="block" Content="Trace it on the photo"
-                          Command="{Binding StartDrawingSegmentCommand}"
-                          IsEnabled="{Binding !IsDrawingSegment}" />
-                  <Button Classes="block" Content="Done tracing"
-                          Command="{Binding FinishDrawingSegmentCommand}"
-                          IsEnabled="{Binding IsDrawingSegment}" />
-                  <Button Classes="block" Content="Flip which end is LED 1"
-                          Command="{Binding FlipSegmentDirectionCommand}" />
+                        <Grid ColumnDefinitions="*,8,*">
+                          <StackPanel Grid.Column="0" Spacing="4">
+                            <TextBlock Classes="hint" Text="LEDs" />
+                            <TextBox Text="{Binding Segment.Count}" />
+                          </StackPanel>
+                          <StackPanel Grid.Column="2" Spacing="4">
+                            <TextBlock Classes="hint" Text="Starts at" />
+                            <TextBox Text="{Binding Segment.Start}" />
+                          </StackPanel>
+                        </Grid>
 
-                  <TextBlock Classes="hint" Foreground="#C9821B"
-                             IsVisible="{Binding !EditingRow.Segment.HasGeometry}"
-                             Text="No line on the photo yet, so it cannot be shown or clicked there." />
+                        <!-- Shortening a run leaves LEDs stranded behind it. Usually you want the
+                             rest pulled back; not always, which is why this asks instead of just
+                             doing it. Growing a run needs no offer - it would overlap, so the rest
+                             are already pushed out of the way by the time you get here. -->
+                        <Border Classes="card" Background="#33C9821B" Padding="8"
+                                IsVisible="{Binding Owner.HasSpareOffer}">
+                          <StackPanel Spacing="6">
+                            <TextBlock Classes="hint" TextWrapping="Wrap"
+                                       Text="{Binding Owner.SpareNotice}" />
+                            <Button Classes="block" FontSize="12" Padding="6,3"
+                                    Content="Close the gap"
+                                    Command="{Binding Owner.CloseSpareCommand}" />
+                          </StackPanel>
+                        </Border>
 
-                  <TextBlock Classes="heading" Text="What kind of light" Margin="0,10,0,4" />
+                        <TextBlock Classes="heading" Text="On the photo" Margin="0,10,0,4" />
 
-                  <ComboBox ItemsSource="{Binding FixtureStyles}"
-                            SelectedItem="{Binding FixtureChoice}"
-                            PlaceholderText="Pick a fixture"
-                            HorizontalAlignment="Stretch" />
+                        <!-- Here rather than over the photo: tracing needs the photo visible and
+                             the segment already picked, and both are true whenever this is open. -->
+                        <Button Classes="block" Content="Trace it on the photo"
+                                Command="{Binding Owner.StartDrawingSegmentCommand}"
+                                IsEnabled="{Binding !Owner.IsDrawingSegment}" />
+                        <Button Classes="block" Content="Done tracing"
+                                Command="{Binding Owner.FinishDrawingSegmentCommand}"
+                                IsEnabled="{Binding Owner.IsDrawingSegment}" />
+                        <Button Classes="block" Content="Flip which end is LED 1"
+                                Command="{Binding Owner.FlipSegmentDirectionCommand}" />
 
-                  <!-- "Aim the other way" used to live here. It was a second way of saying
-                       "uplight": a downlight and an uplight aim at exactly opposite perpendiculars
-                       and draw identically otherwise, so ticking it on one always landed on the
-                       other. Picking the fixture says it once. -->
-                  <StackPanel Spacing="4" IsVisible="{Binding EditingRow.Segment.Fixture.IsAimed}">
-                    <TextBlock Classes="hint" Margin="0,6,0,0" Text="Beam spread" />
-                    <Slider Minimum="10" Maximum="160"
-                            Value="{Binding EditingRow.Segment.Fixture.BeamAngleDegrees}" />
-                    <TextBlock Classes="hint" Text="How far it reaches" />
-                    <Slider Minimum="0.02" Maximum="0.6"
-                            Value="{Binding EditingRow.Segment.Fixture.ThrowLength}" />
-                  </StackPanel>
+                        <TextBlock Classes="hint" Foreground="#C9821B"
+                                   IsVisible="{Binding !Segment.HasGeometry}"
+                                   Text="No line on the photo yet, so it cannot be shown or clicked there." />
 
-                </StackPanel>
-              </ScrollViewer>
-            </DockPanel>
+                        <TextBlock Classes="heading" Text="What kind of light" Margin="0,10,0,4" />
+
+                        <ComboBox ItemsSource="{Binding Owner.FixtureStyles}"
+                                  SelectedItem="{Binding Owner.FixtureChoice}"
+                                  PlaceholderText="Pick a fixture"
+                                  HorizontalAlignment="Stretch" />
+
+                        <!-- "Aim the other way" used to live here. It was a second way of saying
+                             "uplight": a downlight and an uplight aim at exactly opposite
+                             perpendiculars and draw identically otherwise, so ticking it on one
+                             always landed on the other. Picking the fixture says it once. -->
+                        <StackPanel Spacing="4" IsVisible="{Binding Segment.Fixture.IsAimed}">
+                          <TextBlock Classes="hint" Margin="0,6,0,0" Text="Beam spread" />
+                          <Slider Minimum="10" Maximum="160"
+                                  Value="{Binding Segment.Fixture.BeamAngleDegrees}" />
+                          <TextBlock Classes="hint" Text="How far it reaches" />
+                          <Slider Minimum="0.02" Maximum="0.6"
+                                  Value="{Binding Segment.Fixture.ThrowLength}" />
+                        </StackPanel>
+
+                      </StackPanel>
+                    </ScrollViewer>
+                  </DockPanel>
+                </DataTemplate>
+              </ContentControl.ContentTemplate>
+            </ContentControl>
 
           </Grid>
         </Border>
