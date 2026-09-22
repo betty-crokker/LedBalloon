@@ -398,8 +398,10 @@
             <!-- ============ the house: controllers, each with its segments ============ -->
             <DockPanel IsVisible="{Binding !IsEditingSegment}">
 
+              <!-- Not "The house": that is the name of a tab a few inches to the right, and two
+                   different things under one name is worse than a dull name. -->
               <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,10">
-                <TextBlock Classes="panelTitle" Text="The house" />
+                <TextBlock Classes="panelTitle" Text="Controllers" />
               </StackPanel>
 
               <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
@@ -557,7 +559,7 @@
                      Everything about a controller now hangs off that controller's own card. -->
                 <Separator Margin="0,6,0,10" />
 
-                <TextBlock Classes="heading" Text="Finding controllers" />
+                <TextBlock Classes="heading" Text="Find more" />
                 <TextBlock Classes="hint" Margin="0,3,0,8"
                            Text="Found over mDNS and filed by MAC address, so one that comes back on a different IP is still recognized." />
 
