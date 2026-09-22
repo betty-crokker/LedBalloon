@@ -154,6 +154,113 @@ public sealed class LedBalloonProject
     }
 
     /// <summary>
+    /// Pushes the segments after <paramref name="grown"/> down the wire until nothing sits on top
+    /// of it, and returns the ones that had to move.
+    /// <para>
+    /// Two segments claiming the same LED is not a matter of taste: part of the house lights twice
+    /// and part of it not at all. So correcting a length to the truth - the run really is 22 LEDs,
+    /// not the 20 you counted - moves its neighbours rather than leaving a wreck behind.
+    /// </para>
+    /// <para>
+    /// It cascades only as far as the collision actually reaches. A segment with room in front of
+    /// it absorbs the push and everything past it stays where it was put, so deliberate gaps
+    /// further down the wire survive.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<Segment> MakeRoomAfter(Segment grown)
+    {
+        ArgumentNullException.ThrowIfNull(grown);
+
+        IReadOnlyList<Segment> ordered = SegmentsOn(grown.ControllerKey ?? string.Empty);
+        int index = IndexOf(ordered, grown);
+
+        if (index < 0)
+        {
+            return [];
+        }
+
+        var moved = new List<Segment>();
+        int cursor = grown.StopExclusive;
+
+        for (int i = index + 1; i < ordered.Count; i++)
+        {
+            Segment next = ordered[i];
+
+            if (next.Start >= cursor)
+            {
+                break;
+            }
+
+            next.Start = cursor;
+            moved.Add(next);
+            cursor = next.StopExclusive;
+        }
+
+        return moved;
+    }
+
+    /// <summary>
+    /// Unused LEDs between this segment and the next one on the same controller, or 0 when it is
+    /// the last. LEDs past the last segment are not a gap - they are simply not described yet.
+    /// </summary>
+    public int SpareAfter(Segment segment)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        IReadOnlyList<Segment> ordered = SegmentsOn(segment.ControllerKey ?? string.Empty);
+        int index = IndexOf(ordered, segment);
+
+        return index < 0 || index + 1 >= ordered.Count
+            ? 0
+            : Math.Max(0, ordered[index + 1].Start - segment.StopExclusive);
+    }
+
+    /// <summary>
+    /// Pulls every segment after this one back by the unused LEDs sitting right behind it, keeping
+    /// their spacing among themselves, and returns the ones that moved.
+    /// <para>
+    /// Unlike an overlap, a gap lights correctly - it only wastes LEDs - so nothing calls this on
+    /// its own. It is what the offer in the segment editor does when it is taken.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<Segment> CloseSpareAfter(Segment segment)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        int spare = SpareAfter(segment);
+        if (spare <= 0)
+        {
+            return [];
+        }
+
+        IReadOnlyList<Segment> ordered = SegmentsOn(segment.ControllerKey ?? string.Empty);
+        int index = IndexOf(ordered, segment);
+        var moved = new List<Segment>();
+
+        for (int i = index + 1; i < ordered.Count; i++)
+        {
+            ordered[i].Start -= spare;
+            moved.Add(ordered[i]);
+        }
+
+        return moved;
+    }
+
+    /// <summary>By reference: two segments can sit at the same start, and names are not unique.</summary>
+    private static int IndexOf(IReadOnlyList<Segment> ordered, Segment segment)
+    {
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            if (ReferenceEquals(ordered[i], segment))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /// <summary>
     /// Reports overlaps, gaps and runs that fall outside a controller's LED count. Checked per
     /// controller, since each has its own address space.
     /// </summary>
@@ -183,10 +290,14 @@ public sealed class LedBalloonProject
                     problems.Add($"{label}: '{segment.Name}' has no LEDs.");
                 }
 
+                // Not a number this app made up, and not the end of the last segment either: it is
+                // what the controller is wired and configured for, added up across its outputs.
+                // LEDs past it are not on any output, so they cannot light whatever we ask.
                 if (ledCount is { } max && segment.StopExclusive > max)
                 {
                     problems.Add(
-                        $"{label}: '{segment.Name}' ends at LED {segment.StopExclusive} but the controller drives {max}.");
+                        $"{label}: '{segment.Name}' ends at LED {segment.StopExclusive} but the controller drives " +
+                        $"{max}, so its last {segment.StopExclusive - max} would stay dark.");
                 }
 
                 if (i + 1 < ordered.Count)
