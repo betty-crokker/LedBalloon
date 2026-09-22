@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media;
@@ -14,6 +14,15 @@ public static class Converters
             : new SolidColorBrush(Color.FromRgb(110, 114, 124)));
 
     /// <summary>True when a collection is empty, for showing an empty-state message in its place.</summary>
+    /// <summary>
+    /// Marks the run being edited. The rows are buttons rather than list items, so nothing
+    /// highlights them for free.
+    /// </summary>
+    public static readonly IValueConverter RowHighlight =
+        new FuncValueConverter<bool, IBrush>(selected => selected
+            ? new SolidColorBrush(Color.FromArgb(52, 47, 123, 214))
+            : Brushes.Transparent);
+
     public static readonly IValueConverter IsEmpty = new FuncValueConverter<int, bool>(count => count == 0);
 
     /// <summary>True when a collection has anything in it.</summary>

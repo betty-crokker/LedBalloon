@@ -325,171 +325,205 @@
           </DockPanel>
         </Border>
 
-        <Border DockPanel.Dock="Left" Width="320" Padding="14"
+        <Border DockPanel.Dock="Left" Width="330" Padding="14"
                 Background="{DynamicResource PanelBackground}"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,1,0">
-          <!-- Picking a controller and a run stays put at the top, the two things you always want
-               stay pinned at the bottom, and only the editor scrolls. Previously the whole column
-               scrolled as one and Save ended up below the fold. -->
+          <!-- One tree rather than three stacked lists. Which controller a run belongs to used to
+               be carried by a heading that changed when the selection did, which meant reading two
+               places at once to answer "is this run on North?". Now the runs sit inside their
+               controller and the question does not arise.
+
+               Editing is behind the pencils. Having the controller's buttons and a run's fields on
+               screen together invited changing one while looking at the other. -->
           <DockPanel>
-            <StackPanel DockPanel.Dock="Top" Spacing="0">
 
-              <TextBlock Classes="panelTitle" Text="Controller" Margin="0,0,0,6" />
-              <TextBlock Classes="hint" Margin="0,0,0,6"
-                         Text="Pick one. The runs below are the ones plugged into it." />
+            <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,10">
+              <TextBlock Classes="panelTitle" Text="The house" />
+              <TextBlock Classes="hint"
+                         Text="Every controller, with the runs plugged into it. Click one to work on it; the pencils are where things get changed." />
+            </StackPanel>
 
-              <!-- A list, not a heading: choosing the controller is what filters everything under it. -->
-              <ListBox ItemsSource="{Binding Coverage}"
-                       SelectedItem="{Binding SelectedCoverage}"
-                       Background="Transparent"
-                       Margin="0,0,0,12">
-                <ListBox.ItemTemplate>
+            <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
+                 reported as it happens rather than behind a button elsewhere. -->
+            <Border DockPanel.Dock="Bottom" Classes="card" Background="#33C9821B" Margin="0,10,0,0"
+                    IsVisible="{Binding HasLayoutWarnings}">
+              <StackPanel Spacing="4">
+                <TextBlock Text="Needs re-laying" FontWeight="SemiBold" FontSize="12" />
+                <ItemsControl ItemsSource="{Binding LayoutWarnings}">
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <TextBlock Classes="hint" Margin="0,1" Text="{Binding}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Classes="block" FontSize="12" Padding="6,3" Margin="0,4,0,0"
+                        Content="Re-lay end to end"
+                        Command="{Binding RepackSegmentsCommand}" />
+              </StackPanel>
+            </Border>
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding Coverage}">
+                <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ControllerCoverage">
-                    <StackPanel Margin="0,3" Spacing="2">
-                      <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                      <TextBlock Classes="hint" Text="{Binding Summary}" />
-                    </StackPanel>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
-
-              <TextBlock Classes="panelTitle" Text="{Binding SegmentsHeading}" Margin="0,0,0,6"
-                         TextTrimming="CharacterEllipsis" />
-
-              <Button Classes="block" Margin="0,0,0,8" FontSize="12" Padding="6,3"
-                      Content="Bring in its outputs as segments"
-                      Command="{Binding ImportFromControllerCommand}" />
-
-              <ListBox ItemsSource="{Binding SegmentRows}"
-                       SelectedItem="{Binding SelectedRow}"
-                       Background="Transparent"
-                       MaxHeight="190"
-                       IsVisible="{Binding HasVisibleSegments}">
-                <ListBox.ItemTemplate>
-                  <DataTemplate x:DataType="vm:SegmentRow">
-                    <StackPanel Margin="0,4" Spacing="2">
-                      <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
-                                 TextTrimming="CharacterEllipsis" />
-                      <TextBlock Classes="hint">
-                        <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs  ·  LED " /><Run Text="{Binding Segment.Start}" /><Run Text=" to " /><Run Text="{Binding Segment.StopExclusive}" />
-                      </TextBlock>
-                      <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
-                                 IsVisible="{Binding !Segment.HasGeometry}"
-                                 Text="not traced on the photo yet" />
-                    </StackPanel>
-                  </DataTemplate>
-                </ListBox.ItemTemplate>
-              </ListBox>
-
-              <TextBlock Classes="hint" Margin="0,6,0,0"
-                         IsVisible="{Binding !HasVisibleSegments}"
-                         Text="Nothing described on this controller yet. Bring in its outputs above, or add a run by hand below." />
-            </StackPanel>
-
-            <StackPanel DockPanel.Dock="Bottom" Spacing="6" Margin="0,10,0,0">
-              <Button Classes="block" Content="Add a run to this controller"
-                      Command="{Binding AddSegmentCommand}" />
-              <Button Classes="block" Content="Re-lay end to end"
-                      Command="{Binding RepackSegmentsCommand}" />
-            </StackPanel>
-
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" Margin="0,10,0,0">
-              <StackPanel Spacing="8">
-
-                <!-- Overlaps and gaps, live. Changing a length is what creates them, so they are
-                     reported here as it is typed rather than behind a button elsewhere. -->
-                <Border Classes="card" Background="#33C9821B"
-                        IsVisible="{Binding HasLayoutWarnings}">
-                  <StackPanel Spacing="4">
-                    <TextBlock Text="Needs re-laying" FontWeight="SemiBold" FontSize="12" />
-                    <ItemsControl ItemsSource="{Binding LayoutWarnings}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                          <TextBlock Classes="hint" Margin="0,1" Text="{Binding}" />
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <Button Classes="block" FontSize="12" Padding="6,3" Margin="0,4,0,0"
-                            Content="Re-lay end to end"
-                            Command="{Binding RepackSegmentsCommand}" />
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="card"
-                        IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNull}}">
-                  <TextBlock Classes="hint"
-                             Text="Pick a run in the list above to rename it, change its length, or remove it." />
-                </Border>
-
-              <!-- The editor is a template over the selected run, not a panel that hides itself.
-                   IsVisible="False" still binds its children, so every field here evaluated
-                   against a null segment whenever nothing was selected and logged a binding
-                   error. With a template, no selection means nothing is built at all. -->
-              <ContentControl Content="{Binding SelectedSegment}">
-                <ContentControl.ContentTemplate>
-                  <DataTemplate DataType="layout:Segment">
-                    <Border Classes="card">
+                    <Border Classes="card" Margin="0,0,0,8" Padding="8"
+                            Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}">
                       <StackPanel Spacing="6">
-                        <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis">
-                          <Run Text="Editing:" /><Run Text=" " /><Run Text="{Binding Name}" />
-                        </TextBlock>
 
-                        <TextBlock Classes="hint" Text="Name" />
-                        <TextBox Text="{Binding Name}" />
+                        <!-- The controller itself. The whole row picks it; the pencil is its own. -->
+                        <DockPanel>
+                          <Button DockPanel.Dock="Right" Padding="7,3" FontSize="13"
+                                  VerticalAlignment="Top" ToolTip.Tip="Change this controller"
+                                  Command="{Binding Owner.PickControllerCommand}"
+                                  CommandParameter="{Binding}">
+                            <TextBlock Text="&#x270E;" />
+                            <Button.Flyout>
+                              <Flyout Placement="RightEdgeAlignedTop">
+                                <StackPanel Spacing="6" Width="240">
+                                  <TextBlock FontWeight="SemiBold" Text="{Binding Name}" />
+                                  <TextBlock Classes="hint"
+                                             Text="Bringing in its outputs reads the controller's own wiring and makes a run for each one." />
+                                  <Button Classes="block" Content="Bring in its outputs as runs"
+                                          Command="{Binding Owner.ImportFromControllerCommand}" />
+                                  <Button Classes="block" Content="Add a run by hand"
+                                          Command="{Binding Owner.AddSegmentCommand}" />
+                                  <Button Classes="block" Content="Re-lay its runs end to end"
+                                          Command="{Binding Owner.RepackSegmentsCommand}" />
+                                  <TextBlock Classes="hint"
+                                             Text="Re-laying closes gaps and overlaps by pushing every run up against the one before it." />
+                                </StackPanel>
+                              </Flyout>
+                            </Button.Flyout>
+                          </Button>
 
-                        <Grid ColumnDefinitions="*,8,*">
-                          <StackPanel Grid.Column="0" Spacing="4">
-                            <TextBlock Classes="hint" Text="LEDs" />
-                            <TextBox Text="{Binding Count}" />
+                          <Button Padding="4,2" HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Left" Background="Transparent"
+                                  BorderThickness="0"
+                                  Command="{Binding Owner.PickControllerCommand}"
+                                  CommandParameter="{Binding}">
+                            <StackPanel Spacing="2">
+                              <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                              <TextBlock Classes="hint" Text="{Binding Summary}" />
+                            </StackPanel>
+                          </Button>
+                        </DockPanel>
+
+                        <!-- The runs on it, nested, and only for the one that is open. -->
+                        <Border Margin="6,0,0,0" Padding="10,2,0,2"
+                                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="2,0,0,0">
+                          <StackPanel Spacing="2">
+
+                            <ItemsControl ItemsSource="{Binding Runs}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SegmentRow">
+                                  <DockPanel Margin="0,2">
+                                    <Button DockPanel.Dock="Right" Padding="7,3" FontSize="13"
+                                            VerticalAlignment="Top" ToolTip.Tip="Change this run"
+                                            Command="{Binding Owner.PickSegmentRowCommand}"
+                                            CommandParameter="{Binding}">
+                                      <TextBlock Text="&#x270E;" />
+                                      <Button.Flyout>
+                                        <Flyout Placement="RightEdgeAlignedTop">
+                                          <ScrollViewer MaxHeight="520">
+                                            <StackPanel Spacing="6" Width="260" Margin="0,0,6,0">
+
+                                              <TextBlock FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                                         Text="{Binding Segment.Name}" />
+
+                                              <TextBlock Classes="hint" Text="Name" />
+                                              <TextBox Text="{Binding Segment.Name}" />
+
+                                              <Grid ColumnDefinitions="*,8,*">
+                                                <StackPanel Grid.Column="0" Spacing="4">
+                                                  <TextBlock Classes="hint" Text="LEDs" />
+                                                  <TextBox Text="{Binding Segment.Count}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Spacing="4">
+                                                  <TextBlock Classes="hint" Text="Starts at" />
+                                                  <TextBox Text="{Binding Segment.Start}" />
+                                                </StackPanel>
+                                              </Grid>
+
+                                              <TextBlock Classes="hint" Text="What kind of light" />
+                                              <ComboBox ItemsSource="{Binding Owner.FixtureStyles}"
+                                                        SelectedItem="{Binding Owner.FixtureChoice}"
+                                                        PlaceholderText="Pick a fixture"
+                                                        HorizontalAlignment="Stretch" />
+
+                                              <StackPanel Spacing="4" IsVisible="{Binding Segment.Fixture.IsAimed}">
+                                                <TextBlock Classes="hint" Text="Beam spread" />
+                                                <Slider Minimum="10" Maximum="160"
+                                                        Value="{Binding Segment.Fixture.BeamAngleDegrees}" />
+                                                <TextBlock Classes="hint" Text="How far it reaches" />
+                                                <Slider Minimum="0.02" Maximum="0.6"
+                                                        Value="{Binding Segment.Fixture.ThrowLength}" />
+                                                <CheckBox Content="Aim the other way"
+                                                          IsChecked="{Binding Segment.Fixture.FlipAim}" />
+                                              </StackPanel>
+
+                                              <TextBlock Classes="hint" Text="A lens every N LEDs" />
+                                              <TextBox Text="{Binding Segment.Fixture.VisibleEvery}" />
+
+                                              <Button Classes="block" Content="Flip which end is LED 1"
+                                                      Command="{Binding Owner.FlipSegmentDirectionCommand}" />
+
+                                              <!-- Tracing deliberately is not in here. It needs the
+                                                   photo, and this popup is sitting on top of it -
+                                                   the button would start drawing and then be in the
+                                                   way of every click. Draw selected segment, above
+                                                   the photo, does the same job with the photo clear. -->
+                                              <TextBlock Classes="hint" Foreground="#C9821B"
+                                                         IsVisible="{Binding !Segment.HasGeometry}"
+                                                         Text="No line on the photo yet. Close this, then press Draw selected segment above the photo." />
+
+                                              <TextBlock Classes="hint" Text="Driven by" />
+                                              <ComboBox ItemsSource="{Binding Owner.Devices}"
+                                                        SelectedItem="{Binding Owner.SegmentController}"
+                                                        DisplayMemberBinding="{Binding DisplayName}"
+                                                        PlaceholderText="Not assigned"
+                                                        HorizontalAlignment="Stretch" />
+
+                                              <Button Classes="block" Content="Remove this run"
+                                                      Command="{Binding Owner.DeleteSegmentCommand}"
+                                                      Margin="0,4,0,0" />
+                                            </StackPanel>
+                                          </ScrollViewer>
+                                        </Flyout>
+                                      </Button.Flyout>
+                                    </Button>
+
+                                    <Button Padding="6,3" HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left" BorderThickness="0"
+                                            Background="{Binding IsSelected, Converter={x:Static vm:Converters.RowHighlight}}"
+                                            Command="{Binding Owner.PickSegmentRowCommand}"
+                                            CommandParameter="{Binding}">
+                                      <StackPanel Spacing="1">
+                                        <TextBlock Text="{Binding Segment.Name}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Classes="hint">
+                                          <Run Text="{Binding Segment.Count}" /><Run Text=" LEDs &#183; LED " /><Run Text="{Binding Segment.Start}" /><Run Text=" to " /><Run Text="{Binding Segment.StopExclusive}" />
+                                        </TextBlock>
+                                        <TextBlock Classes="hint" Foreground="#C9821B" FontSize="11"
+                                                   IsVisible="{Binding !Segment.HasGeometry}"
+                                                   Text="not traced on the photo yet" />
+                                      </StackPanel>
+                                    </Button>
+                                  </DockPanel>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Classes="hint" Margin="0,4"
+                                       IsVisible="{Binding !HasRuns}"
+                                       Text="Nothing described on this controller yet. Use the pencil above to bring in its outputs, or add a run by hand." />
                           </StackPanel>
-                          <StackPanel Grid.Column="2" Spacing="4">
-                            <TextBlock Classes="hint" Text="Starts at" />
-                            <TextBox Text="{Binding Start}" />
-                          </StackPanel>
-                        </Grid>
+                        </Border>
 
-                        <TextBlock Classes="hint" Text="What kind of light" />
-                        <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).FixtureStyles}"
-                                  SelectedItem="{Binding $parent[Window].((vm:MainViewModel)DataContext).FixtureChoice}"
-                                  PlaceholderText="Pick a fixture"
-                                  HorizontalAlignment="Stretch" />
-
-                        <StackPanel Spacing="4" IsVisible="{Binding Fixture.IsAimed}">
-                          <TextBlock Classes="hint" Text="Beam spread" />
-                          <Slider Minimum="10" Maximum="160" Value="{Binding Fixture.BeamAngleDegrees}" />
-                          <TextBlock Classes="hint" Text="How far it reaches" />
-                          <Slider Minimum="0.02" Maximum="0.6" Value="{Binding Fixture.ThrowLength}" />
-                          <CheckBox Content="Aim the other way" IsChecked="{Binding Fixture.FlipAim}" />
-                        </StackPanel>
-
-                        <TextBlock Classes="hint" Text="A lens every N LEDs" />
-                        <TextBox Text="{Binding Fixture.VisibleEvery}" />
-
-                        <Button Classes="block" Content="Flip which end is LED 1"
-                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).FlipSegmentDirectionCommand}" />
-                        <Button Classes="block" Content="Trace it on the photo"
-                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).RedrawSegmentCommand}" />
-                        <TextBlock Classes="hint" Foreground="#C9821B"
-                                   IsVisible="{Binding !HasGeometry}"
-                                   Text="This run has no line on the photo yet, so it cannot be shown or clicked there." />
-
-                        <TextBlock Classes="hint" Text="Driven by" />
-                        <ComboBox ItemsSource="{Binding $parent[Window].((vm:MainViewModel)DataContext).Devices}"
-                                  SelectedItem="{Binding $parent[Window].((vm:MainViewModel)DataContext).SegmentController}"
-                                  DisplayMemberBinding="{Binding DisplayName}"
-                                  PlaceholderText="Not assigned"
-                                  HorizontalAlignment="Stretch" />
-
-                        <Button Classes="block" Content="Remove this segment"
-                                Command="{Binding $parent[Window].((vm:MainViewModel)DataContext).DeleteSegmentCommand}"
-                                Margin="0,4,0,0" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>
-                </ContentControl.ContentTemplate>
-                </ContentControl>
-
-              </StackPanel>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
             </ScrollViewer>
           </DockPanel>
         </Border>
