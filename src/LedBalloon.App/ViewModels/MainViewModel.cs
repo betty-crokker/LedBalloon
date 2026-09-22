@@ -57,7 +57,13 @@ public sealed record PresetDetail(
     IBrush SecondarySwatch,
     bool HasSecondary,
     string Fidelity,
-    bool IsOff);
+    bool IsOff,
+
+    /// <summary>The named look this run is wearing, or null when its appearance is a one-off.</summary>
+    string? LookName = null)
+{
+    public bool WearsLook => LookName is { Length: > 0 };
+}
 
 /// <summary>
 /// One choice in the effect or palette picker, carrying the number WLED knows it by.
@@ -108,6 +114,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
     [ObservableProperty] private SceneRow? _selectedScene;
+    [ObservableProperty] private LookRow? _selectedLook;
     [ObservableProperty] private DeviceViewModel? _selectedDevice;
     [ObservableProperty] private bool _isScanning;
     [ObservableProperty] private bool _isDrawingSegment;
@@ -972,6 +979,12 @@ public sealed partial class MainViewModel : ViewModelBase
             // "throw away unsaved changes" and land on the controller at the next save.
             _pendingOutputSettings.Clear();
 
+            // The lists point at objects belonging to the project just replaced.
+            SelectedLook = null;
+            SelectedScene = null;
+            RebuildLooks();
+            RebuildScenes();
+
             MatchSegmentsToWiring();
 
             AfterProjectChanged(
@@ -1737,14 +1750,25 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         Scene scene = SceneResolver.Capture(Project, states, Project.UniqueSceneName("New scene"));
+
+        // A run already showing a named look is written down as wearing it, rather than as another
+        // copy of the same description. Without this, editing the look afterwards would reach every
+        // scene except the ones captured from it.
+        int bound = Project.BindLooks(scene);
+
         Project.Scenes.Add(scene);
 
         RebuildScenes();
+        foreach (LookRow row in Looks)
+        {
+            row.RefreshReach();
+        }
         SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, scene));
 
         AfterProjectChanged(
             $"Saved what the house looks like now as '{scene.Name}'. Give it a name, then Save to " +
-            "put it on the controllers.");
+            "put it on the controllers." +
+            (bound > 0 ? $" {bound} run(s) are wearing a look you have named." : string.Empty));
     }
 
     /// <summary>Puts the chosen scene on the house.</summary>
@@ -1774,6 +1798,176 @@ public sealed partial class MainViewModel : ViewModelBase
         Status = LiveSync
             ? $"Applied '{scene.Name}'."
             : $"'{scene.Name}' is on the photo. The lights have not changed — press Send when you want it.";
+    }
+
+    // ---- Looks ----------------------------------------------------------------------------------
+
+    /// <summary>Named appearances, each defined once and worn wherever you like.</summary>
+    public ObservableCollection<LookRow> Looks { get; } = [];
+
+    /// <summary>
+    /// Writes down what the selected run currently looks like, under a name.
+    /// <para>
+    /// The same way round as capturing a scene: get it looking right, then name it. Naming is a
+    /// promotion rather than a requirement — most runs in most scenes are one-offs.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void NameThisLook()
+    {
+        if (SelectedSegment is not { } segment || AppearanceOf(segment) is not { } appearance)
+        {
+            Status = "Pick a run on the photo first — a look is one run's appearance.";
+            return;
+        }
+
+        var look = new Look { Name = Project.UniqueLookName($"{segment.Name} look") };
+        appearance.CopyTo(look);
+        Project.Looks.Add(look);
+
+        RebuildLooks();
+        SelectedLook = Looks.FirstOrDefault(row => ReferenceEquals(row.Look, look));
+
+        AfterProjectChanged($"'{look.Name}' written down. Rename it, then use it on any run you like.");
+    }
+
+    /// <summary>Puts the chosen look on the chosen run.</summary>
+    [RelayCommand]
+    private void ApplyLook()
+    {
+        if (SelectedLook is not { } row || SelectedSegment is not { } segment)
+        {
+            Status = "Pick a run on the photo to put this look on.";
+            return;
+        }
+
+        Send(
+            DeviceFor(segment),
+            WledState.ForSegment(
+                Project.WledSegmentIdFor(segment),
+                wled => SceneResolver.Apply(wled, row.Look)));
+
+        Status = LiveSync
+            ? $"'{segment.Name}' is wearing '{row.Name}'."
+            : $"'{segment.Name}' is wearing '{row.Name}' on the photo. Press Send when you want it.";
+    }
+
+    /// <summary>
+    /// Makes the chosen look mean what the chosen run currently looks like.
+    /// <para>
+    /// This is the edit that reaches backwards, so the panel says how many scenes it will change
+    /// before it is pressed rather than afterwards.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void UpdateLook()
+    {
+        if (SelectedLook is not { } row || SelectedSegment is not { } segment ||
+            AppearanceOf(segment) is not { } appearance)
+        {
+            Status = "Pick a run on the photo to take the new appearance from.";
+            return;
+        }
+
+        appearance.CopyTo(row.Look);
+
+        foreach (LookRow each in Looks)
+        {
+            each.RefreshReach();
+        }
+
+        OnSelectedSceneChanged(SelectedScene);
+
+        AfterProjectChanged(row.SceneCount == 0
+            ? $"'{row.Name}' now means what '{segment.Name}' looks like."
+            : $"'{row.Name}' now means what '{segment.Name}' looks like, in {row.SceneCount} scene(s).");
+    }
+
+    /// <summary>
+    /// Removes a look, writing what it meant into every scene wearing it first.
+    /// <para>
+    /// A dangling reference resolves to nothing, which would take those runs dark. Nobody deleting
+    /// a name means "and turn those off", so the description is inlined and the scenes go on
+    /// looking exactly as they did — they simply stop following this name.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task DeleteLookAsync()
+    {
+        if (SelectedLook is not { } row || Ask is not { } ask)
+        {
+            return;
+        }
+
+        int scenes = row.SceneCount;
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: $"Remove '{row.Name}'?",
+            Message: scenes == 0
+                ? "No scene uses it, so nothing changes."
+                : $"{scenes} scene(s) use it. They keep looking exactly as they do now — what this " +
+                  "look means is written into each of them — but they stop following the name, so " +
+                  "there is no longer one place to change them all from.",
+            AcceptText: "Remove",
+            CancelText: "Keep it"));
+
+        if (!answer.Accepted)
+        {
+            return;
+        }
+
+        foreach (Scene scene in Project.Scenes)
+        {
+            foreach (SceneEntry entry in scene.Segments.Values)
+            {
+                if (string.Equals(entry.LookId, row.Look.Id, StringComparison.Ordinal))
+                {
+                    row.Look.CopyTo(entry);
+                    entry.LookId = null;
+                }
+            }
+        }
+
+        Project.Looks.Remove(row.Look);
+
+        RebuildLooks();
+        SelectedLook = null;
+
+        AfterProjectChanged($"Removed '{row.Name}'. Revert to put it back.");
+    }
+
+    /// <summary>What a run currently looks like on the photo, which is what a look is made from.</summary>
+    private Appearance? AppearanceOf(Segment segment)
+    {
+        if (segment.ControllerKey is not { } key ||
+            !DisplayStates.TryGetValue(key, out WledState? state))
+        {
+            return null;
+        }
+
+        int id = Project.WledSegmentIdFor(segment);
+
+        return state.Segments?.FirstOrDefault(s => s.Id == id) is { } wled
+            ? SceneResolver.Describe(wled)
+            : null;
+    }
+
+    private void RebuildLooks()
+    {
+        string? was = SelectedLook?.Look.Id;
+
+        Looks.Clear();
+
+        foreach (Look look in Project.Looks)
+        {
+            Looks.Add(new LookRow(Project, look));
+        }
+
+        if (was is not null)
+        {
+            SelectedLook = Looks.FirstOrDefault(row =>
+                string.Equals(row.Look.Id, was, StringComparison.Ordinal));
+        }
     }
 
     /// <summary>
@@ -1882,6 +2076,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
         RebuildScenes();
         SelectedScene = null;
+
+        foreach (LookRow row in Looks)
+        {
+            row.RefreshReach();
+        }
 
         AfterProjectChanged($"Removed '{scene.Name}'. Revert to put it back.");
     }
@@ -2008,7 +2207,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (state.Segments?.FirstOrDefault(s => s.Id == id) is { } wled)
                 {
-                    SceneDetails.Add(Describe(run, wled, device));
+                    string? wearing = scene.Segments.TryGetValue(run.Id, out SceneEntry? entry)
+                        ? Project.FindLook(entry.LookId)?.Name
+                        : null;
+
+                    SceneDetails.Add(Describe(run, wled, device) with { LookName = wearing });
                 }
             }
         }
