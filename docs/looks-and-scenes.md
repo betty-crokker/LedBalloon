@@ -31,7 +31,26 @@ of a house. The answer is to stop asking one controller's preset what another co
 | --- | --- | --- |
 | **Look** | a named appearance for **one** segment: effect, palette, speed, intensity, colours | "Warm white", "Colorwaves brisk" |
 | **Scene** | which look each segment wears, across the whole house | "Christmas", "Stairs white" |
-| **Preset** | one controller's own recallable state — WLED's meaning, unchanged | what the 23:30 timer fires |
+| **Preset** | a recallable state, on one or more controllers — WLED's meaning, unchanged | what the 23:30 timer fires |
+
+### A preset is one thing, however many controllers it covers
+
+A preset is identified by its **name**. If it covers two controllers there is still one preset, with
+one name; being stored twice — once in each box's `presets.json` — is an implementation detail of
+how WLED works, not a second preset.
+
+This is already how the code reads them: `PresetCatalog` groups by trimmed name, case-insensitively,
+into a `HousePreset` holding one `PresetPlacement(ControllerKey, Slot, Preset)` per controller. So
+the UI list is already a list of presets rather than a list of per-controller presets.
+
+Two consequences:
+
+- **Publishing a scene uses one name on every controller it touches.** `ChooseSlot` already reuses
+  a slot holding a preset of that name, so each controller keeps its own stable slot.
+- **Slots need not match across controllers, and should not be expected to.** North's "Stairs white"
+  is slot 3; a preset of the same name on South would take whatever slot South has free. The
+  schedule is per controller and recalls by slot, so this is fine — but it means the name is the
+  only identifier worth showing anyone.
 
 WLED has no collective noun for effect + palette + speed; in its UI that bundle is just "the
 segment's settings". The nearest formal term in the wider lighting world is ETC's *palette* — a
@@ -155,31 +174,30 @@ Two things publishing has to get right:
 - **The README calls the whole-house thing a "look"**, in the "Why this exists" section and again
   under Layout. It needs to say scene.
 
-## Migration for what is already on the controllers
+## What was already on the controllers — done
 
-South currently holds three presets written by the position-pairing copier — `July4th`,
-`Twinkle both` and `Stairs white` — all wrong in the same way. `presets.bak.json` on South holds the
-file as it was before the copy that produced it.
+South had accumulated **four** position-mapped copies, not three: `July4th`, `Twinkle both`,
+`Stairs white` and `St pats`. The fourth appeared partway through writing this note, which is itself
+worth recording — every time one of North's presets was applied, another copy landed.
 
-None of them is scheduled: South's timers fire `Bpm` and `Off`, in slots 1 and 2, which the copier
-never touched. So this is not urgent, and it only misbehaves if one of the three is picked by hand.
+All four are removed. South keeps only the two it made itself, `Bpm` and `Off` in slots 1 and 2,
+which are what its timers fire at 17:30 and 23:30; both were verified still pointing at those slots
+afterwards. The full six-preset file is on South as `/psold.json`, and `presets.bak.json` beside it
+holds the five-preset state from one copy earlier.
 
-Options, in order of how much they throw away:
+`palette0.json` is left on South. It is the custom palette that July4th's copy brought across,
+remapped from North's id 254 to South's 255, and nothing references it now — 86 bytes, harmless, and
+wanted again the first time a scene using that palette is published.
 
-1. Leave them. They are wrong but harmless, and they will be replaced the first time a scene is
-   published under the same name.
-2. Delete the three. South keeps only presets it made itself.
-3. Restore `presets.bak.json`. Reverts everything since that copy, not just the three — read it
-   first and show what is in it before choosing this.
+One practical note for whoever writes the publishing code: WLED's `/edit` handler **rejects an
+upload whose part carries no explicit content type**, answering 500 with nothing written. It is not
+the "500 on success" case already documented in `WledFileSystemClient` — the file genuinely does not
+appear. `WledFileSystemClient.UploadAsync` sets the type and is fine; hand-rolled `curl` is not.
 
 ## Open decisions
 
-- **One name across controllers?** If a published scene uses the same preset name on every
-  controller, one schedule entry name means the same thing on both boxes. Probably yes, but it
-  constrains `ChooseSlot`.
 - **Do scenes replace the preset list in the UI, or sit beside it?** Replacing is cleaner. Sitting
   beside it keeps the WLED presets already made by hand visible where they are expected.
-- Which of the three migration options above.
 
 ## Non-goals
 
