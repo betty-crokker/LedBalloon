@@ -174,6 +174,18 @@ public sealed class Scene
     /// </summary>
     [JsonPropertyName("publishedAs")] public string? PublishedAs { get; set; }
 
+    /// <summary>
+    /// A fingerprint of what was last published to each controller, keyed by controller.
+    /// <para>
+    /// What makes drift detectable. The scene and its published copy are two renderings of one
+    /// fact; when the copy stops matching this, somebody changed it in the WLED app, and
+    /// republishing over it would throw that away without anyone noticing. Knowing what we wrote is
+    /// the only way to tell that apart from the ordinary case of the scene itself having changed.
+    /// </para>
+    /// </summary>
+    [JsonPropertyName("published")]
+    public Dictionary<string, string> Published { get; set; } = [];
+
     /// <summary>What each segment wears, keyed by <see cref="Segment.Id"/>.</summary>
     [JsonPropertyName("segments")] public Dictionary<string, SceneEntry> Segments { get; set; } = [];
 

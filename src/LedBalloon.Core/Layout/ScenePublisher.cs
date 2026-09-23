@@ -12,13 +12,54 @@ namespace LedBalloon.Core.Layout;
 /// False when the controller already held exactly this preset, so nothing was written.
 /// </param>
 /// <param name="PalettesCarried">Custom palette files copied across to make it look right.</param>
-public sealed record ScenePublication(string ControllerKey, int Slot, bool Written, int PalettesCarried = 0);
+/// <param name="Hash">
+/// What the controller holds under this name now, for telling next time whether it is still what
+/// LedBalloon put there. Null when nothing was found and nothing written.
+/// </param>
+/// <param name="Drift">How a disagreement was settled, or null when there was none.</param>
+public sealed record ScenePublication(
+    string ControllerKey,
+    int Slot,
+    bool Written,
+    int PalettesCarried = 0,
+    string? Hash = null,
+    DriftChoice? Drift = null);
 
 /// <summary>
-/// What publishing would do to one controller's preset file: which slot it lands in, and whether
-/// anything there actually changes.
+/// What publishing would do to one controller's preset file: which slot it lands in, whether
+/// anything there actually changes, and whether what is there was put there by somebody else.
 /// </summary>
-public sealed record PublishPlan(int Slot, bool Changed);
+/// <param name="Slot">The slot the preset lands in.</param>
+/// <param name="Changed">True when writing would make the file different.</param>
+/// <param name="Drifted">
+/// True when the slot holds something that is neither what LedBalloon last wrote there nor what it
+/// is about to write — so somebody edited it in the WLED app, and republishing would throw that
+/// away without saying so.
+/// </param>
+/// <param name="StoredHash">What is in the slot now, or null when the slot is empty.</param>
+public sealed record PublishPlan(int Slot, bool Changed, bool Drifted = false, string? StoredHash = null);
+
+/// <summary>What to do about a published copy somebody else has changed.</summary>
+public enum DriftChoice
+{
+    /// <summary>The scene wins. The controller's version is overwritten.</summary>
+    Replace,
+
+    /// <summary>The controller wins. What is on it is read back into the scene.</summary>
+    KeepController,
+
+    /// <summary>Neither. Nothing is written, and the disagreement is still there next time.</summary>
+    Skip,
+}
+
+/// <summary>
+/// A published copy that has been changed since LedBalloon wrote it, put to the user before
+/// anything is overwritten.
+/// </summary>
+/// <param name="ControllerKey">The controller whose copy disagrees.</param>
+/// <param name="Name">The scene's name, which is also the preset's.</param>
+/// <param name="OnController">What is actually stored there, for reading back if that is wanted.</param>
+public sealed record DriftReport(string ControllerKey, string Name, WledPreset OnController);
 
 /// <summary>
 /// Writes a scene onto the controllers it covers, as a WLED preset of the same name.
@@ -76,11 +117,20 @@ public static class ScenePublisher
     /// new name lands in the slot the old one holds, so the timers pointing at that slot follow the
     /// rename instead of going on firing the version of the scene it used to be.
     /// </param>
+    /// <param name="expectedHash">
+    /// What LedBalloon last wrote here. Anything else in the slot was put there by somebody else.
+    /// </param>
+    /// <param name="onDrift">
+    /// Asked before overwriting a copy somebody else changed. Left null, the scene wins silently,
+    /// which is the old behaviour and the wrong one: it throws away an edit without saying so.
+    /// </param>
     public static async Task<ScenePublication> PublishAsync(
         string controllerKey,
         string host,
         WledPreset preset,
         string? previousName = null,
+        string? expectedHash = null,
+        Func<DriftReport, Task<DriftChoice>>? onDrift = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
@@ -92,11 +142,32 @@ public static class ScenePublisher
         byte[]? current = await files.DownloadAsync("presets.json", cancellationToken).ConfigureAwait(false);
         JsonObject presets = ReadPresets(host, current);
 
-        PublishPlan plan = PlanFor(presets, preset, previousName);
+        PublishPlan plan = PlanFor(presets, preset, previousName, expectedHash);
 
         if (!plan.Changed)
         {
-            return new ScenePublication(controllerKey, plan.Slot, Written: false);
+            // Already exactly this, however it got that way. Nothing to write and nothing to argue
+            // about: the box agrees with the scene.
+            return new ScenePublication(controllerKey, plan.Slot, Written: false, Hash: plan.StoredHash);
+        }
+
+        if (plan.Drifted && onDrift is not null)
+        {
+            DriftChoice choice = await onDrift(
+                new DriftReport(controllerKey, preset.DisplayName, StoredAt(presets, plan.Slot)))
+                .ConfigureAwait(false);
+
+            if (choice is not DriftChoice.Replace)
+            {
+                // Keeping the controller's version records it as what is there, so it stops being a
+                // disagreement. Skipping records nothing, so the question comes back next save.
+                return new ScenePublication(
+                    controllerKey,
+                    plan.Slot,
+                    Written: false,
+                    Hash: choice is DriftChoice.KeepController ? plan.StoredHash : expectedHash,
+                    Drift: choice);
+            }
         }
 
         // Keep what is being replaced. Presets are the one thing on these boxes that nobody else
@@ -107,10 +178,16 @@ public static class ScenePublisher
                 .ConfigureAwait(false);
         }
 
-        presets[plan.Slot.ToString(System.Globalization.CultureInfo.InvariantCulture)] = ToNode(preset);
+        JsonNode? built = ToNode(preset);
+        presets[plan.Slot.ToString(System.Globalization.CultureInfo.InvariantCulture)] = built;
         await UploadAsync(files, presets, cancellationToken).ConfigureAwait(false);
 
-        return new ScenePublication(controllerKey, plan.Slot, Written: true);
+        return new ScenePublication(
+            controllerKey,
+            plan.Slot,
+            Written: true,
+            Hash: Hash(built),
+            Drift: plan.Drifted ? DriftChoice.Replace : null);
     }
 
     /// <summary>
@@ -124,7 +201,11 @@ public static class ScenePublisher
     /// while skipping wrongly leaves the house showing the old scene.
     /// </para>
     /// </summary>
-    public static PublishPlan PlanFor(JsonObject presets, WledPreset preset, string? previousName = null)
+    public static PublishPlan PlanFor(
+        JsonObject presets,
+        WledPreset preset,
+        string? previousName = null,
+        string? expectedHash = null)
     {
         ArgumentNullException.ThrowIfNull(presets);
         ArgumentNullException.ThrowIfNull(preset);
@@ -132,8 +213,49 @@ public static class ScenePublisher
         int slot = ChooseSlot(presets, preset.DisplayName, previousName);
         string key = slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-        return new PublishPlan(slot, !JsonNode.DeepEquals(presets[key], ToNode(preset)));
+        JsonNode? stored = presets[key];
+        bool changed = !JsonNode.DeepEquals(stored, ToNode(preset));
+        string? storedHash = stored is null ? null : Hash(stored);
+
+        // Drift is the slot holding something that is neither what we last wrote nor what we are
+        // about to write. An empty slot is not drift, and neither is a slot we have never written:
+        // with nothing to compare against there is no edit to be throwing away.
+        bool drifted = changed
+            && stored is not null
+            && expectedHash is { Length: > 0 }
+            && !string.Equals(storedHash, expectedHash, StringComparison.Ordinal);
+
+        return new PublishPlan(slot, changed, drifted, storedHash);
     }
+
+    /// <summary>What a slot holds, as a preset rather than as JSON.</summary>
+    private static WledPreset StoredAt(JsonObject presets, int slot)
+    {
+        string key = slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        WledPreset? stored = presets[key] is { } node
+            ? JsonSerializer.Deserialize(node.ToJsonString(), WledJson.Default.WledPreset)
+            : null;
+
+        stored ??= new WledPreset();
+        stored.Id = slot;
+        return stored;
+    }
+
+    /// <summary>
+    /// A short fingerprint of a stored preset, for telling later whether it is still what we wrote.
+    /// <para>
+    /// Taken from the JSON rather than from a parsed preset, so a field WLED stores that LedBalloon
+    /// does not model still counts. Someone editing a preset in the WLED app changes such fields,
+    /// and noticing is the whole point.
+    /// </para>
+    /// </summary>
+    public static string Hash(JsonNode? node) =>
+        Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(node?.ToJsonString() ?? string.Empty)))[..16];
+
+    /// <summary>The fingerprint a preset would have once written.</summary>
+    public static string Hash(WledPreset preset) => Hash(ToNode(preset));
 
     private static JsonNode? ToNode(WledPreset preset) =>
         JsonNode.Parse(JsonSerializer.Serialize(preset, WledJson.Default.WledPreset));
