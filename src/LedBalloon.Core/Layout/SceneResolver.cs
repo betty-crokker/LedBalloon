@@ -167,6 +167,53 @@ public static class SceneResolver
         };
     }
 
+    /// <summary>
+    /// Folds a hand edit into what a run wears, changing only what the edit actually said.
+    /// <para>
+    /// A patch from the color wheel carries a color and nothing else, so absorbing it must leave
+    /// the effect and the palette alone. Taking the whole segment instead would quietly replace
+    /// everything with whatever defaults the patch happened to have.
+    /// </para>
+    /// <para>
+    /// A run wearing a named look stops wearing it, because the edit is about this scene and this
+    /// run. Changing the look itself is a different intention with its own button, and doing it
+    /// here would reach into every other scene using it without anyone asking for that.
+    /// </para>
+    /// </summary>
+    public static void Absorb(SceneEntry entry, WledSegment patch, Appearance? wearing = null)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        ArgumentNullException.ThrowIfNull(patch);
+
+        // What it looked like before the edit has to survive it, and for a run wearing a look that
+        // description lives on the look rather than on the entry.
+        if (entry.LookId is not null)
+        {
+            wearing?.CopyTo(entry);
+            entry.LookId = null;
+        }
+
+        entry.On = patch.On ?? entry.On;
+        entry.Brightness = patch.Brightness ?? entry.Brightness;
+        entry.Effect = patch.Effect ?? entry.Effect;
+        entry.Palette = patch.Palette ?? entry.Palette;
+        entry.Speed = patch.Speed ?? entry.Speed;
+        entry.Intensity = patch.Intensity ?? entry.Intensity;
+        entry.Custom1 = patch.Custom1 ?? entry.Custom1;
+        entry.Custom2 = patch.Custom2 ?? entry.Custom2;
+        entry.Custom3 = patch.Custom3 ?? entry.Custom3;
+
+        if (patch.Colors is { Length: > 0 })
+        {
+            entry.Primary = patch.PrimaryColor;
+        }
+
+        if (patch.Colors is { Length: > 1 })
+        {
+            entry.Secondary = patch.SecondaryColor;
+        }
+    }
+
     /// <summary>Writes an appearance onto a WLED segment, leaving its bounds alone.</summary>
     public static void Apply(WledSegment segment, Appearance appearance)
     {

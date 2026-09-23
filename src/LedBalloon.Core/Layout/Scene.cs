@@ -196,5 +196,50 @@ public sealed class Scene
     /// </summary>
     [JsonPropertyName("unlistedSegmentsOff")] public bool UnlistedSegmentsOff { get; set; } = true;
 
+    /// <summary>
+    /// An independent copy, down to the entries.
+    /// <para>
+    /// Taken when a scene is picked, so that editing it by hand can be undone: saving the result as
+    /// a new scene has to leave the one it was started from exactly as it was.
+    /// </para>
+    /// </summary>
+    public Scene Clone()
+    {
+        var copy = new Scene
+        {
+            Id = Id,
+            Name = Name,
+            On = On,
+            Brightness = Brightness,
+            Transition = Transition,
+            PublishedAs = PublishedAs,
+            UnlistedSegmentsOff = UnlistedSegmentsOff,
+            Published = new Dictionary<string, string>(Published, StringComparer.OrdinalIgnoreCase),
+        };
+
+        foreach ((string id, SceneEntry entry) in Segments)
+        {
+            var duplicate = new SceneEntry { LookId = entry.LookId };
+            entry.CopyTo(duplicate);
+            copy.Segments[id] = duplicate;
+        }
+
+        return copy;
+    }
+
+    /// <summary>Makes this scene say what another one says, keeping its own identity.</summary>
+    public void CopyFrom(Scene other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        Scene source = other.Clone();
+
+        On = source.On;
+        Brightness = source.Brightness;
+        Transition = source.Transition;
+        UnlistedSegmentsOff = source.UnlistedSegmentsOff;
+        Segments = source.Segments;
+    }
+
     public override string ToString() => Name;
 }

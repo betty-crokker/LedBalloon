@@ -251,6 +251,15 @@
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
 
+                <!-- Changing a run while a scene is picked changes that scene. This is the way to
+                     start from one and branch instead, and it puts the original back. -->
+                <StackPanel Spacing="4" IsVisible="{Binding SceneEdited}">
+                  <TextBlock Classes="hint" TextWrapping="Wrap" Foreground="#C9821B"
+                             Text="Changed by hand. Saving writes this over the scene." />
+                  <Button Classes="block" Content="Keep this as a new scene instead"
+                          Command="{Binding SaveSceneAsNewCommand}" />
+                </StackPanel>
+
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Button Content="Put it on the house" Command="{Binding ApplySceneCommand}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
