@@ -795,11 +795,43 @@ public sealed partial class MainViewModel : ViewModelBase
                     pushed += $" {settings} output(s) had their settings written.";
                 }
 
+                // Publishing writes down what each controller now holds, and that bookkeeping is
+                // part of the document. Kept here rather than left for the next save: it is the
+                // only record of what we wrote, and without it an edit made on a controller cannot
+                // be told from the scene itself having moved on.
+                string beforePublishing = Project.Fingerprint();
+
                 int published = await PublishScenesAsync();
+
+                if (Project.Fingerprint() != beforePublishing)
+                {
+                    ProjectSaveResult bookkeeping = await ProjectSync.SaveAsync(
+                        Project, targets, PhotoBytes, PhotoBudgetBytes, force);
+
+                    if (bookkeeping.AnySucceeded)
+                    {
+                        result = bookkeeping;
+                    }
+                }
 
                 if (published > 0)
                 {
                     pushed += $" {published} scene(s) published, so the timers and the wall button can reach them.";
+                }
+
+                if (_driftKept.Count > 0)
+                {
+                    // The project changed after it was written, so this revision does not have it.
+                    // Saying so beats letting a read-back look like it landed when it did not.
+                    HasUnsavedChanges = true;
+                    pushed += $" Took {string.Join(" and ", _driftKept)} into the scene \u2014 save again to " +
+                              "put that everywhere.";
+                }
+
+                if (_driftSkipped.Count > 0)
+                {
+                    pushed += $" Left {string.Join(" and ", _driftSkipped)} as it is; the scene and the " +
+                              "controller still disagree.";
                 }
             }
             catch (Exception ex)
@@ -1489,6 +1521,9 @@ public sealed partial class MainViewModel : ViewModelBase
         var removed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         bool anyPalettes = false;
 
+        _driftKept.Clear();
+        _driftSkipped.Clear();
+
         foreach (Scene scene in Project.Scenes)
         {
             foreach (DeviceViewModel device in Devices)
@@ -1509,6 +1544,7 @@ public sealed partial class MainViewModel : ViewModelBase
                         removed.Add(stale);
                     }
 
+                    scene.Published.Remove(key);
                     continue;
                 }
 
@@ -1525,12 +1561,30 @@ public sealed partial class MainViewModel : ViewModelBase
                     anyPalettes = true;
                 }
 
-                ScenePublication result = await ScenePublisher
-                    .PublishAsync(key, device.Host, preset, scene.PublishedAs);
+                Scene target = scene;
+
+                ScenePublication result = await ScenePublisher.PublishAsync(
+                    key,
+                    device.Host,
+                    preset,
+                    scene.PublishedAs,
+                    scene.Published.GetValueOrDefault(key),
+                    report => SettleDriftAsync(target, report));
 
                 if (result.Written)
                 {
                     published.Add(scene.Id);
+                }
+
+                // What the controller holds now, so that next time we can tell an edit made there
+                // from the scene itself having moved on.
+                if (result.Hash is { Length: > 0 } written)
+                {
+                    scene.Published[key] = written;
+                }
+                else
+                {
+                    scene.Published.Remove(key);
                 }
             }
 
@@ -2083,6 +2137,92 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         AfterProjectChanged($"Removed '{scene.Name}'. Revert to put it back.");
+    }
+
+    /// <summary>Scenes that took a controller's version this save, and the controllers they took it from.</summary>
+    private readonly List<string> _driftKept = [];
+
+    /// <summary>Disagreements left unsettled this save, which will be asked about again.</summary>
+    private readonly List<string> _driftSkipped = [];
+
+    /// <summary>
+    /// Puts a published copy somebody else has changed to the user, before anything is overwritten.
+    /// <para>
+    /// The scene wins by design, but silently is the wrong way to win: the copy on the controller
+    /// is somebody's edit, made in the WLED app or on the phone, and throwing it away without a
+    /// word is how you lose work you did not know you had.
+    /// </para>
+    /// </summary>
+    private async Task<DriftChoice> SettleDriftAsync(Scene scene, DriftReport report)
+    {
+        string where = DeviceFor(report.ControllerKey)?.DisplayName ?? "that controller";
+
+        // Nothing can be asked, so nothing is overwritten. A hook that failed to be wired must not
+        // be the reason an edit disappears.
+        if (Ask is not { } ask)
+        {
+            _driftSkipped.Add($"'{report.Name}' on {where}");
+            return DriftChoice.Skip;
+        }
+
+        // Marshalled onto the UI thread. By the time publishing reaches here it is on a thread-pool
+        // thread -- the Core calls it awaits all use ConfigureAwait(false) -- and a window cannot be
+        // opened from there. Asking without this threw instead of asking, which is the worst of both
+        // outcomes: no question, and no write either.
+        ConfirmResult answer = await Dispatcher.UIThread.InvokeAsync(() => ask(new ConfirmRequest(
+            Title: $"'{report.Name}' on {where} is not what LedBalloon wrote",
+            Message:
+                $"Something changed it there \u2014 the WLED app or the phone, most likely. Saving " +
+                "would write the scene over it.\n\n" +
+                "Use the scene: the controller's version is replaced.\n" +
+                "Take the controller's version: it is read back into the scene, the way adopting a " +
+                "preset does, and every controller this scene covers gets it at the next save.",
+            AcceptText: "Use the scene",
+            CancelText: "Leave it for now",
+            AlternateText: "Take the controller's version")));
+
+        switch (answer.Choice)
+        {
+            case ConfirmChoice.Accept:
+                return DriftChoice.Replace;
+
+            case ConfirmChoice.Alternate:
+                await Dispatcher.UIThread.InvokeAsync(() => ReadBack(scene, report));
+                _driftKept.Add($"'{report.Name}' from {where}");
+                return DriftChoice.KeepController;
+
+            default:
+                _driftSkipped.Add($"'{report.Name}' on {where}");
+                return DriftChoice.Skip;
+        }
+    }
+
+    /// <summary>
+    /// Reads a controller's own version of a preset back into the scene, for the runs on that
+    /// controller only.
+    /// <para>
+    /// The same translation adopting uses, because it is the same problem: LED ranges coming back
+    /// as runs. Only that controller's runs are touched, since its copy says nothing about the rest
+    /// of the house.
+    /// </para>
+    /// </summary>
+    private void ReadBack(Scene scene, DriftReport report)
+    {
+        AdoptionReport plan = PresetAdoption.Plan(
+            Project,
+            new HousePreset(report.Name, [new PresetPlacement(report.ControllerKey, 0, report.OnController)]));
+
+        foreach (Segment run in Project.SegmentsOn(report.ControllerKey))
+        {
+            if (plan.Scene.Segments.TryGetValue(run.Id, out SceneEntry? entry))
+            {
+                scene.Segments[run.Id] = entry;
+            }
+            else
+            {
+                scene.Segments.Remove(run.Id);
+            }
+        }
     }
 
     /// <summary>True when a scene has anything to say about the runs on one controller.</summary>

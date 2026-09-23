@@ -61,14 +61,32 @@ $proc = Get-Process LedBalloon.App -ErrorAction SilentlyContinue
 if (-not $proc) { Write-Output 'LedBalloon is not running.'; exit 1 }
 
 $hwnd = $proc.MainWindowHandle
-$root = [System.Windows.Automation.AutomationElement]::FromHandle($hwnd)
 $auto = [System.Windows.Automation.AutomationElement]
 $tree = [System.Windows.Automation.TreeScope]::Descendants
+
+# Every top-level window the app owns, not just the main one: a confirmation is its own window, and
+# a question that cannot be answered is worse than no automation at all.
+function Roots {
+  $byPid = New-Object System.Windows.Automation.PropertyCondition(
+    $auto::ProcessIdProperty, $proc.Id)
+  $windows = $auto::RootElement.FindAll(
+    [System.Windows.Automation.TreeScope]::Children, $byPid)
+
+  $list = @()
+  foreach ($w in $windows) { $list += $w }
+  if ($list.Count -eq 0 -and $hwnd -ne [IntPtr]::Zero) {
+    $list += $auto::FromHandle($hwnd)
+  }
+  return $list
+}
 
 function All([string]$type) {
   $cond = New-Object System.Windows.Automation.PropertyCondition(
     $auto::ControlTypeProperty, [System.Windows.Automation.ControlType]::$type)
-  return $root.FindAll($tree, $cond)
+
+  $found = @()
+  foreach ($r in Roots) { foreach ($e in $r.FindAll($tree, $cond)) { $found += $e } }
+  return $found
 }
 
 # Matched on a distinctive fragment, case-insensitively: captions carry em dashes and middots that
