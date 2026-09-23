@@ -214,6 +214,7 @@
                          Text="A scene is a named way for the whole house to look — what every run is doing, saved together. It spans the controllers, so there is one list and it does not matter which box stores what." />
 
               <ComboBox ItemsSource="{Binding Scenes}"
+               AutomationProperties.AutomationId="SceneList"
                         SelectedItem="{Binding SelectedScene}"
                         DisplayMemberBinding="{Binding Name}"
                         PlaceholderText="Pick a scene to look at"
@@ -232,6 +233,7 @@
                 <!-- On losing focus rather than on every keystroke: the setter refuses a name
                      another scene already has, and doing that mid-word would fight the typing. -->
                 <TextBox Text="{Binding SelectedScene.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                 AutomationProperties.AutomationId="SceneName"
                          PlaceholderText="Scene name"
                          IsEnabled="{Binding SelectedScene.IsOwn}"
                          Margin="0,4,0,0" />
@@ -362,12 +364,14 @@
                           IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Effect" />
                 <ComboBox ItemsSource="{Binding SegmentEffects}"
+                 AutomationProperties.AutomationId="SegmentEffect"
                           SelectedItem="{Binding SegmentEffectChoice}"
                           PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
 
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Palette" />
                 <ComboBox ItemsSource="{Binding SegmentPalettes}"
+                 AutomationProperties.AutomationId="SegmentPalette"
                           SelectedItem="{Binding SegmentPaletteChoice}"
                           PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
@@ -381,6 +385,7 @@
                          Text="A look is a named way for one run to look — its effect, palette, speed and colors, written down once. Use it on as many runs and in as many scenes as you like; change it here and all of them follow." />
 
               <ComboBox ItemsSource="{Binding Looks}"
+               AutomationProperties.AutomationId="LookList"
                         SelectedItem="{Binding SelectedLook}"
                         DisplayMemberBinding="{Binding Name}"
                         PlaceholderText="Pick a look"
@@ -395,6 +400,7 @@
                           IsVisible="{Binding SelectedLook, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
 
                 <TextBox Text="{Binding SelectedLook.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
+                 AutomationProperties.AutomationId="LookName"
                          PlaceholderText="Look name" Margin="0,4,0,0" />
 
                 <!-- The reach is the point and also the surprise, so it is said while the look is
