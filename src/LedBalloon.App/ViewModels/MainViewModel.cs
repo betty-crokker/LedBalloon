@@ -1844,9 +1844,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
         // Resolved from the layout now, rather than recalled from whenever it was written down, so
         // a run whose length was corrected since is covered to its real end.
-        foreach ((string key, WledState state) in SceneResolver.Resolve(Project, scene))
+        _applyingScene = true;
+        try
         {
-            Send(DeviceFor(key), state);
+            foreach ((string key, WledState state) in SceneResolver.Resolve(Project, scene))
+            {
+                Send(DeviceFor(key), state);
+            }
+        }
+        finally
+        {
+            _applyingScene = false;
         }
 
         Status = LiveSync
@@ -2086,6 +2094,94 @@ public sealed partial class MainViewModel : ViewModelBase
             : $"• {note.Message}";
 
     /// <summary>
+    /// What the picked scene said before it was edited by hand, so that saving the result under a
+    /// new name can leave the original exactly as it was.
+    /// </summary>
+    private Scene? _sceneBeforeEdit;
+
+    /// <summary>True while a scene is being put on the house, so applying it is not read as editing it.</summary>
+    private bool _applyingScene;
+
+    /// <summary>True once the picked scene has been changed by hand.</summary>
+    [ObservableProperty] private bool _sceneEdited;
+
+    /// <summary>
+    /// Folds a hand edit into the scene being looked at.
+    /// <para>
+    /// Picking a scene and then changing a run means changing that scene: there is no third state
+    /// where the panel shows a scene that the house and the photo no longer agree with. Starting
+    /// somewhere and branching off is what "Save as a new scene" is for, and it puts the original
+    /// back.
+    /// </para>
+    /// </summary>
+    private void NoteSceneEdit(string controllerKey, WledState patch)
+    {
+        if (_applyingScene || SelectedScene is not { Scene: { } scene })
+        {
+            return;
+        }
+
+        scene.On = patch.On ?? scene.On;
+        scene.Brightness = patch.Brightness ?? scene.Brightness;
+
+        foreach (WledSegment touched in patch.Segments ?? [])
+        {
+            Segment? run = Project.SegmentsOn(controllerKey)
+                .FirstOrDefault(r => Project.WledSegmentIdFor(r) == touched.Id);
+
+            if (run is null)
+            {
+                continue;
+            }
+
+            if (!scene.Segments.TryGetValue(run.Id, out SceneEntry? entry))
+            {
+                entry = new SceneEntry();
+                scene.Segments[run.Id] = entry;
+            }
+
+            SceneResolver.Absorb(entry, touched, Project.Wearing(entry));
+        }
+
+        SceneEdited = true;
+        OnSelectedSceneChanged(SelectedScene);
+        AfterProjectChanged($"'{scene.Name}' changed. Save to put it on the controllers.");
+    }
+
+    /// <summary>
+    /// Keeps the hand edits under a new name and puts the scene they were started from back.
+    /// <para>
+    /// The way to try something out on a scene you want to keep: start from it, change what you
+    /// like, and branch rather than overwrite.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private void SaveSceneAsNew()
+    {
+        if (SelectedScene is not { Scene: { } edited } || _sceneBeforeEdit is not { } original)
+        {
+            return;
+        }
+
+        var branch = new Scene { Name = Project.UniqueSceneName($"{original.Name} 2") };
+        branch.CopyFrom(edited);
+
+        // The one it was started from goes back to what it said, including what it has published
+        // and where, so nothing about it looks changed to the next save.
+        edited.CopyFrom(original);
+
+        Project.Scenes.Add(branch);
+        _sceneBeforeEdit = null;
+
+        RebuildScenes();
+        SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, branch));
+
+        AfterProjectChanged(
+            $"Kept as '{branch.Name}'. '{original.Name}' is back to what it was. Give the new one a " +
+            "name, then Save.");
+    }
+
+    /// <summary>
     /// Removes a scene, unless a timer is pointing at it.
     /// <para>
     /// Taking the published preset out from under a timer would leave it firing nothing at 23:30
@@ -2304,6 +2400,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnSelectedSceneChanged(SceneRow? value)
     {
+        // Taken before anything can change it. Saving edits under a new name has to put this back,
+        // so it has to be what the scene said at the moment it was picked.
+        if (!ReferenceEquals(_sceneBeforeEdit?.Id, value?.Scene?.Id) &&
+            !string.Equals(_sceneBeforeEdit?.Id, value?.Scene?.Id, StringComparison.Ordinal))
+        {
+            _sceneBeforeEdit = value?.Scene?.Clone();
+            SceneEdited = false;
+        }
+
         SceneDetails.Clear();
         SceneNotes.Clear();
 
@@ -2371,6 +2476,8 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             return;
         }
+
+        NoteSceneEdit(key, patch);
 
         if (LiveSync)
         {
