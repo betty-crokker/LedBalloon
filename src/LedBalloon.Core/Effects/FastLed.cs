@@ -96,6 +96,42 @@ public static class FastLed
         return (byte)(lowest + Scale8(wave, (byte)(highest - lowest)));
     }
 
+    /// <summary>
+    /// Where in a beat we are, 0-65535, at a tempo given in 8.8 fixed point.
+    /// <para>
+    /// The tempo is beats per minute shifted up eight bits, so 341 is about 1.3 BPM. Effects that
+    /// want a slow drift rather than a pulse are written against this rather than against whole
+    /// beats, because one beat a minute is already too fast for some of them.
+    /// </para>
+    /// </summary>
+    public static ushort Beat88(ushort beatsPerMinute88, uint now)
+    {
+        unchecked
+        {
+            return (ushort)((now * (uint)beatsPerMinute88 * 280) >> 16);
+        }
+    }
+
+    /// <summary>A sine at an 8.8 fixed-point tempo, swinging between two 16-bit values.</summary>
+    public static ushort BeatSin88(
+        ushort beatsPerMinute88,
+        ushort lowest,
+        ushort highest,
+        uint now,
+        ushort phaseOffset = 0)
+    {
+        ushort beat = Beat88(beatsPerMinute88, now);
+
+        unchecked
+        {
+            var wave = (ushort)(Sin16((ushort)(beat + phaseOffset)) + 32768);
+            return (ushort)(lowest + Scale16(wave, (ushort)(highest - lowest)));
+        }
+    }
+
+    /// <summary><see cref="Scale8"/>'s wider sibling: a fraction of a 16-bit value.</summary>
+    public static ushort Scale16(ushort i, ushort scale) => (ushort)((uint)i * scale / 65536);
+
     /// <summary>A symmetrical triangle wave over a byte: up to 255 and back down.</summary>
     public static byte TriWave8(byte input)
     {

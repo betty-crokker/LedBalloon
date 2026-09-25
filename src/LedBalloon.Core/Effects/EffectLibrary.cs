@@ -27,6 +27,7 @@ public static class EffectLibrary
         new BpmEffect(),
         new FlowEffect(),
         new ChunchunEffect(),
+        new ColorwavesEffect(),
         new ColorTwinklesEffect(),
         new TwinkleCatEffect(),
         new RippleEffect(),
