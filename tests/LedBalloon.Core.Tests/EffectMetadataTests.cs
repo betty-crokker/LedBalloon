@@ -114,4 +114,28 @@ public class EffectMetadataTests
         Assert.Equal([1, 2], all[1].UsedSlots);
         Assert.True(all[2].PaletteOnly);
     }
+
+    /// <summary>
+    /// A run of LED along a roofline cannot show a matrix effect, and WLED's own UI hides them.
+    /// Offering them is 37 names that do nothing. The rule was checked against the controller's own
+    /// filtering and agreed on all 37.
+    /// </summary>
+    [Theory]
+    [InlineData("!,Spawning rate,Trail,,,Custom color;Spawn,Trail;;2", true)]   // Matrix
+    [InlineData("Scroll speed,,# of bands;;;2f;si=0", true)]                    // Funky Plank
+    [InlineData("!,Duty cycle;!,!;!;01", false)]                               // Blink
+    [InlineData(",Frequency;!,!;!;12;ix=192,pal=11", false)]                   // Fireworks, both
+    [InlineData("!;;", false)]                                                 // Stream 2, no flags
+    public void An_effect_that_needs_a_matrix_says_so(string fxdata, bool matrixOnly)
+    {
+        Assert.Equal(matrixOnly, EffectMetadata.Parse(fxdata).Is2DOnly);
+    }
+
+    [Fact]
+    public void A_sound_reactive_effect_says_so()
+    {
+        Assert.True(EffectMetadata.Parse("Speed;;;01f;m12=2,si=0").IsAudioReactive);      // DJ Light
+        Assert.True(EffectMetadata.Parse("!,!;;;01v;m12=2,si=0").IsAudioReactive);        // Noisefire
+        Assert.False(EffectMetadata.Parse("!,Duty cycle;!,!;!;01").IsAudioReactive);      // Blink
+    }
 }

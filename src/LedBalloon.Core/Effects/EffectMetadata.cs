@@ -46,6 +46,25 @@ public sealed class EffectMetadata
     /// <summary>The effect's own names for its sliders, which are rarely "speed" and "intensity".</summary>
     public IReadOnlyList<string> Sliders { get; private init; } = [];
 
+    /// <summary>
+    /// The dimension and audio flags, verbatim. "1" and "2" are the dimensions the effect supports,
+    /// "v" and "f" that it reacts to volume or to frequency.
+    /// </summary>
+    public string Flags { get; private init; } = string.Empty;
+
+    /// <summary>
+    /// True for an effect that only makes sense on a 2D matrix, so a run of LED along a roofline
+    /// cannot show it at all.
+    /// <para>
+    /// WLED's own UI hides these on a 1D segment, and a list that offers them is a list of 37 names
+    /// that do nothing. Checked against the controller: this rule and the UI agree on all 37.
+    /// </para>
+    /// </summary>
+    public bool Is2DOnly => Flags.Contains('2') && !Flags.Contains('1');
+
+    /// <summary>True for an effect driven by sound, which needs a microphone or a UDP audio feed.</summary>
+    public bool IsAudioReactive => Flags.Contains('v') || Flags.Contains('f');
+
     public bool UsesPalette => PaletteLabel is not null;
 
     /// <summary>Which slots to show, as 1-based numbers in the order the user would read them.</summary>
@@ -106,6 +125,7 @@ public sealed class EffectMetadata
                 : head,
 
             Sliders = [.. Section(sections, 0).Select(s => s.Trim()).Where(s => s.Length > 0)],
+            Flags = sections.Length > 3 ? sections[3].Trim() : string.Empty,
         };
     }
 
