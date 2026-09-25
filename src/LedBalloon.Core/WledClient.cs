@@ -104,6 +104,18 @@ public sealed class WledClient : IDisposable
         GetJsonAsync("json/pal", WledJson.Default.StringArray, cancellationToken);
 
     /// <summary>
+    /// What each effect says it uses, in the same index order as <see cref="GetEffectsAsync"/>.
+    /// <para>
+    /// This is how a panel knows to offer one color swatch for Bpm, none at all for Colortwinkles,
+    /// and a single slot named "Glitter color" for Solid Glitter. Read from the device for the same
+    /// reason the effect names are: it belongs to the firmware build, and two controllers on one
+    /// house need not be running the same one.
+    /// </para>
+    /// </summary>
+    public Task<string[]?> GetEffectMetadataAsync(CancellationToken cancellationToken = default) =>
+        GetJsonAsync("json/fxdata", WledJson.Default.StringArray, cancellationToken);
+
+    /// <summary>
     /// Reads every preset stored on the device, keyed by slot number and sorted by it.
     /// <para>
     /// Presets are deliberately absent from <c>/json</c>; they live in a file on the device's flash,
