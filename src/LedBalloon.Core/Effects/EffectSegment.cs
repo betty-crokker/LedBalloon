@@ -106,6 +106,16 @@ public sealed class EffectSegment
     public int PaletteId { get; set; }
 
     /// <summary>
+    /// Whether a palette lookup wraps back to its first entry at the top.
+    /// <para>
+    /// The controller's own "colour blending" setting decides this, and it is off by default:
+    /// WLED reads it as <c>cb == 1 || cb == 3</c>, and <c>hw.led.cb</c> is 0 on a stock box. Kept
+    /// here rather than assumed, because it changes what the last few LEDs of a run do.
+    /// </para>
+    /// </summary>
+    public bool SolidWrap { get; set; }
+
+    /// <summary>
     /// The gradient behind <see cref="PaletteId"/>, as the controller reports it.
     /// <para>
     /// Read from <c>/json/palx</c>, which already serves the sixteen-entry gamma-corrected form the
