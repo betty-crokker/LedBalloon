@@ -133,6 +133,20 @@ public sealed class EffectMetadata
     public static IReadOnlyList<EffectMetadata> ParseAll(IEnumerable<string>? fxdata) =>
         fxdata is null ? [] : [.. fxdata.Select(Parse)];
 
+    /// <summary>
+    /// What effect <paramref name="effectId"/> uses, or <see cref="Unknown"/> when this controller
+    /// has not said.
+    /// <para>
+    /// The fall-back matters more than it looks. <c>/json/fxdata</c> arrived in WLED 0.14, so older
+    /// firmware answers 404 and there is nothing to line up against; a build could also report
+    /// fewer entries than effects. Both land here, and both come back as "offer everything" — which
+    /// is wrong in the safe direction, since a control that does nothing is a smaller failure than
+    /// a hidden control that would have worked.
+    /// </para>
+    /// </summary>
+    public static EffectMetadata For(IReadOnlyList<EffectMetadata>? all, int? effectId) =>
+        all is not null && effectId is { } id && id >= 0 && id < all.Count ? all[id] : Unknown;
+
     /// <summary>A missing section and an empty one both mean "nothing declared here".</summary>
     private static string[] Section(string[] sections, int index) =>
         index >= sections.Length || sections[index].Length == 0 ? [] : sections[index].Split(',');

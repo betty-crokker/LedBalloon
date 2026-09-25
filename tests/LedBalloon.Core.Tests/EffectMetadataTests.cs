@@ -138,4 +138,33 @@ public class EffectMetadataTests
         Assert.True(EffectMetadata.Parse("!,!;;;01v;m12=2,si=0").IsAudioReactive);        // Noisefire
         Assert.False(EffectMetadata.Parse("!,Duty cycle;!,!;!;01").IsAudioReactive);      // Blink
     }
+
+    /// <summary>
+    /// Firmware older than 0.14 has no /json/fxdata at all, and a build could report fewer entries
+    /// than effects. Both have to land on "offer everything" rather than on an exception or on a
+    /// panel with no controls.
+    /// </summary>
+    [Fact]
+    public void A_controller_that_has_not_said_gets_the_benefit_of_the_doubt()
+    {
+        IReadOnlyList<EffectMetadata> none = EffectMetadata.ParseAll(null);
+        Assert.Empty(none);
+
+        foreach (EffectMetadata m in new[]
+                 {
+                     EffectMetadata.For(none, 3),
+                     EffectMetadata.For(null, 3),
+                     EffectMetadata.For(EffectMetadata.ParseAll(["!;;"]), 9),
+                     EffectMetadata.For(EffectMetadata.ParseAll(["!;;"]), null),
+                     EffectMetadata.For(EffectMetadata.ParseAll(["!;;"]), -1),
+                 })
+        {
+            Assert.False(m.Declared);
+            Assert.True(m.UsesPalette);
+            Assert.Equal([1, 2, 3], m.UsedSlots);
+        }
+
+        // In range, it is the real thing rather than the fall-back.
+        Assert.True(EffectMetadata.For(EffectMetadata.ParseAll(["!;;"]), 0).Declared);
+    }
 }
