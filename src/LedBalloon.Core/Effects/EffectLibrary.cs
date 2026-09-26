@@ -58,6 +58,15 @@ public static class EffectLibrary
         new RainbowRunnerEffect(),
         new DissolveEffect(),
         new DissolveRandomEffect(),
+        new TricolorChaseEffect(),
+        new GradientEffect(),
+        new LoadingEffect(),
+        new ScannerEffect(),
+        new DualScannerEffect(),
+        new LighthouseEffect(),
+        new SpotsEffect(),
+        new SpotsFadeEffect(),
+        new TwoDotsEffect(),
         new ColorTwinklesEffect(),
         new TwinkleCatEffect(),
         new RippleEffect(),
@@ -89,13 +98,18 @@ public static class EffectLibrary
     /// <param name="length">How many LEDs the run has here, which is not always what the preset says.</param>
     /// <param name="effectNames">The controller's own effect list, from <c>/json/eff</c>.</param>
     /// <param name="palette">The gradient behind the segment's palette id, if it uses one.</param>
-    /// <param name="frameMilliseconds">The controller's frame time, from <c>hw.led.fps</c>.</param>
+    /// <param name="frameMilliseconds">How often the controller actually draws a frame.</param>
+    /// <param name="frameTimeMilliseconds">
+    /// WLED's <c>FRAMETIME</c> on that controller, which is a different number and is not how often
+    /// it draws - see <see cref="EffectSegment.FrameTime"/>.
+    /// </param>
     public static EffectSimulation? Simulate(
         WledSegment wled,
         int length,
         IReadOnlyList<string>? effectNames,
         WledPalette? palette,
-        int frameMilliseconds = EffectSimulation.DefaultFrameMilliseconds)
+        int frameMilliseconds = EffectSimulation.DefaultFrameMilliseconds,
+        int frameTimeMilliseconds = FrameTime.MinimumFrameDelay)
     {
         ArgumentNullException.ThrowIfNull(wled);
 
@@ -104,7 +118,11 @@ public static class EffectLibrary
             return null;
         }
 
-        var segment = new EffectSegment(length) { FrameMilliseconds = frameMilliseconds };
+        var segment = new EffectSegment(length)
+        {
+            FrameMilliseconds = frameMilliseconds,
+            FrameTime = frameTimeMilliseconds,
+        };
         segment.Adopt(wled, palette);
 
         var simulation = new EffectSimulation(effect, segment, frameMilliseconds);

@@ -3537,7 +3537,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Each controller's frame time in milliseconds. Anything that trails, fades or decays does so
     /// once a frame, so this is what decides how long a trail looks.
     /// </summary>
-    [ObservableProperty] private IReadOnlyDictionary<string, int>? _frameTimes;
+    [ObservableProperty] private IReadOnlyDictionary<string, ControllerTiming>? _frameTimes;
 
     /// <summary>
     /// The best rate seen from each controller while something was actually moving on it.
@@ -3552,10 +3552,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Works out how fast each controller draws.
     /// <para>
-    /// Asked of the strip rather than of its configuration. <c>hw.led.fps</c> says 42 on both
-    /// controllers here and neither runs at it — they report 107 and 96, because WLED goes as fast
-    /// as the wire allows. Reading the configured figure made every fading effect four times too
-    /// slow, which nothing noticed until an effect that decays per frame was ported.
+    /// Asked of the strip rather than of its configuration. <c>hw.led.fps</c> is 0 on both
+    /// controllers here, which is WLED's "unlimited" setting - so there is no configured rate to
+    /// read even if it were the right thing to read, and they run at 107 and 96 because that is how
+    /// fast the wire lets them. Taking the configured figure for the effect rate made every fading
+    /// effect four times too slow, which nothing noticed until an effect that decays per frame was
+    /// ported.
+    /// </para>
+    /// <para>
+    /// The configured rate is still worth reading, for the other frame time: WLED's
+    /// <c>FRAMETIME</c> comes from it, and a handful of effects use that as a constant. Unlimited
+    /// makes it 2 ms, against the 9 a frame really takes.
     /// </para>
     /// <para>
     /// A reported rate is only believed while something is moving: WLED does not re-clock a frame
@@ -3565,7 +3572,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private async Task LoadFrameTimesAsync()
     {
-        var times = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var times = new Dictionary<string, ControllerTiming>(StringComparer.OrdinalIgnoreCase);
 
         foreach (DeviceViewModel device in Devices)
         {
@@ -3587,9 +3594,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 int leds = info?.Leds?.Count ?? device.Capabilities?.LedCount ?? 0;
 
-                times[key] = _measuredFrameTimes.TryGetValue(key, out int measured)
-                    ? measured
-                    : FrameTime.EstimateMilliseconds(leds);
+                int? configured = await new WledConfigClient(device.Host).GetTargetFpsAsync();
+
+                times[key] = new ControllerTiming(
+                    _measuredFrameTimes.TryGetValue(key, out int measured)
+                        ? measured
+                        : FrameTime.EstimateMilliseconds(leds),
+                    FrameTime.Constant(configured));
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
@@ -3597,7 +3608,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 // a run with nothing at all falls back to the estimate at the next reading.
                 if (_measuredFrameTimes.TryGetValue(key, out int measured))
                 {
-                    times[key] = measured;
+                    times[key] = new ControllerTiming(measured, FrameTime.MinimumFrameDelay);
                 }
             }
         }

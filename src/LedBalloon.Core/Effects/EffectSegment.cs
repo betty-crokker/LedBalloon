@@ -42,6 +42,24 @@ public sealed class EffectSegment
     public int FrameMilliseconds { get; set; } = 1000 / 42;
 
     /// <summary>
+    /// WLED's <c>FRAMETIME</c>, which is a different number from <see cref="FrameMilliseconds"/>
+    /// and used for a different purpose.
+    /// <para>
+    /// <see cref="FrameMilliseconds"/> is how often a frame actually gets drawn. This is a constant
+    /// the firmware derives from the configured frame rate, which a handful of effects then use in
+    /// their own arithmetic - and with the rate set to unlimited, as both controllers here are, it
+    /// comes to two milliseconds rather than the nine a frame really takes.
+    /// </para>
+    /// <para>
+    /// Mixing the two up is not harmless. Blink's cycle is
+    /// <c>(255 - speed) * 20 + FRAMETIME * 2</c>, so at the top of the speed slider the whole cycle
+    /// <em>is</em> FRAMETIME: 4 ms with the right constant and 18 ms with the frame interval, which
+    /// is four and a half times too slow.
+    /// </para>
+    /// </summary>
+    public int FrameTime { get; set; } = Effects.FrameTime.MinimumFrameDelay;
+
+    /// <summary>
     /// Scratch that survives between frames, WLED's <c>SEGENV.step</c>. Effects that need to know
     /// what they did last time keep it here.
     /// </summary>

@@ -276,6 +276,13 @@ public static class FastLed
         return new RgbColor(r, g, b);
     }
 
+    /// <summary>
+    /// The same triangle wave over sixteen bits, which is what the effects that need a shape
+    /// smoother than an LED apart use.
+    /// </summary>
+    public static ushort TriWave16(ushort input) =>
+        input < 0x8000 ? (ushort)(input * 2) : (ushort)(0xFFFF - ((input - 0x8000) * 2));
+
     /// <summary>A symmetrical triangle wave over a byte: up to 255 and back down.</summary>
     public static byte TriWave8(byte input)
     {
