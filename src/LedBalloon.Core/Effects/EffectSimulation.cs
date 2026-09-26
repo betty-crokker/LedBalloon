@@ -51,6 +51,7 @@ public sealed class EffectSimulation
 
     private double _owed;
     private uint _now;
+    private int _pending;
 
     public EffectSimulation(
         IWledEffect effect,
@@ -90,19 +91,32 @@ public sealed class EffectSimulation
 
         int drawn = 0;
 
-        while (_owed >= _frameMilliseconds && drawn < MaxFramesPerAdvance)
+        while (drawn < MaxFramesPerAdvance)
         {
-            _owed -= _frameMilliseconds;
+            // How long until the next frame: what the effect asked for, but never less than the
+            // strip takes to clock itself out. The controller waits out the longer of the two and
+            // then draws, so the gap really is what was asked for rather than the next multiple of
+            // a frame - which matters for Chase Flash, whose whole character is a 20 ms flash
+            // against a 30 ms gap, and would come out a third slow if this rounded up.
+            int step = Math.Max(_frameMilliseconds, _pending);
+
+            if (_owed < step)
+            {
+                break;
+            }
+
+            _owed -= step;
             drawn++;
 
             // Wraps at 2^32 ms, about 49 days, exactly where the controller's own clock wraps.
             // Effects are written to survive that, so the simulation has to reach it the same way.
             unchecked
             {
-                _now += (uint)_frameMilliseconds;
+                _now += (uint)step;
             }
 
             Segment.Draw(_effect, _now);
+            _pending = Segment.FrameDelay;
             Frames++;
         }
 

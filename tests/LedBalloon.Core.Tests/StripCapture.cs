@@ -58,24 +58,37 @@ internal static class Strip
     {
         var frame = new RgbColor[segment.Length];
         uint nextSample = settleMilliseconds;
+        uint end = settleMilliseconds + milliseconds;
+        uint t = 0;
 
-        for (uint t = 0; t < settleMilliseconds + milliseconds; t += FrameMs)
+        segment.Draw(effect, t);
+
+        while (nextSample < end)
         {
+            // The gap to the next frame is what the effect asked for, or the time the strip takes
+            // to clock out, whichever is longer.
+            uint until = t + (uint)Math.Max(FrameMs, segment.FrameDelay);
+
+            // The preview sends whatever is in the buffer on its own schedule, so a frame held for a
+            // long time is sent over and over - which is how a pause looks from outside.
+            //
+            // Sampled before the next frame is drawn, not after. Drawing first and then filling in
+            // the samples that the frame covered gets the pause backwards: it fills a three second
+            // pause with the picture that ended it. That put ICU's still frames at half a percent
+            // where the strip had thirty-eight.
+            while (nextSample < until && nextSample < end)
+            {
+                for (int i = 0; i < frame.Length; i++)
+                {
+                    frame[i] = segment.Pixels[segment.Length - 1 - i];
+                }
+
+                read(frame, nextSample);
+                nextSample += PreviewSampleMs;
+            }
+
+            t = until;
             segment.Draw(effect, t);
-
-            if (t < nextSample)
-            {
-                continue;
-            }
-
-            nextSample = t + PreviewSampleMs;
-
-            for (int i = 0; i < frame.Length; i++)
-            {
-                frame[i] = segment.Pixels[segment.Length - 1 - i];
-            }
-
-            read(frame, t);
         }
     }
 

@@ -60,6 +60,22 @@ public sealed class EffectSegment
     public int FrameTime { get; set; } = Effects.FrameTime.MinimumFrameDelay;
 
     /// <summary>
+    /// How long this effect wants before it is drawn again, which most of them leave alone.
+    /// <para>
+    /// WLED's effects return this, and the strip's service loop schedules the next frame from it.
+    /// Almost all of them return <c>FRAMETIME</c>, meaning as soon as the strip can manage - but
+    /// some do not, and for those it is not a detail. Chase Flash spends 20 ms on a flash frame and
+    /// 30 on the gap between, and ICU stops dead for a second or three between eye movements.
+    /// Neither is reproducible by drawing every frame and neither reads right without it.
+    /// </para>
+    /// <para>
+    /// Set back to <see cref="FrameTime"/> before each frame by <see cref="Draw"/>, so an effect
+    /// that asks for a delay once does not keep it forever.
+    /// </para>
+    /// </summary>
+    public int FrameDelay { get; set; } = Effects.FrameTime.MinimumFrameDelay;
+
+    /// <summary>
     /// Scratch that survives between frames, WLED's <c>SEGENV.step</c>. Effects that need to know
     /// what they did last time keep it here.
     /// </summary>
@@ -124,6 +140,10 @@ public sealed class EffectSegment
     public void Draw(IWledEffect effect, uint now)
     {
         ArgumentNullException.ThrowIfNull(effect);
+
+        // Asking for nothing in particular is the usual answer, so it is the one an effect gets
+        // without saying anything.
+        FrameDelay = FrameTime;
 
         effect.Render(this, now);
 
