@@ -287,6 +287,24 @@ public static class FastLed
         return (byte)(input << 1);
     }
 
+    /// <summary>
+    /// A half sine that sits at zero for half its input, so what it drives has gaps between pulses.
+    /// <para>
+    /// Takes a full sixteen bits and looks only at bit 8: any input with that bit set returns zero,
+    /// which is every other run of 256. The rest is a sine shifted by three quarters of a turn so
+    /// the pulse starts and ends at zero rather than stepping in and out of one.
+    /// </para>
+    /// </summary>
+    public static byte SinGap(ushort input) =>
+        (input & 0x100) != 0 ? (byte)0 : Sin8((byte)(input + 192));
+
+    /// <summary>
+    /// Arduino's <c>map</c>: rescales <paramref name="value"/> from one range onto another with
+    /// integer division, so it truncates toward zero rather than rounding.
+    /// </summary>
+    public static int Map(int value, int fromLow, int fromHigh, int toLow, int toHigh) =>
+        ((value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow)) + toLow;
+
     /// <summary>A triangle wave with its corners rounded off, which reads as a swell rather than a ramp.</summary>
     public static byte CubicWave8(byte input) => EaseInOutCubic8(TriWave8(input));
 
