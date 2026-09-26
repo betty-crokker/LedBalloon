@@ -33,7 +33,7 @@ public sealed class BlinkEffect : IWledEffect
     {
         ArgumentNullException.ThrowIfNull(segment);
 
-        var frame = (uint)segment.FrameMilliseconds;
+        var frame = (uint)segment.FrameTime;
 
         uint cycleTime = (uint)(255 - segment.Speed) * 20;
 

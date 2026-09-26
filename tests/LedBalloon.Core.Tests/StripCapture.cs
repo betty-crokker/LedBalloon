@@ -13,8 +13,12 @@ internal static class Strip
     public const int Roofline = 285;
 
     /// <summary>
-    /// What the controller measured at: 107 frames a second on this run, not the 42 that
-    /// <c>hw.led.fps</c> reports - that setting is a ceiling, and a strip this short never reaches it.
+    /// What the controller measured at: 107 frames a second on this run.
+    /// <para>
+    /// There is no configured rate to compare it against - <c>hw.led.fps</c> is 0 on both
+    /// controllers, WLED's "unlimited" setting, which is exactly why the strip runs at whatever the
+    /// wire allows rather than at some ceiling.
+    /// </para>
     /// </summary>
     public const int FrameMs = 9;
 
@@ -73,6 +77,55 @@ internal static class Strip
 
             read(frame, t);
         }
+    }
+
+    /// <summary>
+    /// The shape of one frame read along one channel, which is how a wave, a blob or a row of
+    /// pools gets measured without caring what color it happens to be.
+    /// </summary>
+    /// <param name="Bands">Peaks along the run: how many of whatever it is fit on it.</param>
+    /// <param name="Rising">What share of neighboring pairs get brighter, which is its symmetry.</param>
+    /// <param name="SteepestRise">
+    /// The largest single step up, which is what tells a soft edge from a hard one - and note the
+    /// run arrives reversed, so a cliff on the falling side of the effect shows up here.
+    /// </param>
+    public readonly record struct Shape(
+        double Mean, double Deviation, int Bands, double Rising, int SteepestRise, int SteepestFall);
+
+    public static Shape Profile(RgbColor[] frame, Func<RgbColor, byte> channel)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        ArgumentNullException.ThrowIfNull(channel);
+
+        byte[] v = [.. frame.Select(channel)];
+
+        double mean = v.Average(x => (double)x);
+        double deviation = Math.Sqrt(v.Average(x => (x - mean) * (x - mean)));
+
+        int peaks = 0, ups = 0, steepestRise = 0, steepestFall = 0;
+        bool climbing = false;
+
+        for (int i = 1; i < v.Length; i++)
+        {
+            int step = v[i] - v[i - 1];
+
+            steepestRise = Math.Max(steepestRise, step);
+            steepestFall = Math.Max(steepestFall, -step);
+
+            if (step > 0)
+            {
+                climbing = true;
+                ups++;
+            }
+            else if (climbing && step < 0)
+            {
+                peaks++;
+                climbing = false;
+            }
+        }
+
+        return new Shape(
+            mean, deviation, peaks, (double)ups / (v.Length - 1), steepestRise, steepestFall);
     }
 
     /// <summary>How far apart two colors are, summed over the three channels.</summary>

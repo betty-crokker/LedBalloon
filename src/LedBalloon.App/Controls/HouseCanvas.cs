@@ -82,8 +82,8 @@ public sealed class HouseCanvas : Control
     /// Each controller's frame time in milliseconds, from its configured frame rate. Anything that
     /// trails or fades does so per frame, so this decides how long a trail looks.
     /// </summary>
-    public static readonly StyledProperty<IReadOnlyDictionary<string, int>?> FrameTimesProperty =
-        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, int>?>(nameof(FrameTimes));
+    public static readonly StyledProperty<IReadOnlyDictionary<string, ControllerTiming>?> FrameTimesProperty =
+        AvaloniaProperty.Register<HouseCanvas, IReadOnlyDictionary<string, ControllerTiming>?>(nameof(FrameTimes));
 
     /// <summary>
     /// Bumped by the view model when segments are added or removed. Property changes on a segment
@@ -148,7 +148,7 @@ public sealed class HouseCanvas : Control
         set => SetValue(EffectNamesProperty, value);
     }
 
-    public IReadOnlyDictionary<string, int>? FrameTimes
+    public IReadOnlyDictionary<string, ControllerTiming>? FrameTimes
     {
         get => GetValue(FrameTimesProperty);
         set => SetValue(FrameTimesProperty, value);
@@ -970,14 +970,19 @@ public sealed class HouseCanvas : Control
             ? PalettesOn(controllerKey)?.GetValueOrDefault(paletteId)
             : null;
 
+        ControllerTiming timing = FrameTimes?.GetValueOrDefault(controllerKey)
+            is { IntervalMilliseconds: > 0 } known
+            ? known
+            : new ControllerTiming(
+                EffectSimulation.DefaultFrameMilliseconds, FrameTime.MinimumFrameDelay);
+
         EffectSimulation? started = EffectLibrary.Simulate(
             wled,
             segment.Count,
             EffectNames?.GetValueOrDefault(controllerKey),
             palette,
-            FrameTimes?.GetValueOrDefault(controllerKey) is > 0 and { } frame
-                ? frame
-                : EffectSimulation.DefaultFrameMilliseconds);
+            timing.IntervalMilliseconds,
+            timing.FrameTimeMilliseconds);
 
         if (started is null)
         {

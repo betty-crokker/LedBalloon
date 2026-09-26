@@ -152,6 +152,66 @@ public class ChaseEffectsAgainstHardwareTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// Chase 3 is not a chase at all despite the name: equal stripes of three colors all the way
+    /// along, marching.
+    /// <para>
+    /// Every color gets exactly a third of the run - the strip held 0.333, 0.332 and 0.336 - and
+    /// the stripes are nine LEDs each, so a full pattern is 27 and a 285 LED roofline carries 10.6
+    /// of them. Counting peaks in the red channel found 10.21, the shortfall being the two ends.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Chase_3_lays_equal_stripes_of_three_colors_along_the_run()
+    {
+        List<double> red = [], blue = [], green = [];
+        List<int> bands = [];
+        int most = 0;
+
+        Strip.Sample(new TricolorChaseEffect(), Strip.Run(), 14_000, (frame, _) =>
+        {
+            red.Add((double)frame.Count(p => p == Red) / frame.Length);
+            blue.Add((double)frame.Count(p => p == Blue) / frame.Length);
+            green.Add((double)frame.Count(p => p == Green) / frame.Length);
+            bands.Add(Strip.Profile(frame, p => p.R).Bands);
+            most = Math.Max(most, Strip.Fills(frame));
+        });
+
+        output.WriteLine($"simulated: red {red.Average():F3} blue {blue.Average():F3} " +
+            $"green {green.Average():F3}, {bands.Average():F2} bands, {most} fills");
+        output.WriteLine("measured : red 0.333 blue 0.336 green 0.332, 10.21 bands, 3 fills");
+        output.WriteLine($"arithmetic: 1 + (128 >> 4) = 9 per stripe, so 285 / 27 = {285 / 27.0:F2}");
+
+        Assert.Equal(3, most);
+        Assert.InRange(red.Average(), 0.31, 0.35);
+        Assert.InRange(blue.Average(), 0.31, 0.35);
+        Assert.InRange(green.Average(), 0.31, 0.35);
+        Assert.InRange(bands.Average(), 9.5, 11);
+    }
+
+    /// <summary>
+    /// The stripes march one LED per tick, so a whole pattern comes round every 27 ticks: at full
+    /// speed that is 50 ms a tick and 1350 ms a pattern, and the strip gave 1273.
+    /// </summary>
+    [Fact]
+    public void Chase_3_marches_a_whole_pattern_every_twenty_seven_ticks()
+    {
+        List<byte> first = [];
+
+        Strip.Sample(new TricolorChaseEffect(), Strip.Run(255), 14_000, (frame, _) =>
+            first.Add(frame[0].R));
+
+        double level = first.Average(x => (double)x);
+        int cycles = first.Zip(first.Skip(1)).Count(p => p.First <= level && p.Second > level);
+        double period = cycles > 0 ? 14_000.0 / cycles : 0;
+
+        output.WriteLine($"simulated: {cycles} patterns in 14 s, {period:F0} ms each");
+        output.WriteLine("measured : 11 patterns in 14 s, 1273 ms each");
+        output.WriteLine("arithmetic: 50 + (255 - 255) * 2 = 50 ms a tick, 27 ticks = 1350 ms");
+
+        Assert.InRange(period, 1150, 1500);
+    }
+
+    /// <summary>
     /// The two rainbow chases walk the wheel once per frame drawn rather than once per millisecond,
     /// which makes them two of the few effects whose speed on screen depends on how fast the
     /// controller is managing to draw.

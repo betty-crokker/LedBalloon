@@ -130,6 +130,50 @@ internal static class Chase
         segment.Colors[2] == RgbColor.Black ? segment.Colors[0] : segment.Colors[2];
 }
 
+/// <summary>
+/// Three colors in repeating stripes, marching along the run.
+/// <para>
+/// Not built on the shared chase at all despite the name: this one has no bands over a background,
+/// it is stripes of equal width all the way along, and it moves by shifting which stripe each LED
+/// falls in rather than by advancing a position. Size runs from one LED to sixteen.
+/// </para>
+/// <para>
+/// It also paints from the far end backwards, so at the same settings it marches the opposite way
+/// from every other chase.
+/// </para>
+/// </summary>
+public sealed class TricolorChaseEffect : IWledEffect
+{
+    public string Name => "Chase 3";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        uint cycleTime = 50u + ((255u - segment.Speed) << 1);
+        uint tick = now / cycleTime;
+
+        int width = 1 + (segment.Intensity >> 4);
+        var index = (int)(tick % (uint)(width * 3));
+
+        for (int i = 0; i < segment.Length; i++, index++)
+        {
+            if (index > (width * 3) - 1)
+            {
+                index = 0;
+            }
+
+            RgbColor color =
+                index > (width << 1) - 1
+                    ? segment.ColorFromPalette(i, mapping: true, wrap: segment.SolidWrap, colorSlot: 1)
+                    : index > width - 1 ? segment.Colors[0]
+                    : segment.Colors[2];
+
+            segment.SetPixel(segment.Length - 1 - i, color);
+        }
+    }
+}
+
 /// <summary>Two bands chasing each other over the palette.</summary>
 public sealed class ChaseColorEffect : IWledEffect
 {
