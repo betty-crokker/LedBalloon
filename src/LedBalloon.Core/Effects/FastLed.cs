@@ -1,4 +1,6 @@
-﻿namespace LedBalloon.Core.Effects;
+using LedBalloon.Core.Models;
+
+namespace LedBalloon.Core.Effects;
 
 /// <summary>
 /// The integer math WLED's effects are built out of, ported rather than approximated.
@@ -148,6 +150,131 @@ public static class FastLed
 
     /// <summary><see cref="Scale8"/>'s wider sibling: a fraction of a 16-bit value.</summary>
     public static ushort Scale16(ushort i, ushort scale) => (ushort)((uint)i * scale / 65536);
+
+    /// <summary>
+    /// Hue, saturation and value to RGB, the way FastLED does it rather than the way a colour
+    /// picker does.
+    /// <para>
+    /// This is the "rainbow" conversion, not the mathematically even one. It deliberately spends
+    /// more of the hue range on yellow and boosts it, because pure yellow reads as brighter than
+    /// any other colour and an even conversion makes it look like a dull band between red and
+    /// green. Every effect that builds colours from a hue gets that bias, so a port without it
+    /// comes out subtly wrong in exactly the place people look.
+    /// </para>
+    /// </summary>
+    public static RgbColor Hsv2Rgb(byte hue, byte saturation, byte value)
+    {
+        var offset8 = (byte)((hue & 0x1F) << 3);
+        byte third = Scale8(offset8, 256 / 3);
+
+        byte r, g, b;
+
+        unchecked
+        {
+            if ((hue & 0x80) == 0)
+            {
+                if ((hue & 0x40) == 0)
+                {
+                    if ((hue & 0x20) == 0)
+                    {
+                        // red toward orange
+                        r = (byte)(255 - third);
+                        g = third;
+                        b = 0;
+                    }
+                    else
+                    {
+                        // orange toward yellow, held wide on purpose
+                        r = 171;
+                        g = (byte)(85 + third);
+                        b = 0;
+                    }
+                }
+                else if ((hue & 0x20) == 0)
+                {
+                    byte twoThirds = Scale8(offset8, 256 * 2 / 3);
+                    r = (byte)(171 - twoThirds);
+                    g = (byte)(170 + third);
+                    b = 0;
+                }
+                else
+                {
+                    r = 0;
+                    g = (byte)(255 - third);
+                    b = third;
+                }
+            }
+            else if ((hue & 0x40) == 0)
+            {
+                if ((hue & 0x20) == 0)
+                {
+                    byte twoThirds = Scale8(offset8, 256 * 2 / 3);
+                    r = 0;
+                    g = (byte)(171 - twoThirds);
+                    b = (byte)(85 + twoThirds);
+                }
+                else
+                {
+                    r = third;
+                    g = 0;
+                    b = (byte)(255 - third);
+                }
+            }
+            else if ((hue & 0x20) == 0)
+            {
+                r = (byte)(85 + third);
+                g = 0;
+                b = (byte)(171 - third);
+            }
+            else
+            {
+                r = (byte)(170 + third);
+                g = 0;
+                b = (byte)(85 - third);
+            }
+
+            if (saturation != 255)
+            {
+                if (saturation == 0)
+                {
+                    r = g = b = 255;
+                }
+                else
+                {
+                    byte desaturated = Scale8Video((byte)(255 - saturation), (byte)(255 - saturation));
+                    var keep = (byte)(255 - desaturated);
+
+                    r = Scale8(r, keep);
+                    g = Scale8(g, keep);
+                    b = Scale8(b, keep);
+
+                    // Washing out raises the floor rather than only pulling the peaks down, which
+                    // is what keeps a pastel from also going dim.
+                    r += desaturated;
+                    g += desaturated;
+                    b += desaturated;
+                }
+            }
+
+            if (value != 255)
+            {
+                byte scaled = Scale8Video(value, value);
+
+                if (scaled == 0)
+                {
+                    r = g = b = 0;
+                }
+                else
+                {
+                    r = Scale8(r, scaled);
+                    g = Scale8(g, scaled);
+                    b = Scale8(b, scaled);
+                }
+            }
+        }
+
+        return new RgbColor(r, g, b);
+    }
 
     /// <summary>A symmetrical triangle wave over a byte: up to 255 and back down.</summary>
     public static byte TriWave8(byte input)

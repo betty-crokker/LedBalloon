@@ -36,6 +36,8 @@ public static class EffectLibrary
         new RainbowEffect(),
         new StrobeMegaEffect(),
         new TriFadeEffect(),
+        new Pride2015Effect(),
+        new TriWipeEffect(),
         new ColorTwinklesEffect(),
         new TwinkleCatEffect(),
         new RippleEffect(),
