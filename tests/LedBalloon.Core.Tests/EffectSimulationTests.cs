@@ -38,16 +38,37 @@ public class FastLedTests
         }
     }
 
+    /// <summary>
+    /// FastLED's scale8 is <c>(i * (1 + scale)) &gt;&gt; 8</c>, not <c>i * scale / 256</c>. It has
+    /// defaulted to that since 3.x — FASTLED_SCALE8_FIXED — and WLED links 3.6.0, so it is what
+    /// the firmware runs.
+    /// <para>
+    /// This asserted the plain shift until the two were compared against the strip. The difference
+    /// is at most one step, so almost nothing sees it: of everything ported, only Lake reaches the
+    /// wrap-limiting call often enough to tell, and it moved from 90.7 to 90.3 against a measured
+    /// 89.9, with its red channel from 91 to the measured 90.
+    /// </para>
+    /// <para>
+    /// The step that matters is the last one. scale8(255, 240) is 240 rather than 239, which is
+    /// exactly the position of a palette's sixteenth entry — so the top of a gradient is reachable
+    /// after all.
+    /// </para>
+    /// </summary>
     [Fact]
-    public void Scaling_truncates_the_way_the_firmware_does()
+    public void Scaling_rounds_the_way_the_firmware_does()
     {
-        // Effects lean on scale8(i, 240) to stop a palette lookup short of wrapping round.
+        // Effects lean on scale8(i, 240) to stop a palette lookup wrapping round to its start.
         Assert.Equal(0, FastLed.Scale8(0, 240));
         Assert.Equal(120, FastLed.Scale8(128, 240));
+        Assert.Equal(240, FastLed.Scale8(255, 240));
 
-        // 255 * 240 >> 8 is 239, not 240. The shift loses the remainder, and that last shade is
-        // the whole point of the call: it is what keeps the lookup off the end of the palette.
-        Assert.Equal(239, FastLed.Scale8(255, 240));
+        Assert.Equal(255, FastLed.Scale8(255, 255));
+        Assert.Equal(0, FastLed.Scale8(0, 255));
+
+        // The video variant never scales a lit channel all the way out.
+        Assert.Equal(1, FastLed.Scale8Video(1, 1));
+        Assert.Equal(0, FastLed.Scale8Video(0, 255));
+        Assert.Equal(0, FastLed.Scale8Video(255, 0));
     }
 
     [Fact]
