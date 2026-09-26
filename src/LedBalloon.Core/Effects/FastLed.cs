@@ -20,6 +20,13 @@ public static class FastLed
     /// Bhaskara I's approximation, <c>16x(pi - x) / (5pi^2 - 4x(pi - x))</c>, in integers. Accurate
     /// to about a part in a thousand, which is half an LED on a three hundred LED run.
     /// </para>
+    /// <para>
+    /// This one is WLED's <c>sin16_t</c> rather than FastLED's <c>sin16</c>, despite where it lives.
+    /// WLED replaced the FastLED version outright - its own comment says "1:1 replacements to remove
+    /// the use of fastled sin16()" - and the replacement is more accurate, so an effect ported
+    /// against the FastLED table would drift against the wall. Checked line by line against
+    /// <c>wled_math.cpp</c>.
+    /// </para>
     /// </summary>
     public static short Sin16(ushort theta)
     {
@@ -140,6 +147,34 @@ public static class FastLed
         ushort phaseOffset = 0)
     {
         ushort beat = Beat88(beatsPerMinute88, now);
+
+        unchecked
+        {
+            var wave = (ushort)(Sin16((ushort)(beat + phaseOffset)) + 32768);
+            return (ushort)(lowest + Scale16(wave, (ushort)(highest - lowest)));
+        }
+    }
+
+    /// <summary>
+    /// A 16-bit beat at a whole number of beats a minute.
+    /// <para>
+    /// Takes the tempo in beats a minute rather than in the 8.8 fixed point its sibling wants, and
+    /// shifts it up itself - which is why an effect can pass <c>speed / 10</c> and get something
+    /// sensible.
+    /// </para>
+    /// </summary>
+    public static ushort Beat16(ushort beatsPerMinute, uint now) =>
+        Beat88(beatsPerMinute < 256 ? (ushort)(beatsPerMinute << 8) : beatsPerMinute, now);
+
+    /// <summary>A sine at a whole-number tempo, swinging between two 16-bit values.</summary>
+    public static ushort BeatSin16(
+        ushort beatsPerMinute,
+        ushort lowest,
+        ushort highest,
+        uint now,
+        ushort phaseOffset = 0)
+    {
+        ushort beat = Beat16(beatsPerMinute, now);
 
         unchecked
         {
@@ -325,6 +360,9 @@ public static class FastLed
 
         return (byte)Math.Min(result, 255);
     }
+
+    /// <summary>Adds without going past 255, FastLED's <c>qadd8</c>.</summary>
+    public static byte QAdd8(byte from, int amount) => (byte)Math.Min(255, from + amount);
 
     /// <summary>Subtraction that stops at zero instead of wrapping round to 255.</summary>
     public static byte QSub8(byte from, int amount)

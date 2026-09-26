@@ -79,6 +79,18 @@ public static class FrameTime
     public const int MinimumFrameDelay = 2;
 
     /// <summary>
+    /// WLED's <c>FRAMETIME_FIXED</c>: 23 ms, the frame time it would have at its nominal 42 frames a
+    /// second, regardless of what the controller is configured or able to do.
+    /// <para>
+    /// A third frame time, and a compile-time constant rather than a setting. Candle is the effect
+    /// that asks for it: its fade steps are sized on the assumption of being called every 25 ms, and
+    /// the source says so in a comment. Asking to be drawn at a fixed rate is how it keeps looking
+    /// like a candle on a controller that could draw it five times faster.
+    /// </para>
+    /// </summary>
+    public const int FixedFrameDelay = 1000 / 42;
+
+    /// <summary>
     /// WLED's <c>FRAMETIME</c> for a controller configured at <paramref name="configuredFps"/>.
     /// <para>
     /// This is the one effects use as a number rather than as a pace: Blink adds it to its on time

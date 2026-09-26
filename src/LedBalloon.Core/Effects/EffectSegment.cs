@@ -195,7 +195,15 @@ public sealed class EffectSegment
     /// False - the usual - stops the lookup short of the palette's end, so the last color does not
     /// blend back round into the first.
     /// </param>
-    /// <param name="colorSlot">Which color slot stands in when the run is not on a palette.</param>
+    /// <param name="colorSlot">
+    /// Which color slot stands in when the run is not on a palette.
+    /// <para>
+    /// Only 0, 1 and 2 are handled. WLED allows an out-of-range value as a way of saying "use the
+    /// gradient even on palette zero", since its own check is <c>palette == 0 &amp;&amp; mcol &lt; 3</c>
+    /// - Glitter passes 255 for exactly that. Nothing ported needs it yet, and Glitter is waiting on
+    /// it along with the raw color-blending setting it also reads.
+    /// </para>
+    /// </param>
     /// <param name="brightness">Scales the result, which some effects use to pulse.</param>
     /// <param name="blend">
     /// False lands on one of the palette's own stops instead of interpolating between them.
@@ -278,12 +286,27 @@ public sealed class EffectSegment
     /// rather than pixel for pixel.
     /// </para>
     /// </summary>
-    public byte Random8(int limit = 0) =>
-        (byte)(limit <= 0 ? Random.Next(256) : Random.Next(limit));
+    public byte Random8() => (byte)Random.Next(256);
 
-    /// <summary>A random 16-bit value, below <paramref name="limit"/> when one is given.</summary>
-    public ushort Random16(int limit = 0) =>
-        (ushort)(limit <= 0 ? Random.Next(65536) : Random.Next(limit));
+    /// <summary>
+    /// A random byte below <paramref name="limit"/>, scaled the way FastLED scales it.
+    /// <para>
+    /// <c>(r * limit) &gt;&gt; 8</c> rather than a modulus, which matters at the edges: a limit of
+    /// zero always gives zero. Effects rely on that. Sparkle Dark's odds are
+    /// <c>random8((255 - intensity) &gt;&gt; 4)</c>, which is zero once intensity passes 239 - so at
+    /// the top of that slider the throw always succeeds and it flashes every frame. Treating a limit
+    /// of zero as "any byte" instead would make the top of the slider the quietest setting.
+    /// </para>
+    /// </summary>
+    public byte Random8(int limit) =>
+        limit <= 0 ? (byte)0 : (byte)(Random.Next(256) * limit >> 8);
+
+    /// <summary>A random 16-bit value.</summary>
+    public ushort Random16() => (ushort)Random.Next(65536);
+
+    /// <summary>A random 16-bit value below <paramref name="limit"/>, scaled as FastLED scales it.</summary>
+    public ushort Random16(int limit) =>
+        limit <= 0 ? (ushort)0 : (ushort)((long)Random.Next(65536) * limit >> 16);
 
     /// <summary>
     /// A random place on the color wheel at least 42 of 255 away from <paramref name="from"/>.
@@ -314,9 +337,9 @@ public sealed class EffectSegment
 
     /// <summary>Scales a color down with no floor, unlike <see cref="Fade"/>.</summary>
     public static RgbColor Scale(RgbColor color, byte amount) => new(
-        (byte)(color.R * amount >> 8),
-        (byte)(color.G * amount >> 8),
-        (byte)(color.B * amount >> 8));
+        FastLed.Scale8(color.R, amount),
+        FastLed.Scale8(color.G, amount),
+        FastLed.Scale8(color.B, amount));
 
     /// <summary>Scales a color down, never quite to nothing while it is still lit.</summary>
     public static RgbColor Fade(RgbColor color, byte amount)
@@ -356,6 +379,31 @@ public sealed class EffectSegment
         if ((uint)index < (uint)Length)
         {
             Pixels[index] = color;
+        }
+    }
+
+    /// <summary>
+    /// Pulls every LED that fraction of the way to black, which is not the same as
+    /// <see cref="FadeOut"/>.
+    /// <para>
+    /// <see cref="FadeOut"/> fades toward the secondary color, so a trail on a colored background
+    /// settles into that background. This goes to black whatever the background is, which is what
+    /// the effects that draw dots on nothing want.
+    /// </para>
+    /// </summary>
+    /// <param name="amount">How much to take off, where 255 is all of it.</param>
+    public void FadeToBlack(byte amount)
+    {
+        if (amount == 0)
+        {
+            return;
+        }
+
+        var keep = (byte)(255 - amount);
+
+        for (int i = 0; i < Pixels.Length; i++)
+        {
+            Pixels[i] = Scale(Pixels[i], keep);
         }
     }
 
