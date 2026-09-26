@@ -3534,18 +3534,33 @@ public sealed partial class MainViewModel : ViewModelBase
                 StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Each controller's frame time in milliseconds, worked out from the frame rate it is
-    /// configured for. Anything that trails or fades does so once a frame, so this is what decides
-    /// how long a trail looks.
+    /// Each controller's frame time in milliseconds. Anything that trails, fades or decays does so
+    /// once a frame, so this is what decides how long a trail looks.
     /// </summary>
     [ObservableProperty] private IReadOnlyDictionary<string, int>? _frameTimes;
 
     /// <summary>
-    /// Reads each controller's configured frame rate.
+    /// The best rate seen from each controller while something was actually moving on it.
     /// <para>
-    /// From the configuration rather than from the live info, because info reports the rate being
-    /// achieved and that is zero while the lights are off - which is exactly when a preset is
-    /// being looked at instead of used.
+    /// Kept for the session rather than stored: it is a fact about the strip, not a setting, and
+    /// it costs one reading to recover. Held because the lights are usually off while a scene is
+    /// being looked at, and a strip showing nothing reports almost nothing.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, int> _measuredFrameTimes = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Works out how fast each controller draws.
+    /// <para>
+    /// Asked of the strip rather than of its configuration. <c>hw.led.fps</c> says 42 on both
+    /// controllers here and neither runs at it — they report 107 and 96, because WLED goes as fast
+    /// as the wire allows. Reading the configured figure made every fading effect four times too
+    /// slow, which nothing noticed until an effect that decays per frame was ported.
+    /// </para>
+    /// <para>
+    /// A reported rate is only believed while something is moving: WLED does not re-clock a frame
+    /// that has not changed, so a static effect reports single figures. Failing that, the LED count
+    /// gives it away — clocking a strip out is 30 microseconds a pixel and that is most of a frame.
     /// </para>
     /// </summary>
     private async Task LoadFrameTimesAsync()
@@ -3561,18 +3576,29 @@ public sealed partial class MainViewModel : ViewModelBase
 
             try
             {
-                var config = new WledConfigClient(device.Host);
+                using var client = new WledClient(device.Host);
+                WledInfo? info = await client.GetInfoAsync();
+                int? reported = info?.Leds?.Fps;
 
-                if (await config.GetTargetFpsAsync() is { } fps and > 0)
+                if (FrameTime.IsAnimating(reported))
                 {
-                    // Integer division, matching how the firmware rounds its own frame time.
-                    times[key] = Math.Max(1, 1000 / fps);
+                    _measuredFrameTimes[key] = FrameTime.FromFps(reported!.Value);
                 }
+
+                int leds = info?.Leds?.Count ?? device.Capabilities?.LedCount ?? 0;
+
+                times[key] = _measuredFrameTimes.TryGetValue(key, out int measured)
+                    ? measured
+                    : FrameTime.EstimateMilliseconds(leds);
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
-                // That controller's runs fall back to WLED's default rate, which is what it most
-                // likely is anyway.
+                // Unreachable for the moment. Whatever was worked out last time still stands, and
+                // a run with nothing at all falls back to the estimate at the next reading.
+                if (_measuredFrameTimes.TryGetValue(key, out int measured))
+                {
+                    times[key] = measured;
+                }
             }
         }
 
