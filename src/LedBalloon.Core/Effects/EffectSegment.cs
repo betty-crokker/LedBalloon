@@ -166,14 +166,25 @@ public sealed class EffectSegment
     public int PaletteId { get; set; }
 
     /// <summary>
-    /// Whether a palette lookup wraps back to its first entry at the top.
+    /// The controller's colour blending setting, <c>hw.led.cb</c>: 0 wraps only while something is
+    /// moving, 1 always wraps, 2 never wraps, 3 turns blending off altogether.
     /// <para>
-    /// The controller's own "colour blending" setting decides this, and it is off by default:
-    /// WLED reads it as <c>cb == 1 || cb == 3</c>, and <c>hw.led.cb</c> is 0 on a stock box. Kept
-    /// here rather than assumed, because it changes what the last few LEDs of a run do.
+    /// One setting, and three separate things depend on it - whether a palette lookup wraps round to
+    /// its first entry, whether the lookup is cut short of the palette's end, and whether it lands
+    /// between two entries or on one. Kept as the single number the firmware keeps, with the rest
+    /// derived, because holding them apart is how they drift out of agreement.
+    /// </para>
+    /// <para>
+    /// Zero on both controllers here, which is the stock setting.
     /// </para>
     /// </summary>
-    public bool SolidWrap { get; set; }
+    public int PaletteBlend { get; set; }
+
+    /// <summary>
+    /// Whether a palette lookup wraps back to its first entry at the top, WLED's
+    /// <c>PALETTE_SOLID_WRAP</c>. It changes what the last few LEDs of a run do.
+    /// </summary>
+    public bool SolidWrap => PaletteBlend is 1 or 3;
 
     /// <summary>
     /// The gradient behind <see cref="PaletteId"/>, as the controller reports it.
@@ -214,9 +225,12 @@ public sealed class EffectSegment
         bool wrap = false,
         int colorSlot = 0,
         byte brightness = 255,
-        bool blend = true)
+        bool? blend = null)
     {
-        if (PaletteId == 0 || Palette is null)
+        // On palette Default the color slot is the answer - but only for a real slot. WLED's own
+        // check is `palette == 0 && mcol < 3`, which lets an effect pass something out of range to
+        // mean "use the gradient anyway". Glitter does exactly that.
+        if (Palette is null || (PaletteId == 0 && (uint)colorSlot < 3))
         {
             RgbColor flat = Colors[Math.Clamp(colorSlot, 0, Colors.Length - 1)];
             return brightness == 255 ? flat : Fade(flat, brightness);
@@ -230,14 +244,18 @@ public sealed class EffectSegment
         }
 
         byte wrapped = (byte)(at & 0xFF);
-        if (!wrap)
+
+        if (!wrap && PaletteBlend != 3)
         {
             wrapped = FastLed.Scale8(wrapped, 240);
         }
 
         // Without blending the lookup lands on one of the palette's sixteen stops rather than
         // between two of them, which is what gives a twinkle its distinct colors instead of a wash.
-        double position = blend ? wrapped / 255d : (wrapped >> 4) / 15d;
+        // Off altogether is what blending setting 3 means; an effect can also ask for it directly.
+        bool blending = blend ?? PaletteBlend != 3;
+
+        double position = blending ? wrapped / 255d : (wrapped >> 4) / 15d;
 
         RgbColor color = Palette.ColorAt(position, Colors[0], Colors[1], Colors[2]);
 
@@ -300,6 +318,12 @@ public sealed class EffectSegment
     /// </summary>
     public byte Random8(int limit) =>
         limit <= 0 ? (byte)0 : (byte)(Random.Next(256) * limit >> 8);
+
+    /// <summary>
+    /// A random byte from <paramref name="lowest"/> up to but not including
+    /// <paramref name="limit"/>, FastLED's two-argument <c>random8</c>.
+    /// </summary>
+    public byte Random8(int lowest, int limit) => (byte)(lowest + Random8(limit - lowest));
 
     /// <summary>A random 16-bit value.</summary>
     public ushort Random16() => (ushort)Random.Next(65536);
@@ -405,6 +429,73 @@ public sealed class EffectSegment
         {
             Pixels[i] = Scale(Pixels[i], keep);
         }
+    }
+
+    /// <summary>Adds two colors, each channel saturating at 255 rather than wrapping.</summary>
+    public static RgbColor Add(RgbColor first, RgbColor second) =>
+        first == RgbColor.Black ? second
+        : second == RgbColor.Black ? first
+        : new RgbColor(
+            FastLed.QAdd8(first.R, second.R),
+            FastLed.QAdd8(first.G, second.G),
+            FastLed.QAdd8(first.B, second.B));
+
+    /// <summary>
+    /// Softens the run by bleeding each LED into its two neighbors.
+    /// <para>
+    /// A single pass in one direction carrying a remainder along, rather than a symmetrical average -
+    /// so the smear is not quite even, and repeating it every frame is what turns a point into a
+    /// glow. Each LED keeps all but <paramref name="amount"/> of itself and gives half of that away
+    /// in each direction.
+    /// </para>
+    /// </summary>
+    /// <param name="smear">
+    /// True to let the LED keep all of itself as well as receive, which brightens rather than
+    /// spreads.
+    /// </param>
+    public void Blur(byte amount, bool smear = false)
+    {
+        if (amount == 0)
+        {
+            return;
+        }
+
+        var keep = (byte)(smear ? 255 : 255 - amount);
+        var seep = (byte)(amount >> (smear ? 2 : 1));
+
+        RgbColor carried = RgbColor.Black;
+        RgbColor lastNew = RgbColor.Black;
+
+        for (int i = 0; i < Pixels.Length; i++)
+        {
+            RgbColor current = Pixels[i];
+
+            // Scaled rather than faded: no video guard here, so what bleeds sideways really does
+            // reach zero. With the guard a dim pixel can never quite go out, and a blur applied every
+            // frame then quietly adds light instead of only moving it - which showed up as Fireworks
+            // holding two and a half times as much red as the strip.
+            RgbColor part = Scale(current, seep);
+            RgbColor kept = Scale(current, keep);
+
+            if (i > 0)
+            {
+                if (carried != RgbColor.Black)
+                {
+                    kept = Add(kept, carried);
+                }
+
+                Pixels[i - 1] = Add(lastNew, part);
+            }
+            else
+            {
+                Pixels[i] = kept;
+            }
+
+            lastNew = kept;
+            carried = part;
+        }
+
+        Pixels[^1] = lastNew;
     }
 
     /// <summary>Paints the whole run one color.</summary>
