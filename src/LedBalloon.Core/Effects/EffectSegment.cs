@@ -209,6 +209,22 @@ public sealed class EffectSegment
         return new RgbColor((byte)(pos * 3), (byte)(255 - (pos * 3)), 0);
     }
 
+    /// <summary>
+    /// A random byte below <paramref name="limit"/>, or any byte when the limit is zero.
+    /// <para>
+    /// Drawn from this run's own generator rather than a shared one, so a preview is repeatable:
+    /// the same scene drawn twice looks the same. It cannot match the controller's own sequence
+    /// and is not meant to, so effects built on it are checked by how they behave in aggregate
+    /// rather than pixel for pixel.
+    /// </para>
+    /// </summary>
+    public byte Random8(int limit = 0) =>
+        (byte)(limit <= 0 ? Random.Next(256) : Random.Next(limit));
+
+    /// <summary>A random 16-bit value, below <paramref name="limit"/> when one is given.</summary>
+    public ushort Random16(int limit = 0) =>
+        (ushort)(limit <= 0 ? Random.Next(65536) : Random.Next(limit));
+
     /// <summary>How bright a color reads overall, which is how WLED decides what shows through what.</summary>
     public static byte AverageLight(RgbColor color) =>
         (byte)((color.R + color.G + color.B) / 3);
