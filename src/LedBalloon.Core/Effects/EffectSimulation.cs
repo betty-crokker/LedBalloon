@@ -102,7 +102,7 @@ public sealed class EffectSimulation
                 _now += (uint)_frameMilliseconds;
             }
 
-            _effect.Render(Segment, _now);
+            Segment.Draw(_effect, _now);
             Frames++;
         }
 

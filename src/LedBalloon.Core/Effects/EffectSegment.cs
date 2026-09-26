@@ -93,6 +93,28 @@ public sealed class EffectSegment
         return existing;
     }
 
+    /// <summary>
+    /// Draws one frame of <paramref name="effect"/>, counting it.
+    /// <para>
+    /// The count is the point. A handful of effects read <see cref="Call"/> - to know they are on
+    /// their first frame and have nothing to carry forward, or, in Chase Rainbow's case, to walk the
+    /// color wheel one step per frame - and in WLED it is the strip's service loop that keeps it,
+    /// not the effect. So anything standing in for that loop has to come through here rather than
+    /// calling <see cref="IWledEffect.Render"/> itself, or those effects sit on frame zero forever.
+    /// </para>
+    /// </summary>
+    public void Draw(IWledEffect effect, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+
+        effect.Render(this, now);
+
+        unchecked
+        {
+            Call++;
+        }
+    }
+
     /// <summary>Whether the run is wired back to front, which some effects mirror themselves for.</summary>
     public bool Reverse { get; set; }
 
