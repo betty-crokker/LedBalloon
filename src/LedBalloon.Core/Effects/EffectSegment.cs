@@ -176,6 +176,39 @@ public sealed class EffectSegment
         return brightness == 255 ? color : Fade(color, brightness);
     }
 
+    /// <summary>
+    /// A position on a red-green-blue-red wheel, or the same position on the palette when one is
+    /// chosen.
+    /// <para>
+    /// The palette branch is not a nicety: on any palette but Default this stops being a rainbow
+    /// and becomes a walk along whatever gradient is set, which is why Rainbow on a custom palette
+    /// shows that palette rather than a rainbow.
+    /// </para>
+    /// </summary>
+    public RgbColor ColorWheel(byte position)
+    {
+        if (PaletteId != 0 && Palette is not null)
+        {
+            return ColorFromPalette(position, mapping: false, wrap: true);
+        }
+
+        var pos = (byte)(255 - position);
+
+        if (pos < 85)
+        {
+            return new RgbColor((byte)(255 - (pos * 3)), 0, (byte)(pos * 3));
+        }
+
+        if (pos < 170)
+        {
+            pos -= 85;
+            return new RgbColor(0, (byte)(pos * 3), (byte)(255 - (pos * 3)));
+        }
+
+        pos -= 170;
+        return new RgbColor((byte)(pos * 3), (byte)(255 - (pos * 3)), 0);
+    }
+
     /// <summary>How bright a color reads overall, which is how WLED decides what shows through what.</summary>
     public static byte AverageLight(RgbColor color) =>
         (byte)((color.R + color.G + color.B) / 3);
