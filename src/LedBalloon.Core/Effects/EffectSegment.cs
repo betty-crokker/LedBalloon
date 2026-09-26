@@ -225,6 +225,29 @@ public sealed class EffectSegment
     public ushort Random16(int limit = 0) =>
         (ushort)(limit <= 0 ? Random.Next(65536) : Random.Next(limit));
 
+    /// <summary>
+    /// A random place on the color wheel at least 42 of 255 away from <paramref name="from"/>.
+    /// <para>
+    /// The distance is what makes it useful: effects that swap to "another random color" would
+    /// otherwise sometimes swap to one nobody could tell from the old one, and read as a stall.
+    /// Forty-two of 255 is a sixth of the wheel, so the new color is always visibly a new color.
+    /// </para>
+    /// </summary>
+    public byte RandomWheelIndex(byte from)
+    {
+        while (true)
+        {
+            byte candidate = Random8();
+            int apart = Math.Abs(from - candidate);
+
+            // Round the wheel either way, so red next to red is close however it is reached.
+            if (Math.Min(apart, 255 - apart) >= 42)
+            {
+                return candidate;
+            }
+        }
+    }
+
     /// <summary>How bright a color reads overall, which is how WLED decides what shows through what.</summary>
     public static byte AverageLight(RgbColor color) =>
         (byte)((color.R + color.G + color.B) / 3);
