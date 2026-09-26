@@ -112,7 +112,14 @@ public class ChaseEffectsAgainstHardwareTests(ITestOutputHelper output)
     /// <para>
     /// The strip held 13.9% exactly red and 13.5% exactly blue, a little over the 12.6% the bands
     /// account for because the background passes through pure red and pure blue on its way round.
-    /// Never any green, which is the third slot and this effect does not use it.
+    /// </para>
+    /// <para>
+    /// It showed no green at all, but that is a small sample rather than a rule: this effect does
+    /// not use the third slot, yet its background walks the wheel a step a frame and the wheel
+    /// passes through pure green once every 256 steps. Over the 170 frames captured that was odds
+    /// of two to one against seeing it, and it was not seen. So what is asserted is that green is
+    /// rare, not that it is impossible - the earlier reading of zero was luck, and pinning it would
+    /// have been pinning the luck.
     /// </para>
     /// </summary>
     [Fact]
@@ -125,9 +132,12 @@ public class ChaseEffectsAgainstHardwareTests(ITestOutputHelper output)
         output.WriteLine("measured : red 0.139 blue 0.135 green 0.000, 3 fills");
 
         Assert.Equal(3, most);
-        Assert.Equal(0, green, 3);
         Assert.InRange(red, 0.11, 0.17);
         Assert.InRange(blue, 0.11, 0.17);
+
+        // Only ever the background passing through it, never a band: a band would put it level
+        // with the other two.
+        Assert.InRange(green, 0, 0.02);
     }
 
     /// <summary>

@@ -4,15 +4,24 @@ namespace LedBalloon.Core.Effects;
 
 /// <summary>
 /// One flat color. WLED's effect zero, and the one most presets spend most of their runs on.
+/// <para>
+/// The only effect that asks to be drawn slowly on purpose: a third of a second between frames,
+/// since nothing about it changes. It makes no difference to what is on the wall and every
+/// difference to what the controller has time for.
+/// </para>
 /// </summary>
 public sealed class SolidEffect : IWledEffect
 {
+    /// <summary>What WLED gives a static effect, barring bus types that must be refreshed.</summary>
+    public const int RefreshMilliseconds = 350;
+
     public string Name => "Solid";
 
     public void Render(EffectSegment segment, uint now)
     {
         ArgumentNullException.ThrowIfNull(segment);
         segment.Fill(segment.Colors[0]);
+        segment.FrameDelay = RefreshMilliseconds;
     }
 }
 
