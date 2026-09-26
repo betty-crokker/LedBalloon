@@ -22,6 +22,7 @@ public class EffectLibraryTests
         names[0] = "Solid";
         names[1] = "Blink";
         names[9] = "Rainbow";
+        names[40] = "Android";
         names[111] = "Chunchun";
 
         return names;
@@ -60,13 +61,26 @@ public class EffectLibraryTests
         Assert.Null(EffectLibrary.Find(111, shuffled));
     }
 
+    /// <summary>
+    /// The photo falls back to approximating anything not ported, so failing to resolve has to be
+    /// ordinary rather than exceptional.
+    /// <para>
+    /// This used to name Rainbow as the example and broke the day Rainbow was ported, which is the
+    /// hazard of picking a real effect to stand for an unported one. RSVD is WLED's own name for a
+    /// slot holding nothing, so it can never become portable.
+    /// </para>
+    /// </summary>
     [Fact]
     public void An_effect_we_have_not_ported_simply_does_not_resolve()
     {
-        Assert.Null(EffectLibrary.Find(9, EffectList()));
+        // 2 is RSVD padding in the stand-in list above.
+        Assert.Null(EffectLibrary.Find(2, EffectList()));
         Assert.Null(EffectLibrary.Find(null, EffectList()));
         Assert.Null(EffectLibrary.Find(999, EffectList()));
         Assert.Null(EffectLibrary.Find(111, null));
+
+        // And a name nothing will ever answer to.
+        Assert.Null(EffectLibrary.Find(0, ["Not An Effect We Have"]));
     }
 
     [Fact]
