@@ -60,8 +60,25 @@ public static class FastLed
     /// of the end so it does not blend back round to the start, and doing that in floating point
     /// lands on different colors.
     /// </para>
+    /// <para>
+    /// The scale is <c>(i * (1 + scale)) &gt;&gt; 8</c>, not <c>i * scale / 256</c>. FastLED calls
+    /// that its "fixed" scale8 and has defaulted to it since 3.x, so it is what the firmware
+    /// actually runs. The two differ by at most one step, which is why nothing noticed for a
+    /// while — but it is one step on every lookup, and the top of a palette lands a unit short
+    /// without it.
+    /// </para>
     /// </summary>
-    public static byte Scale8(byte i, byte scale) => (byte)(i * scale / 256);
+    public static byte Scale8(byte i, byte scale) => (byte)((i * (1 + scale)) >> 8);
+
+    /// <summary>
+    /// The same scaling, but a non-zero input never scales all the way to zero.
+    /// <para>
+    /// FastLED calls this the "video" variant and uses it wherever a value fading out should stay
+    /// visible until it is meant to vanish. Without it a dim pixel snaps to black a step early.
+    /// </para>
+    /// </summary>
+    public static byte Scale8Video(byte i, byte scale) =>
+        (byte)(((i * scale) >> 8) + (i != 0 && scale != 0 ? 1 : 0));
 
     /// <summary>
     /// Where in a beat we are, 0-255, at a given tempo. WLED counts beats off the same clock the
