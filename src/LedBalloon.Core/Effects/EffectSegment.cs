@@ -33,6 +33,17 @@ public sealed class EffectSegment
     public RgbColor[] Colors { get; set; } = [RgbColor.White, RgbColor.Black, RgbColor.Black];
 
     /// <summary>
+    /// Which segment this is on the controller, which two effects fold into their seed.
+    /// <para>
+    /// Fairy and Fairytwinkle both start their pattern at <c>5100 + id</c>, so the same effect on the
+    /// same run looks different depending on which segment it is - deliberately, so that a strip cut
+    /// into segments does not show the same twinkle twice. Nothing else reads it, and it is only here
+    /// because those two cannot be checked against the strip without it.
+    /// </para>
+    /// </summary>
+    public int SegmentId { get; set; }
+
+    /// <summary>
     /// How long one frame lasts on the controller driving this run.
     /// <para>
     /// Effects read it: Blink measures its duty cycle in frames, and anything that fades reaches a
@@ -552,6 +563,7 @@ public sealed class EffectSegment
         Custom2 = wled.Custom2 ?? 128;
         Custom3 = wled.Custom3 ?? 16;
         PaletteId = wled.Palette ?? 0;
+        SegmentId = wled.Id ?? 0;
         Palette = palette;
         Reverse = wled.Reverse ?? false;
         Option1 = wled.Option1 ?? false;
