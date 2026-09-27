@@ -355,6 +355,62 @@ public static class FastLed
     public static int Map(int value, int fromLow, int fromHigh, int toLow, int toHigh) =>
         ((value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow)) + toLow;
 
+    /// <summary>
+    /// A square wave with sloped sides and a rest between pulses, which is how Washing Machine gets
+    /// forward, pause, backward out of one function.
+    /// <para>
+    /// Signed: the back half of the input gives the pulse upside down. Within each half it ramps up
+    /// over <paramref name="attack"/>, holds, ramps back down, and then sits at zero for whatever is
+    /// left of the half - so the pause is whatever the pulse width does not use.
+    /// </para>
+    /// </summary>
+    public static int TristateSquare8(byte x, byte pulseWidth, byte attack)
+    {
+        int amplitude = 127;
+
+        if (x > 127)
+        {
+            amplitude = -127;
+            x -= 127;
+        }
+
+        if (x < attack)
+        {
+            return x * amplitude / attack;
+        }
+
+        if (x < pulseWidth - attack)
+        {
+            return amplitude;
+        }
+
+        if (x < pulseWidth)
+        {
+            return (pulseWidth - x) * amplitude / attack;
+        }
+
+        return 0;
+    }
+
+    /// <summary>Eases a value in and out on a quadratic, which is flatter at the ends than the cubic.</summary>
+    public static byte Ease8InOutQuad(byte i)
+    {
+        byte j = i;
+
+        if ((j & 0x80) != 0)
+        {
+            j = (byte)(255 - j);
+        }
+
+        byte squared = Scale8(j, j);
+        var doubled = (byte)(squared << 1);
+
+        return (i & 0x80) != 0 ? (byte)(255 - doubled) : doubled;
+    }
+
+    /// <summary>A triangle wave eased at its corners on a quadratic - <c>quadwave8</c>.</summary>
+    public static byte QuadWave8(byte input) => Ease8InOutQuad(TriWave8(input));
+
     /// <summary>A triangle wave with its corners rounded off, which reads as a swell rather than a ramp.</summary>
     public static byte CubicWave8(byte input) => EaseInOutCubic8(TriWave8(input));
 

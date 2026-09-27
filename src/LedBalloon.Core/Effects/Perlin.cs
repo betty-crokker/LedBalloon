@@ -384,18 +384,5 @@ public static class Perlin
     /// faint seam at every cell boundary, and that seam is part of how noise-driven effects look.
     /// </para>
     /// </summary>
-    private static byte Ease(byte i)
-    {
-        byte j = i;
-
-        if ((j & 0x80) != 0)
-        {
-            j = (byte)(255 - j);
-        }
-
-        byte squared = FastLed.Scale8(j, j);
-        var doubled = (byte)(squared << 1);
-
-        return (i & 0x80) != 0 ? (byte)(255 - doubled) : doubled;
-    }
+    private static byte Ease(byte i) => FastLed.Ease8InOutQuad(i);
 }
