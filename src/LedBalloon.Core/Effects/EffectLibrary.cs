@@ -131,6 +131,8 @@ public static class EffectLibrary
         new SunriseEffect(),
         new DancingShadowsEffect(),
         new RollingBallsEffect(),
+        new TetrixEffect(),
+        new AuroraEffect(),
         new RippleEffect(),
     ];
 
