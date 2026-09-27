@@ -135,6 +135,7 @@ public static class EffectLibrary
         new AuroraEffect(),
         new Fireworks1DEffect(),
         new StarburstEffect(),
+        new PacificaEffect(),
         new RippleEffect(),
     ];
 
