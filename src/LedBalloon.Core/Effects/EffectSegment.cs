@@ -44,6 +44,18 @@ public sealed class EffectSegment
     public int SegmentId { get; set; }
 
     /// <summary>
+    /// How many segments the controller has, which decides how much scratch memory this one may use.
+    /// <para>
+    /// Only the two fireworks effects read it, and only to cap how many particles they can afford - a
+    /// segment's share of the effect memory doubles if the controller is using half its segments or
+    /// fewer and doubles again at a quarter. Anything up to eight segments on an ESP32 gives the same
+    /// answer, so the default of one is right for every controller here; it is modelled because a
+    /// controller carved into more than eight segments would genuinely show fewer sparks.
+    /// </para>
+    /// </summary>
+    public int ActiveSegments { get; set; } = 1;
+
+    /// <summary>
     /// How long one frame lasts on the controller driving this run.
     /// <para>
     /// Effects read it: Blink measures its duty cycle in frames, and anything that fades reaches a
