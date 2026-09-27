@@ -123,6 +123,8 @@ public static class EffectLibrary
         new TwinkleCatEffect(),
         new FairyEffect(),
         new FairyTwinkleEffect(),
+        new PopcornEffect(),
+        new DripEffect(),
         new RippleEffect(),
     ];
 
