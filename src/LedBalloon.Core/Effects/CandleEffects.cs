@@ -151,34 +151,25 @@ public sealed class CandleMultiEffect : IWledEffect
 }
 
 /// <summary>
-/// Sine waves whose wavelength varies along the run, so they beat against each other.
-/// <para>
-/// Each LED reads a cubic wave at its own frequency, and the phase advance each LED gets is divided
-/// by its position modulo five - so groups of five LEDs drift apart from each other and the pattern
-/// never repeats cleanly. Intensity is a cutoff: it clips the bottom off the wave, so turning it
-/// down leaves fewer and narrower bands lit.
-/// </para>
-/// <para>
-/// The phase advances per frame rather than per millisecond, which makes this one of the few effects
-/// whose speed depends on how fast the controller draws. The color, by contrast, rotates on the
-/// clock.
-/// </para>
+/// Cubic waves whose wavelength varies along the run, which is where Phased and Phased Noise both
+/// come from.
 /// </summary>
-public sealed class PhasedEffect : IWledEffect
+internal static class Phased
 {
-    public string Name => "Phased";
-
     /// <summary>The base frequency, which is not adjustable.</summary>
     private const int Frequency = 16;
 
-    public void Render(EffectSegment segment, uint now)
+    /// <param name="noisy">
+    /// True to take the modulus from Perlin noise per LED instead of holding it at five, which is the
+    /// whole of what Phased Noise adds: the groups that drift apart from each other stop being evenly
+    /// sized, so the beating is irregular rather than periodic.
+    /// </param>
+    public static void Render(EffectSegment segment, uint now, bool noisy)
     {
-        ArgumentNullException.ThrowIfNull(segment);
-
         double[] phase = segment.Scratch(() => new double[1]);
 
         int cutOff = 255 - segment.Intensity;
-        const int Modulus = 5;
+        int modulus = 5;
 
         phase[0] += segment.Speed / 32.0;
 
@@ -186,8 +177,17 @@ public sealed class PhasedEffect : IWledEffect
 
         for (int i = 0; i < segment.Length; i++)
         {
+            if (noisy)
+            {
+                // The doubled term is in the source as written - i*10 + i*10 - so the noise is
+                // sampled every twenty units along, not ten.
+                modulus = Perlin.Noise8((ushort)((i * 10) + (i * 10))) / 16;
+            }
+
             var val = (uint)((i + 1) * Frequency);
-            val += (uint)(phase[0] * ((i % Modulus) + 1) / 2);
+
+            // Zero would divide by nothing, and a run long enough reaches it.
+            val += (uint)(phase[0] * ((i % Math.Max(1, modulus)) + 1) / 2);
 
             byte b = FastLed.CubicWave8((byte)val);
             b = b > cutOff ? (byte)(b - cutOff) : (byte)0;
@@ -205,5 +205,45 @@ public sealed class PhasedEffect : IWledEffect
                 index++;
             }
         }
+    }
+}
+
+/// <summary>
+/// Sine waves whose wavelength varies along the run, so they beat against each other.
+/// <para>
+/// Each LED reads a cubic wave at its own frequency, and the phase advance each LED gets is divided
+/// by its position modulo five - so groups of five LEDs drift apart from each other and the pattern
+/// never repeats cleanly. Intensity is a cutoff: it clips the bottom off the wave, so turning it
+/// down leaves fewer and narrower bands lit.
+/// </para>
+/// <para>
+/// The phase advances per frame rather than per millisecond, which makes this one of the few effects
+/// whose speed depends on how fast the controller draws. The color, by contrast, rotates on the
+/// clock.
+/// </para>
+/// </summary>
+public sealed class PhasedEffect : IWledEffect
+{
+    public string Name => "Phased";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+        Phased.Render(segment, now, noisy: false);
+    }
+}
+
+/// <summary>
+/// The same waves with their grouping taken from Perlin noise rather than a fixed five, so the
+/// beating is irregular - patches of the run drift together and others pull apart.
+/// </summary>
+public sealed class PhasedNoiseEffect : IWledEffect
+{
+    public string Name => "Phased Noise";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+        Phased.Render(segment, now, noisy: true);
     }
 }

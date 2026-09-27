@@ -255,7 +255,13 @@ public sealed class EffectSegment
         // Off altogether is what blending setting 3 means; an effect can also ask for it directly.
         bool blending = blend ?? PaletteBlend != 3;
 
-        double position = blending ? wrapped / 255d : (wrapped >> 4) / 15d;
+        // Unblended has to land exactly on a stop, and a sixteen entry palette keeps its stops at
+        // multiples of sixteen - so the top four bits of the index pick one by multiplying by
+        // sixteen, not by dividing the sixteen entries across the whole range. Spreading them
+        // evenly instead lands a unit past every stop but the first and last, which is a color
+        // nobody chose: Fire 2012 reads its heat back off the palette's own steps, and only 85% of
+        // its pixels sat on one until this was right.
+        double position = blending ? wrapped / 255d : (wrapped >> 4) * 16 / 255d;
 
         RgbColor color = Palette.ColorAt(position, Colors[0], Colors[1], Colors[2]);
 
