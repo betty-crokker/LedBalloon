@@ -136,6 +136,8 @@ public static class EffectLibrary
         new Fireworks1DEffect(),
         new StarburstEffect(),
         new PacificaEffect(),
+        new NoisePalEffect(),
+        new TvSimulatorEffect(),
         new RippleEffect(),
     ];
 
