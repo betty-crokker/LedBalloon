@@ -56,6 +56,158 @@ public static class Perlin
     public static byte Noise8(ushort x, ushort y, ushort z) => Spread(Raw(x, y, z));
 
     /// <summary>
+    /// Noise over a plane at sixteen bits, where the top sixteen of each coordinate pick the cell and
+    /// the bottom sixteen say where in it.
+    /// <para>
+    /// Not the eight-bit function widened. It has its own gradients, its own interpolation and its
+    /// own way of spreading the result over the range - a multiply by 484 and a shift rather than a
+    /// saturating double - so the two give visibly different fields for the same walk.
+    /// </para>
+    /// </summary>
+    public static ushort Noise16(uint x, uint y)
+    {
+        int raw = Raw16(x, y) + 17308;
+        return (ushort)(((uint)raw * 484u) >> 8);
+    }
+
+    /// <summary>Noise through a volume at sixteen bits, which is what three of the four Noise effects use.</summary>
+    public static ushort Noise16(uint x, uint y, uint z)
+    {
+        int raw = Raw16(x, y, z) + 19052;
+        return (ushort)(((uint)raw * 440u) >> 8);
+    }
+
+    private static short Raw16(uint x, uint y)
+    {
+        var gridX = (byte)(x >> 16);
+        var gridY = (byte)(y >> 16);
+
+        var cornerA = (byte)(P[gridX] + gridY);
+        byte aa = P[P[cornerA]];
+        byte ab = P[P[cornerA + 1]];
+
+        var cornerB = (byte)(P[gridX + 1] + gridY);
+        byte ba = P[P[cornerB]];
+        byte bb = P[P[cornerB + 1]];
+
+        var u = (ushort)x;
+        var v = (ushort)y;
+
+        var alongX = (short)((u >> 1) & 0x7FFF);
+        var alongY = (short)((v >> 1) & 0x7FFF);
+        var backX = (short)(alongX - 32768);
+        var backY = (short)(alongY - 32768);
+
+        u = Ease16(u);
+        v = Ease16(v);
+
+        short x1 = Lerp16(Gradient16(aa, alongX, alongY), Gradient16(ba, backX, alongY), u);
+        short x2 = Lerp16(Gradient16(ab, alongX, backY), Gradient16(bb, backX, backY), u);
+
+        return Lerp16(x1, x2, v);
+    }
+
+    private static short Raw16(uint x, uint y, uint z)
+    {
+        var gridX = (byte)(x >> 16);
+        var gridY = (byte)(y >> 16);
+        var gridZ = (byte)(z >> 16);
+
+        var cornerA = (byte)(P[gridX] + gridY);
+        var aa = (byte)(P[cornerA] + gridZ);
+        var ab = (byte)(P[cornerA + 1] + gridZ);
+
+        var cornerB = (byte)(P[gridX + 1] + gridY);
+        var ba = (byte)(P[cornerB] + gridZ);
+        var bb = (byte)(P[cornerB + 1] + gridZ);
+
+        var u = (ushort)x;
+        var v = (ushort)y;
+        var w = (ushort)z;
+
+        var alongX = (short)((u >> 1) & 0x7FFF);
+        var alongY = (short)((v >> 1) & 0x7FFF);
+        var alongZ = (short)((w >> 1) & 0x7FFF);
+        var backX = (short)(alongX - 32768);
+        var backY = (short)(alongY - 32768);
+        var backZ = (short)(alongZ - 32768);
+
+        u = Ease16(u);
+        v = Ease16(v);
+        w = Ease16(w);
+
+        short x1 = Lerp16(Gradient16(P[aa], alongX, alongY, alongZ), Gradient16(P[ba], backX, alongY, alongZ), u);
+        short x2 = Lerp16(Gradient16(P[ab], alongX, backY, alongZ), Gradient16(P[bb], backX, backY, alongZ), u);
+        short x3 = Lerp16(Gradient16(P[aa + 1], alongX, alongY, backZ), Gradient16(P[ba + 1], backX, alongY, backZ), u);
+        short x4 = Lerp16(Gradient16(P[ab + 1], alongX, backY, backZ), Gradient16(P[bb + 1], backX, backY, backZ), u);
+
+        short y1 = Lerp16(x1, x2, v);
+        short y2 = Lerp16(x3, x4, v);
+
+        return Lerp16(y1, y2, w);
+    }
+
+    /// <summary>
+    /// The sixteen-bit gradients. Two axes, and which is which comes from the bottom three bits of
+    /// the hash rather than the fourth - so this is not the eight-bit version scaled up.
+    /// </summary>
+    private static short Gradient16(byte hash, short x, short y)
+    {
+        int masked = hash & 7;
+
+        int u = masked < 4 ? x : y;
+        int v = masked < 4 ? y : x;
+
+        return Average16(Signed16(masked, 1, u), Signed16(masked, 2, v));
+    }
+
+    private static short Gradient16(byte hash, short x, short y, short z)
+    {
+        int masked = hash & 15;
+
+        int u = masked < 8 ? x : y;
+        int v = masked < 4 ? y : masked is 12 or 14 ? x : z;
+
+        return Average16(Signed16(masked, 1, u), Signed16(masked, 2, v));
+    }
+
+    private static short Signed16(int hash, int bit, int value) =>
+        unchecked((short)((hash & bit) != 0 ? -value : value));
+
+    /// <summary>The average of two signed fifteens, rounded toward the first - <c>avg15</c>.</summary>
+    private static short Average16(short first, short second) =>
+        (short)((first >> 1) + (second >> 1) + (first & 0x1));
+
+    /// <summary>Interpolates between two signed fifteens by a fraction of 65536.</summary>
+    private static short Lerp16(short from, short to, ushort fraction)
+    {
+        if (to > from)
+        {
+            var up = (ushort)(to - from);
+            return (short)(from + FastLed.Scale16(up, fraction));
+        }
+
+        var down = (ushort)(from - to);
+        return (short)(from - FastLed.Scale16(down, fraction));
+    }
+
+    /// <summary>The sixteen-bit easing curve, the same quadratic shape as its narrow sibling.</summary>
+    private static ushort Ease16(ushort i)
+    {
+        ushort j = i;
+
+        if ((j & 0x8000) != 0)
+        {
+            j = (ushort)(65535 - j);
+        }
+
+        ushort squared = FastLed.Scale16(j, j);
+        var doubled = (ushort)(squared << 1);
+
+        return (i & 0x8000) != 0 ? (ushort)(65535 - doubled) : doubled;
+    }
+
+    /// <summary>
     /// The raw noise only spans -64 to +64, so it is shifted and doubled to fill a byte.
     /// <para>
     /// Doubled with a saturating add rather than a shift, which is why the result can sit at 255 for
