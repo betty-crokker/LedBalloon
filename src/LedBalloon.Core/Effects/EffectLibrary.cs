@@ -133,6 +133,8 @@ public static class EffectLibrary
         new RollingBallsEffect(),
         new TetrixEffect(),
         new AuroraEffect(),
+        new Fireworks1DEffect(),
+        new StarburstEffect(),
         new RippleEffect(),
     ];
 

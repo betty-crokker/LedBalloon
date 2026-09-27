@@ -17,14 +17,58 @@ internal sealed class Spark
     /// <summary>Position along the run, in LEDs, and fractional. Negative means idle.</summary>
     public float Position;
 
+    /// <summary>
+    /// The second axis, which on a one-dimensional run is not a position at all: Fireworks 1D stores
+    /// which end it is firing from in here, as nought or one.
+    /// </summary>
+    public float PositionX;
+
     /// <summary>LEDs per frame, which gravity walks down every frame.</summary>
     public float Velocity;
+
+    /// <summary>Speed along the second axis, which stays nought on a one-dimensional run.</summary>
+    public float VelocityX;
 
     /// <summary>Brightness for Drip, unused by Popcorn.</summary>
     public int Brightness;
 
     /// <summary>A color slot or palette index for Popcorn; a state number for Drip.</summary>
     public byte ColorIndex;
+}
+
+/// <summary>
+/// How much scratch memory an effect may use, which depends on how many segments the controller has.
+/// <para>
+/// A segment's fair share doubles if the controller is using half its segments or fewer, and doubles
+/// again at a quarter. The two fireworks effects are the only ones that ask, and they divide the answer
+/// by the size of one particle to decide how many they can have - so on a controller carved into many
+/// segments the bursts are genuinely smaller.
+/// </para>
+/// </summary>
+internal static class SegmentData
+{
+    /// <summary>A segment's share on an ESP32.</summary>
+    private const int FairShare = 640;
+
+    /// <summary>How many segments an ESP32 build allows.</summary>
+    private const int MaxSegments = 32;
+
+    public static int Budget(int activeSegments)
+    {
+        int data = FairShare;
+
+        if (activeSegments <= MaxSegments / 2)
+        {
+            data *= 2;
+        }
+
+        if (activeSegments <= MaxSegments / 4)
+        {
+            data *= 2;
+        }
+
+        return data;
+    }
 }
 
 /// <summary>
