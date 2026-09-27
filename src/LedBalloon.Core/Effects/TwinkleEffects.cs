@@ -220,12 +220,10 @@ public sealed class TwinkleCatEffect : IWledEffect
 /// finished waits to be started again somewhere else.
 /// </para>
 /// </summary>
-public sealed class RippleEffect : IWledEffect
+internal static class Ripples
 {
     /// <summary>The most ripples at once, the same ceiling the firmware uses.</summary>
     private const int MaxRipples = 100;
-
-    public string Name => "Ripple";
 
     private sealed class Ripple
     {
@@ -234,26 +232,12 @@ public sealed class RippleEffect : IWledEffect
         public byte Color;
     }
 
-    public void Render(EffectSegment segment, uint now)
+    /// <summary>
+    /// Draws the ripples over whatever the caller has already put down - the two effects that use this
+    /// differ only in what that background is.
+    /// </summary>
+    public static void Render(EffectSegment segment)
     {
-        ArgumentNullException.ThrowIfNull(segment);
-
-        if (segment.Length == 1)
-        {
-            segment.Fill(segment.Colors[0]);
-            return;
-        }
-
-        // Overlay leaves what was there fading underneath; otherwise the run is cleared each frame.
-        if (segment.Option2)
-        {
-            segment.FadeOut(250);
-        }
-        else
-        {
-            segment.Fill(segment.Colors[1]);
-        }
-
         int pool = Math.Min(1 + (segment.Length >> 2), MaxRipples);
         Ripple[] ripples = segment.Scratch(() => CreatePool(pool));
 
@@ -332,4 +316,84 @@ public sealed class RippleEffect : IWledEffect
         fromHigh == fromLow
             ? toLow
             : ((value - fromLow) * (toHigh - toLow) / (fromHigh - fromLow)) + toLow;
+}
+
+/// <summary>
+/// Rings spreading out from points along the run, over the secondary color or over what was there.
+/// </summary>
+public sealed class RippleEffect : IWledEffect
+{
+    public string Name => "Ripple";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        if (segment.Length == 1)
+        {
+            segment.Fill(segment.Colors[0]);
+            return;
+        }
+
+        // Overlay leaves what was there fading underneath; otherwise the run is cleared each frame.
+        if (segment.Option2)
+        {
+            segment.FadeOut(250);
+        }
+        else
+        {
+            segment.Fill(segment.Colors[1]);
+        }
+
+        Ripples.Render(segment);
+    }
+}
+
+/// <summary>
+/// The same rings over a background that wanders round the color wheel one step at a time.
+/// <para>
+/// The wander is a random walk rather than a cycle: it picks a target off the wheel and creeps toward
+/// it a step per frame, then picks another when it arrives - so the background drifts unevenly and
+/// sometimes doubles back. And it is knocked down to a twentieth of its brightness, because it is a
+/// background and the ripples have to show over it.
+/// </para>
+/// </summary>
+public sealed class RippleRainbowEffect : IWledEffect
+{
+    public string Name => "Ripple Rainbow";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        if (segment.Length == 1)
+        {
+            segment.Fill(segment.Colors[0]);
+            return;
+        }
+
+        if (segment.Call == 0)
+        {
+            segment.Aux0 = segment.Random8();
+            segment.Aux1 = segment.Random8();
+        }
+
+        if (segment.Aux0 == segment.Aux1)
+        {
+            segment.Aux1 = segment.Random8();
+        }
+        else if (segment.Aux1 > segment.Aux0)
+        {
+            segment.Aux0++;
+        }
+        else
+        {
+            segment.Aux0--;
+        }
+
+        segment.Fill(EffectSegment.Blend(
+            segment.ColorWheel((byte)segment.Aux0), RgbColor.Black, 235));
+
+        Ripples.Render(segment);
+    }
 }
