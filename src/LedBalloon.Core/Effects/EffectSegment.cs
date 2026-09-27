@@ -100,10 +100,19 @@ public sealed class EffectSegment
 
     public uint Aux1 { get; set; }
 
-    /// <summary>The effect option checkboxes, WLED's <c>check1</c> and <c>check2</c>.</summary>
+    /// <summary>
+    /// The effect option checkboxes, WLED's <c>check1</c>, <c>check2</c> and <c>check3</c>.
+    /// <para>
+    /// Unlabelled here because each effect names them itself: the second is usually Overlay, which
+    /// means "draw on what is already there rather than clearing first", but Rolling Balls uses all
+    /// three for collisions, overlay and trails.
+    /// </para>
+    /// </summary>
     public bool Option1 { get; set; }
 
     public bool Option2 { get; set; }
+
+    public bool Option3 { get; set; }
 
     /// <summary>
     /// Randomness, seeded rather than free-running.
@@ -356,6 +365,12 @@ public sealed class EffectSegment
         limit <= 0 ? (ushort)0 : (ushort)((long)Random.Next(65536) * limit >> 16);
 
     /// <summary>
+    /// A sixteen-bit draw between <paramref name="lowest"/> and <paramref name="limit"/>, which
+    /// FastLED builds from the one-argument form rather than scaling the whole range.
+    /// </summary>
+    public ushort Random16(int lowest, int limit) => (ushort)(lowest + Random16(limit - lowest));
+
+    /// <summary>
     /// A random place on the color wheel at least 42 of 255 away from <paramref name="from"/>.
     /// <para>
     /// The distance is what makes it useful: effects that swap to "another random color" would
@@ -563,6 +578,7 @@ public sealed class EffectSegment
         Custom3 = wled.Custom3 ?? 16;
         PaletteId = wled.Palette ?? 0;
         SegmentId = wled.Id ?? 0;
+        Option3 = wled.Option3 ?? false;
         Palette = palette;
         Reverse = wled.Reverse ?? false;
         Option1 = wled.Option1 ?? false;
