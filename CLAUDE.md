@@ -68,3 +68,17 @@ A few things learned the hard way, all of which have cost a rewrite at least onc
   error.
 - **Match effects by name, never by number.** WLED's effect ids move between releases, and two of
   them here sit nowhere near where the source order suggests.
+- **The clock an effect sees restarts when the effect does.** Which is why every simulation here
+  starts at zero. Noise Pal proved it: it waits one full change interval before inventing its first
+  palette, and a capture with no settling sits black for exactly that 5.28 seconds before lighting.
+- **One capture of a random effect is not evidence.** Aurora's mean brightness came out 48.19, 46.75
+  and 50.23 over three captures against a port that ranges 42 to 55 across seeds - so a single
+  capture against a single seed can read as a fourteen percent error in either direction. Worse, its
+  first capture had no saturated pixels at all and nearly went into a test as "never saturates"; the
+  second had 0.62%.
+- **Never write a test around something being absent.** Twice now a test here has used an unported
+  effect as an example and broken the day it was ported, and the second time the comment on it
+  already said so.
+- **`aux0` and `aux1` are sixteen bits wide, `step` is thirty-two.** The width is behaviour: Pacifica
+  adds tens of thousands to its counters every frame and needs them to wrap at 65536 to stay
+  periodic.
