@@ -396,16 +396,15 @@ public sealed class EffectSegment
             return RgbColor.Black;
         }
 
-        return new RgbColor(Down(color.R), Down(color.G), Down(color.B));
-
-        byte Down(byte channel)
-        {
-            int scaled = channel * amount >> 8;
-
-            // The "video" guard: a lit channel never scales all the way to black, so a dimmed
-            // color keeps its hue instead of losing its weakest component first.
-            return (byte)(scaled == 0 && channel != 0 ? 1 : scaled);
-        }
+        // The "video" guard adds one to every lit channel, not only to one that would otherwise round
+        // away. It reads like a floor and is not one: fading 255 by 52 gives 52 rather than 51,
+        // because the one is added whatever the product came to. Lightning is where that shows -
+        // it dims the primary by 52, 127 or 255, and the strip answers 52, 127 and 255 where a plain
+        // floor would answer 51, 126 and 255.
+        return new RgbColor(
+            FastLed.Scale8Video(color.R, amount),
+            FastLed.Scale8Video(color.G, amount),
+            FastLed.Scale8Video(color.B, amount));
     }
 
     /// <summary>Mixes two colors, where 0 is all of the first and 255 all of the second.</summary>

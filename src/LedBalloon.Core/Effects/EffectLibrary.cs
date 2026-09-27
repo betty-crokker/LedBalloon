@@ -125,6 +125,8 @@ public static class EffectLibrary
         new FairyTwinkleEffect(),
         new PopcornEffect(),
         new DripEffect(),
+        new LightningEffect(),
+        new HalloweenEyesEffect(),
         new RippleEffect(),
     ];
 
