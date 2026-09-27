@@ -26,28 +26,36 @@ public sealed class SolidEffect : IWledEffect
 }
 
 /// <summary>
-/// On, then off, then on again.
+/// On, then off, then on again - which is four of WLED's effects depending on what "on" means and
+/// how long it lasts.
 /// <para>
-/// Worth porting for what it is not: unlike most effects this one measures itself in
-/// milliseconds rather than in sine waves, and its speed runs <em>backwards</em> - the cycle is
-/// <c>(255 - speed) * 20</c> ms, so turning speed up shortens it. The palette-slide stand-in had
-/// no way to express either of those and drew a blinking run as a gentle wash.
+/// Worth porting for what it is not: unlike most effects this one measures itself in milliseconds
+/// rather than in sine waves, and its speed runs <em>backwards</em> - the cycle is
+/// <c>(255 - speed) * 20</c> ms, so turning speed up shortens it. The palette-slide stand-in had no
+/// way to express either of those and drew a blinking run as a gentle wash.
+/// </para>
+/// <para>
+/// A strobe is the same thing with the duty cycle taken away: on for one <c>FRAMETIME</c> and off
+/// for the rest, however long the cycle. And the rainbow variants take the lit color from the frame
+/// count rather than from a slot, so they walk the wheel a step per frame drawn.
 /// </para>
 /// </summary>
-public sealed class BlinkEffect : IWledEffect
+internal static class Blinking
 {
-    public string Name => "Blink";
-
-    public void Render(EffectSegment segment, uint now)
+    public static void Render(
+        EffectSegment segment, uint now, RgbColor lit, RgbColor unlit, bool strobe, bool usePalette)
     {
-        ArgumentNullException.ThrowIfNull(segment);
-
         var frame = (uint)segment.FrameTime;
 
         uint cycleTime = (uint)(255 - segment.Speed) * 20;
 
-        // Intensity is the duty cycle: how much of each cycle is spent lit.
-        uint onTime = frame + ((cycleTime * segment.Intensity) >> 8);
+        // Intensity is the duty cycle: how much of each cycle is spent lit. A strobe has none.
+        uint onTime = frame;
+
+        if (!strobe)
+        {
+            onTime += (cycleTime * segment.Intensity) >> 8;
+        }
 
         cycleTime += frame * 2;
 
@@ -61,14 +69,86 @@ public sealed class BlinkEffect : IWledEffect
 
         if (!on)
         {
-            segment.Fill(segment.Colors[1]);
+            segment.Fill(unlit);
+            return;
+        }
+
+        if (!usePalette)
+        {
+            segment.Fill(lit);
             return;
         }
 
         for (int i = 0; i < segment.Length; i++)
         {
-            segment.Pixels[i] = segment.ColorFromPalette(i, mapping: true);
+            segment.Pixels[i] = segment.ColorFromPalette(
+                i, mapping: true, wrap: segment.SolidWrap);
         }
+    }
+
+    /// <summary>The wheel position the rainbow variants blink at: one step per frame drawn.</summary>
+    public static RgbColor Wheel(EffectSegment segment) =>
+        segment.ColorWheel((byte)(segment.Call & 0xFF));
+}
+
+/// <summary>The palette on, the secondary color off, with intensity setting the duty cycle.</summary>
+public sealed class BlinkEffect : IWledEffect
+{
+    public string Name => "Blink";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        Blinking.Render(
+            segment, now, segment.Colors[0], segment.Colors[1], strobe: false, usePalette: true);
+    }
+}
+
+/// <summary>The same blink with its lit color walking the wheel instead of coming from the palette.</summary>
+public sealed class BlinkRainbowEffect : IWledEffect
+{
+    public string Name => "Blink Rainbow";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        Blinking.Render(
+            segment, now, Blinking.Wheel(segment), segment.Colors[1],
+            strobe: false, usePalette: false);
+    }
+}
+
+/// <summary>
+/// A single frame of light per cycle, whatever the cycle length - which is what makes it a strobe
+/// rather than a blink, and why it has no duty cycle control at all.
+/// </summary>
+public sealed class StrobeEffect : IWledEffect
+{
+    public string Name => "Strobe";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        Blinking.Render(
+            segment, now, segment.Colors[0], segment.Colors[1], strobe: true, usePalette: true);
+    }
+}
+
+/// <summary>The same strobe flashing a different color off the wheel each time.</summary>
+public sealed class StrobeRainbowEffect : IWledEffect
+{
+    public string Name => "Strobe Rainbow";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+
+        Blinking.Render(
+            segment, now, Blinking.Wheel(segment), segment.Colors[1],
+            strobe: true, usePalette: false);
     }
 }
 
