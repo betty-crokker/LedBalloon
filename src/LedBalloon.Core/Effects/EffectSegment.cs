@@ -107,10 +107,32 @@ public sealed class EffectSegment
     /// <summary>Frames drawn since this run started, WLED's <c>SEGENV.call</c>.</summary>
     public uint Call { get; set; }
 
-    /// <summary>Two more scratch values that survive between frames, WLED's <c>aux0</c> and <c>aux1</c>.</summary>
-    public uint Aux0 { get; set; }
+    /// <summary>
+    /// Two more scratch values that survive between frames, WLED's <c>aux0</c> and <c>aux1</c> - and
+    /// sixteen bits each, unlike <see cref="Step"/>, which is thirty-two.
+    /// <para>
+    /// The width is part of the behaviour, not an implementation detail. An effect that accumulates into
+    /// one of these is relying on it to wrap at 65536: Pacifica keeps two of its four color-index
+    /// counters here and the other two packed into <see cref="Step"/>, and adds tens of thousands to each
+    /// every frame. Held in thirty-two bits they would climb away instead of cycling, and the wave would
+    /// stop being periodic. Read as <see cref="uint"/> so that no effect has to cast, but stored narrow.
+    /// </para>
+    /// </summary>
+    public uint Aux0
+    {
+        get => _aux0;
+        set => _aux0 = (ushort)value;
+    }
 
-    public uint Aux1 { get; set; }
+    /// <inheritdoc cref="Aux0"/>
+    public uint Aux1
+    {
+        get => _aux1;
+        set => _aux1 = (ushort)value;
+    }
+
+    private ushort _aux0;
+    private ushort _aux1;
 
     /// <summary>
     /// The effect option checkboxes, WLED's <c>check1</c>, <c>check2</c> and <c>check3</c>.
@@ -405,9 +427,18 @@ public sealed class EffectSegment
         }
     }
 
-    /// <summary>How bright a color reads overall, which is how WLED decides what shows through what.</summary>
-    public static byte AverageLight(RgbColor color) =>
-        (byte)((color.R + color.G + color.B) / 3);
+    /// <summary>
+    /// How bright a color reads overall, which is how WLED decides what shows through what.
+    /// <para>
+    /// FastLED's <c>getAverageLight</c>, which is not the mean of the three channels however much it
+    /// looks like one: each channel is scaled by 85 and the three results added, so the rounding happens
+    /// three times instead of once. A flat grey 100 comes out 99. Colortwinkles compares a twinkle
+    /// against its background with this and Pacifica decides where to add white crests by it, and both
+    /// are comparisons against a threshold - which is exactly where a unit either way changes the answer.
+    /// </para>
+    /// </summary>
+    public static byte AverageLight(RgbColor color) => (byte)(
+        FastLed.Scale8(color.R, 85) + FastLed.Scale8(color.G, 85) + FastLed.Scale8(color.B, 85));
 
     /// <summary>Scales a color down with no floor, unlike <see cref="Fade"/>.</summary>
     public static RgbColor Scale(RgbColor color, byte amount) => new(

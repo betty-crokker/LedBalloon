@@ -184,6 +184,61 @@ public static class FastLed
     }
 
     /// <summary>
+    /// FastLED's own sixteen-entry palette lookup, which is not the same as the one WLED wraps around it.
+    /// <para>
+    /// The difference is the wrap. <see cref="EffectSegment.ColorFromPalette"/> follows WLED, which
+    /// squeezes the index into the range 0-240 so that the last entry is the end of the gradient. This
+    /// blends entry fifteen back round into entry zero, so a palette whose two ends differ has a seam in
+    /// it - which for Pacifica's palettes, dark at one end and bright at the other, is a visible part of
+    /// the wave.
+    /// </para>
+    /// <para>
+    /// The brightness path carries FastLED's own double adjustment: the value is incremented and then
+    /// scaled with the fixed <see cref="Scale8"/>, which adds one again. So asking for 254 of 255 leaves
+    /// a channel untouched, and the two roundings are what stops a dim palette reading a shade low.
+    /// </para>
+    /// </summary>
+    public static RgbColor ColorFromPalette16(RgbColor[] entries, byte index, byte brightness)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        int high = index >> 4;
+        int low = index & 0x0F;
+
+        RgbColor first = entries[high];
+        byte r = first.R, g = first.G, b = first.B;
+
+        if (low != 0)
+        {
+            RgbColor second = entries[high == 15 ? 0 : high + 1];
+
+            var toSecond = (byte)(low << 4);
+            var toFirst = (byte)(255 - toSecond);
+
+            r = (byte)(Scale8(r, toFirst) + Scale8(second.R, toSecond));
+            g = (byte)(Scale8(g, toFirst) + Scale8(second.G, toSecond));
+            b = (byte)(Scale8(b, toFirst) + Scale8(second.B, toSecond));
+        }
+
+        if (brightness == 255)
+        {
+            return new RgbColor(r, g, b);
+        }
+
+        if (brightness == 0)
+        {
+            return RgbColor.Black;
+        }
+
+        var scale = (byte)(brightness + 1);
+
+        return new RgbColor(
+            r == 0 ? (byte)0 : Scale8(r, scale),
+            g == 0 ? (byte)0 : Scale8(g, scale),
+            b == 0 ? (byte)0 : Scale8(b, scale));
+    }
+
+    /// <summary>
     /// <see cref="Scale8"/>'s wider sibling: a fraction of a 16-bit value.
     /// <para>
     /// Fixed the same way and for the same reason - <c>(i * (1 + scale)) / 65536</c>, not
