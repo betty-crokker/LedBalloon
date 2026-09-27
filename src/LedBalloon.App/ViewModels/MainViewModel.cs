@@ -3287,12 +3287,19 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             case nameof(DeviceViewModel.IsConnected):
                 OnPropertyChanged(nameof(ControllerSummary));
+                AnnounceEffectNames();
                 break;
             case nameof(DeviceViewModel.Presets):
                 RebuildPresetCatalog();
                 break;
             case nameof(DeviceViewModel.Effects):
-                OnPropertyChanged(nameof(EffectNames));
+                AnnounceEffectNames();
+                break;
+
+            case nameof(DeviceViewModel.Capabilities):
+                // A controller that has answered for its capabilities has answered for its effects
+                // too, and this one arrives late enough that the photo is listening.
+                AnnounceEffectNames();
                 break;
             case nameof(DeviceViewModel.State):
                 RebuildControllerStates();
@@ -3524,6 +3531,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Each controller's effect list, keyed by controller, so the photo can tell which effect a
     /// preset's number actually names on the box that stores it.
+    /// <para>
+    /// Worked out on demand rather than stored, which means anything bound to it only sees a change
+    /// when something says so - and for a while nothing did at the right moment. A controller fills
+    /// its effect list while it is connecting, which is before the photo exists to bind to it, so the
+    /// one notification that was raised went nowhere and the photo held an empty list for the rest of
+    /// the session. Every effect on the house then drew as its primary colour: lit, and completely
+    /// still. See <see cref="AnnounceEffectNames"/>.
+    /// </para>
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> EffectNames =>
         Devices
@@ -3532,6 +3547,16 @@ public sealed partial class MainViewModel : ViewModelBase
                 d => d.DeviceKey!,
                 d => (IReadOnlyList<string>)[.. d.Effects],
                 StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Tells anything bound to <see cref="EffectNames"/> to read it again.
+    /// <para>
+    /// Called from more places than looks necessary, on purpose. A computed property is only as good
+    /// as the notifications raised for it, and the cost of raising one too often is a dictionary
+    /// rebuilt for nothing, while the cost of missing one is that no effect ever moves on the photo.
+    /// </para>
+    /// </summary>
+    private void AnnounceEffectNames() => OnPropertyChanged(nameof(EffectNames));
 
     /// <summary>
     /// Each controller's frame time in milliseconds. Anything that trails, fades or decays does so
@@ -3615,7 +3640,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (times.Count > 0)
         {
-            await Dispatcher.UIThread.InvokeAsync(() => FrameTimes = times);
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                FrameTimes = times;
+
+                // The one place that is certain to run after every controller has been read and after
+                // the photo is on screen, which is what the effect list needs and did not have.
+                AnnounceEffectNames();
+            });
         }
     }
 
