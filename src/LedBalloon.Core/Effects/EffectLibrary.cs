@@ -121,6 +121,8 @@ public static class EffectLibrary
         new RandomChaseEffect(),
         new ColorTwinklesEffect(),
         new TwinkleCatEffect(),
+        new FairyEffect(),
+        new FairyTwinkleEffect(),
         new RippleEffect(),
     ];
 
