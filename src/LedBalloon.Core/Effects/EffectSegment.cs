@@ -104,6 +104,12 @@ public sealed class EffectSegment
     /// </summary>
     public Random Random { get; set; } = new(11337);
 
+    /// <summary>
+    /// The controller's own generator, with its seed exposed - for the effects that use randomness as
+    /// a pattern rather than as noise. See <see cref="SeededSequence"/> for why there are two.
+    /// </summary>
+    public SeededSequence Sequence { get; } = new();
+
     private object? _scratch;
 
     /// <summary>

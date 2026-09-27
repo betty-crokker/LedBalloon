@@ -94,17 +94,16 @@ public sealed class ColorTwinklesEffect : IWledEffect
 /// few effects of its kind that a preview can match exactly.
 /// </para>
 /// <para>
-/// The "cat" variant snaps each twinkle on and fades it out, where plain Twinklefox eases both ways.
+/// The two variants differ in one curve. Twinklecat snaps each twinkle to full and fades it out;
+/// Twinklefox ramps up over a third of the cycle and down over the other two, which is a filament
+/// warming rather than a switch closing. The two curves enclose the same area, so the run averages
+/// the same brightness either way - what changes is whether any LED is ever on its way up.
 /// </para>
 /// </summary>
-public sealed class TwinkleCatEffect : IWledEffect
+internal static class TwinkleFox
 {
-    public string Name => "Twinklecat";
-
-    public void Render(EffectSegment segment, uint now)
+    public static void Render(EffectSegment segment, uint now, bool cat)
     {
-        ArgumentNullException.ThrowIfNull(segment);
-
         // Reset every frame on purpose: the sequence has to come out the same each time or every
         // LED would be somewhere different from one frame to the next.
         ushort random = 11337;
@@ -146,7 +145,7 @@ public sealed class TwinkleCatEffect : IWledEffect
                 clock = ((now * speedMultiplier) >> 3) + clockOffset;
             }
 
-            RgbColor twinkle = OneTwinkle(segment, clock, (byte)(random >> 8));
+            RgbColor twinkle = OneTwinkle(segment, clock, (byte)(random >> 8), cat);
 
             int delta = EffectSegment.AverageLight(twinkle) - backgroundBrightness;
 
@@ -159,7 +158,7 @@ public sealed class TwinkleCatEffect : IWledEffect
     }
 
     /// <summary>What one LED is doing at its own private time.</summary>
-    private static RgbColor OneTwinkle(EffectSegment segment, uint clock, byte salt)
+    private static RgbColor OneTwinkle(EffectSegment segment, uint clock, byte salt, bool cat)
     {
         uint ticks = clock / Math.Max(1, segment.Aux0);
         var fastCycle = (byte)ticks;
@@ -178,10 +177,22 @@ public sealed class TwinkleCatEffect : IWledEffect
         int density = (segment.Intensity >> 5) + 1;
 
         int bright = 0;
+
         if (((slow & 0x0E) / 2) < density)
         {
-            // Cat: full brightness the instant it starts, then straight back down.
-            bright = 255 - fastCycle;
+            if (cat)
+            {
+                // Full brightness the instant it starts, then straight back down.
+                bright = 255 - fastCycle;
+            }
+            else
+            {
+                // Up over the first third and down over the rest - a triangle with a fast attack and
+                // a slow decay, which is the difference between the two effects.
+                bright = fastCycle < 86
+                    ? fastCycle * 3
+                    : 255 - ((fastCycle - 86) + ((fastCycle - 86) / 2));
+            }
         }
 
         if (bright <= 0)
@@ -209,6 +220,30 @@ public sealed class TwinkleCatEffect : IWledEffect
         }
 
         return color;
+    }
+}
+
+/// <summary>Twinkles that ramp up and fade down, each LED on its own slow clock.</summary>
+public sealed class TwinkleFoxEffect : IWledEffect
+{
+    public string Name => "Twinklefox";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+        TwinkleFox.Render(segment, now, cat: false);
+    }
+}
+
+/// <summary>The same twinkles snapping to full and fading out rather than easing up.</summary>
+public sealed class TwinkleCatEffect : IWledEffect
+{
+    public string Name => "Twinklecat";
+
+    public void Render(EffectSegment segment, uint now)
+    {
+        ArgumentNullException.ThrowIfNull(segment);
+        TwinkleFox.Render(segment, now, cat: true);
     }
 }
 
