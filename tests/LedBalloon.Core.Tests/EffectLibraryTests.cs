@@ -49,16 +49,32 @@ public class EffectLibraryTests
         Assert.Equal("Chunchun", effect.Name);
     }
 
+    /// <summary>
+    /// The same number against a different list is a different effect, which is the whole reason for
+    /// going through the list at all: a controller on another version, or a fork, can have something
+    /// else at 111.
+    /// <para>
+    /// This asserted that the number stopped resolving, using Rolling Balls as an effect that was not
+    /// ported - and broke the day it was. Twice now a test here has been written around something
+    /// being absent, and twice the absence has gone away. So this one names two ported effects and
+    /// checks that the number lands on whichever the list says, which cannot rot the same way.
+    /// </para>
+    /// </summary>
     [Fact]
     public void The_same_number_against_a_different_list_is_a_different_effect()
     {
-        // Which is the whole reason for going through the list: a controller on another version,
-        // or a fork, can have something else at 111.
         var shuffled = new string[187];
         Array.Fill(shuffled, "RSVD");
         shuffled[111] = "Rolling Balls";
 
-        Assert.Null(EffectLibrary.Find(111, shuffled));
+        IWledEffect? here = EffectLibrary.Find(111, EffectList());
+        IWledEffect? there = EffectLibrary.Find(111, shuffled);
+
+        Assert.NotNull(here);
+        Assert.NotNull(there);
+
+        Assert.Equal("Chunchun", here.Name);
+        Assert.Equal("Rolling Balls", there.Name);
     }
 
     /// <summary>
