@@ -127,6 +127,8 @@ public static class EffectLibrary
         new DripEffect(),
         new LightningEffect(),
         new HalloweenEyesEffect(),
+        new PlasmaEffect(),
+        new SunriseEffect(),
         new RippleEffect(),
     ];
 

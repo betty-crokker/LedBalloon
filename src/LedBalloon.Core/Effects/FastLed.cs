@@ -414,11 +414,19 @@ public static class FastLed
     /// <summary>A triangle wave with its corners rounded off, which reads as a swell rather than a ramp.</summary>
     public static byte CubicWave8(byte input) => EaseInOutCubic8(TriWave8(input));
 
-    /// <summary>Eases a value in and out, the cubic curve FastLED uses.</summary>
+    /// <summary>
+    /// Eases a value in and out, the cubic curve FastLED uses - <c>3x&#178; - 2x&#179;</c>.
+    /// <para>
+    /// Both powers are taken with <see cref="Scale8"/> rather than by multiplying and shifting, which
+    /// is not the same thing: the fixed scaling multiplies by one more than the scale, so squaring 200
+    /// gives 157 where a plain multiply gives 156. Off by one in the wrong direction here bends the
+    /// whole curve, because the cube is taken from the square.
+    /// </para>
+    /// </summary>
     public static byte EaseInOutCubic8(byte i)
     {
-        int squared = i * i / 256;
-        int cubed = squared * i / 256;
+        byte squared = Scale8(i, i);
+        byte cubed = Scale8(squared, i);
 
         int result = (3 * squared) - (2 * cubed);
 
