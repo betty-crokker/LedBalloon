@@ -50,11 +50,11 @@ public class PerlinAgainstHardwareTests(ITestOutputHelper output)
     };
 
     /// <summary>The captured frames, in segment order - the wire runs back to front.</summary>
-    private static List<RgbColor[]> Captured()
+    private static List<RgbColor[]> Captured(string fixture = "fill-noise.txt")
     {
         List<RgbColor[]> frames = [];
 
-        foreach (string line in File.ReadAllLines(Path.Combine("Fixtures", "fill-noise.txt")))
+        foreach (string line in File.ReadAllLines(Path.Combine("Fixtures", fixture)))
         {
             if (line.StartsWith('#') || line.Length < Roofline * 6)
             {
@@ -235,6 +235,68 @@ public class PerlinAgainstHardwareTests(ITestOutputHelper output)
 
         // Forward, and by roughly what the frame rate and the step size predict.
         Assert.InRange(second - first, 20, 400);
+    }
+
+    /// <summary>
+    /// The sixteen-bit noise, checked the same way and without even a search to do.
+    /// <para>
+    /// Noise 4 at speed zero is <c>inoise16(i &lt;&lt; 12, 0)</c> through the palette and nothing
+    /// else - no accumulated step, no seed, not even the clock. So the captured frame is simply what
+    /// the function has to produce, LED for LED. It does, to a unit per channel.
+    /// </para>
+    /// <para>
+    /// Worth its own port rather than widening the eight-bit one: the two have different gradients,
+    /// different interpolation, and different ways of spreading the result over their range - a
+    /// multiply by 484 and a shift against a saturating double. Shifting the coordinate by twelve
+    /// bits puts sixteen LEDs in each noise cell, which is the repeat visible in the capture.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Sixteen_bit_noise_reproduces_the_strip_pixel_for_pixel()
+    {
+        RgbColor[] captured = Captured("noise16.txt")[0];
+
+        EffectSegment segment = Run();
+        var predicted = new RgbColor[Roofline];
+
+        for (int i = 0; i < Roofline; i++)
+        {
+            ushort noise = Perlin.Noise16((uint)i << 12, 0);
+            predicted[i] = segment.ColorFromPalette(noise);
+        }
+
+        double error = Error(predicted, captured, Roofline);
+        int worst = Enumerable.Range(0, Roofline)
+            .Max(i => Math.Abs(predicted[i].R - captured[i].R)
+                + Math.Abs(predicted[i].G - captured[i].G)
+                + Math.Abs(predicted[i].B - captured[i].B));
+
+        output.WriteLine($"{error:F2} per channel over {Roofline} LEDs, worst pixel off by {worst}");
+        output.WriteLine($"first four predicted: {string.Join(" ", predicted.Take(4))}");
+        output.WriteLine($"first four measured : {string.Join(" ", captured.Take(4))}");
+
+        Assert.InRange(error, 0, 2);
+    }
+
+    /// <summary>
+    /// And the field repeats every sixteen LEDs, because the coordinate is shifted twelve bits and a
+    /// noise cell is sixteen bits wide. Visible in the capture as the same colors coming round.
+    /// </summary>
+    [Fact]
+    public void Sixteen_bit_noise_puts_sixteen_leds_in_a_cell()
+    {
+        ushort[] cell = [.. Enumerable.Range(0, 16).Select(i => Perlin.Noise16((uint)i << 12, 0))];
+        ushort[] next = [.. Enumerable.Range(16, 16).Select(i => Perlin.Noise16((uint)i << 12, 0))];
+
+        output.WriteLine($"cell one: {string.Join(", ", cell.Select(x => x >> 8))}");
+        output.WriteLine($"cell two: {string.Join(", ", next.Select(x => x >> 8))}");
+
+        // Two cells are different stretches of the field, not a repeat of one.
+        Assert.NotEqual(cell.Skip(1).Take(14), next.Skip(1).Take(14));
+
+        // Smooth within a cell: sixteen steps cannot cross the whole range.
+        int biggest = Enumerable.Range(1, 15).Max(i => Math.Abs((cell[i] >> 8) - (cell[i - 1] >> 8)));
+        Assert.True(biggest < 90, $"neighbours jumped by {biggest}");
     }
 
     /// <summary>

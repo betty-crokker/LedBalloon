@@ -183,8 +183,16 @@ public static class FastLed
         }
     }
 
-    /// <summary><see cref="Scale8"/>'s wider sibling: a fraction of a 16-bit value.</summary>
-    public static ushort Scale16(ushort i, ushort scale) => (ushort)((uint)i * scale / 65536);
+    /// <summary>
+    /// <see cref="Scale8"/>'s wider sibling: a fraction of a 16-bit value.
+    /// <para>
+    /// Fixed the same way and for the same reason - <c>(i * (1 + scale)) / 65536</c>, not
+    /// <c>i * scale / 65536</c>. One switch in FastLED turns both on, so a port that fixed the
+    /// narrow one and not the wide one would be half right.
+    /// </para>
+    /// </summary>
+    public static ushort Scale16(ushort i, ushort scale) =>
+        (ushort)((uint)i * (1 + (uint)scale) / 65536);
 
     /// <summary>
     /// Hue, saturation and value to RGB, the way FastLED does it rather than the way a colour
