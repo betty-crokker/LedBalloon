@@ -205,10 +205,28 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool _rebuildingRows;
 
     public MainViewModel()
+        : this(scanForControllers: true)
+    {
+    }
+
+    /// <summary>
+    /// The same view model without the scan the app opens with.
+    /// <para>
+    /// Only tests pass false, and only because a scan looks for real controllers on the real network:
+    /// a test that wants to watch one controller connect cannot also be sweeping the house for others.
+    /// Everything else about the view model is the same either way.
+    /// </para>
+    /// </summary>
+    internal MainViewModel(bool scanForControllers)
     {
         // Through the property, not the field, so the hint beside the checkbox agrees with it. The
         // status line it also writes is overwritten by the startup steps a moment later.
         LiveSync = _preferences.LiveSync;
+
+        if (!scanForControllers)
+        {
+            return;
+        }
 
         // Finding the controllers is the app's first job, so do it without being asked.
         Dispatcher.UIThread.Post(async void () => await ScanAsync());
@@ -1170,7 +1188,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    private async Task AddDeviceAsync(string host, string? discoveredName)
+    internal async Task AddDeviceAsync(string host, string? discoveredName)
     {
         if (Devices.Any(d => string.Equals(d.Host, host, StringComparison.OrdinalIgnoreCase)))
         {
@@ -1179,6 +1197,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
         var device = new DeviceViewModel(host, discoveredName);
         Devices.Add(device);
+
+        // Before it is connected, not after. Connecting is when a controller reports almost
+        // everything it has to report - its effect list among it - and this used to be wired up
+        // afterwards, so all of it was announced to nobody. Everything derived from it then sat at
+        // whatever it had been before the controller answered, for the rest of the session: the photo
+        // held an empty effect list and drew every effect on the house as a flat colour.
+        device.PropertyChanged += OnDevicePropertyChanged;
 
         if (_starting)
         {
@@ -1202,8 +1227,11 @@ public sealed partial class MainViewModel : ViewModelBase
                                      string.Equals(d.DeviceKey, key, StringComparison.OrdinalIgnoreCase))
                          .ToList())
             {
+                duplicate.PropertyChanged -= OnDevicePropertyChanged;
                 Devices.Remove(duplicate);
                 _ = duplicate.DisposeAsync();
+
+                AnnounceEffectNames();
             }
 
             ControllerRef stored = Project.RegisterController(
@@ -1213,7 +1241,6 @@ public sealed partial class MainViewModel : ViewModelBase
                 device.Info?.Name);
 
             device.AssignedName = stored.Name;
-            device.PropertyChanged += OnDevicePropertyChanged;
         }
 
         SelectedDevice ??= device;
@@ -3287,18 +3314,11 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             case nameof(DeviceViewModel.IsConnected):
                 OnPropertyChanged(nameof(ControllerSummary));
-                AnnounceEffectNames();
                 break;
             case nameof(DeviceViewModel.Presets):
                 RebuildPresetCatalog();
                 break;
             case nameof(DeviceViewModel.Effects):
-                AnnounceEffectNames();
-                break;
-
-            case nameof(DeviceViewModel.Capabilities):
-                // A controller that has answered for its capabilities has answered for its effects
-                // too, and this one arrives late enough that the photo is listening.
                 AnnounceEffectNames();
                 break;
             case nameof(DeviceViewModel.State):
@@ -3532,12 +3552,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Each controller's effect list, keyed by controller, so the photo can tell which effect a
     /// preset's number actually names on the box that stores it.
     /// <para>
-    /// Worked out on demand rather than stored, which means anything bound to it only sees a change
-    /// when something says so - and for a while nothing did at the right moment. A controller fills
-    /// its effect list while it is connecting, which is before the photo exists to bind to it, so the
-    /// one notification that was raised went nowhere and the photo held an empty list for the rest of
-    /// the session. Every effect on the house then drew as its primary colour: lit, and completely
-    /// still. See <see cref="AnnounceEffectNames"/>.
+    /// Worked out on demand rather than stored, so anything bound to it only sees a change when
+    /// something says so - and for a while nothing did, because <see cref="AddDeviceAsync"/> did not
+    /// start listening to a controller until after it had finished connecting, which is when a
+    /// controller reports its effect list. Reading this afterwards always gave the right answer, and
+    /// the photo never read it again. Guarded now by a test that watches for the announcement rather
+    /// than for the value.
     /// </para>
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<string>> EffectNames =>
@@ -3551,9 +3571,8 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Tells anything bound to <see cref="EffectNames"/> to read it again.
     /// <para>
-    /// Called from more places than looks necessary, on purpose. A computed property is only as good
-    /// as the notifications raised for it, and the cost of raising one too often is a dictionary
-    /// rebuilt for nothing, while the cost of missing one is that no effect ever moves on the photo.
+    /// Raised when a controller reports its effect list, and again when one is dropped - a controller
+    /// leaving changes the answer as surely as one arriving, and nothing else would say so.
     /// </para>
     /// </summary>
     private void AnnounceEffectNames() => OnPropertyChanged(nameof(EffectNames));
@@ -3640,14 +3659,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (times.Count > 0)
         {
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                FrameTimes = times;
-
-                // The one place that is certain to run after every controller has been read and after
-                // the photo is on screen, which is what the effect list needs and did not have.
-                AnnounceEffectNames();
-            });
+            await Dispatcher.UIThread.InvokeAsync(() => FrameTimes = times);
         }
     }
 
