@@ -1,4 +1,5 @@
 using LedBalloon.App.ViewModels;
+using LedBalloon.Core.Layout;
 using Xunit;
 
 namespace LedBalloon.App.Tests;
@@ -19,14 +20,21 @@ namespace LedBalloon.App.Tests;
 /// </para>
 /// </summary>
 [Collection(UiThreadCollection.Name)]
-public class EffectNamesReachThePhotoTests(UiThreadFixture ui)
+public class EffectNamesReachThePhotoTests(UiThreadFixture ui) : IDisposable
 {
+    /// <summary>
+    /// A preferences file of this test's own, so that running it does not read or write the ones
+    /// belonging to whoever is running it.
+    /// </summary>
+    private readonly string _preferences = Path.Combine(
+        Path.GetTempPath(), $"ledballoon-app-tests-{Guid.NewGuid():N}.json");
+
     [Fact]
     public void A_controller_that_finishes_connecting_announces_its_effect_list() => ui.Run(async () =>
     {
         using FakeController controller = FakeController.Start("Solid", "Blink", "Pacifica");
 
-        var app = new MainViewModel(scanForControllers: false);
+        MainViewModel app = Started();
 
         List<string?> announced = [];
         app.PropertyChanged += (_, e) => announced.Add(e.PropertyName);
@@ -41,7 +49,7 @@ public class EffectNamesReachThePhotoTests(UiThreadFixture ui)
     {
         using FakeController controller = FakeController.Start("Solid", "Blink", "Pacifica");
 
-        var app = new MainViewModel(scanForControllers: false);
+        MainViewModel app = Started();
 
         await app.AddDeviceAsync(controller.Host, null);
 
@@ -53,4 +61,21 @@ public class EffectNamesReachThePhotoTests(UiThreadFixture ui)
         Assert.Equal<IEnumerable<string>>(
             ["Solid", "Blink", "Pacifica"], app.EffectNames[FakeController.Key]);
     });
+
+    /// <summary>
+    /// The view model as a test wants it: no scan for controllers that are not part of the test, and
+    /// preferences in a file of its own.
+    /// </summary>
+    private MainViewModel Started() =>
+        new(scanForControllers: false, AppPreferences.Load(_preferences));
+
+    public void Dispose()
+    {
+        GC.SuppressFinalize(this);
+
+        if (File.Exists(_preferences))
+        {
+            File.Delete(_preferences);
+        }
+    }
 }

@@ -161,7 +161,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     [ObservableProperty] private bool _liveSync = true;
 
-    private readonly AppPreferences _preferences = AppPreferences.Load();
+    private readonly AppPreferences _preferences;
 
     /// <summary>
     /// Changes made while sync was off, merged per controller rather than queued: the house only
@@ -210,15 +210,19 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// The same view model without the scan the app opens with.
+    /// The same view model without the scan the app opens with, and without going looking for the
+    /// preferences file.
     /// <para>
-    /// Only tests pass false, and only because a scan looks for real controllers on the real network:
-    /// a test that wants to watch one controller connect cannot also be sweeping the house for others.
-    /// Everything else about the view model is the same either way.
+    /// Only tests pass either. A scan looks for real controllers on the real network, and a test that
+    /// wants to watch one controller connect cannot also be sweeping the house for others; and the
+    /// preferences are a real file in the user's own folder, which a test has no business reading or
+    /// writing. Everything else about the view model is the same either way.
     /// </para>
     /// </summary>
-    internal MainViewModel(bool scanForControllers)
+    internal MainViewModel(bool scanForControllers, AppPreferences? preferences = null)
     {
+        _preferences = preferences ?? AppPreferences.Load();
+
         // Through the property, not the field, so the hint beside the checkbox agrees with it. The
         // status line it also writes is overwritten by the startup steps a moment later.
         LiveSync = _preferences.LiveSync;

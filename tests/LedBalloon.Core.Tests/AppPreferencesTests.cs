@@ -29,6 +29,41 @@ public class AppPreferencesTests : IDisposable
         Assert.True(AppPreferences.Load(_path).LiveSync);
     }
 
+    /// <summary>
+    /// Preferences remember the file they came from, and saving with nothing to say puts them back
+    /// there rather than in the usual place.
+    /// <para>
+    /// Which is what lets anything be handed preferences of its own - a test, most of all, since the
+    /// usual place is a real file in whoever's folder is running it. A first run counts too: there is
+    /// nothing to read, and the defaults that come back still have to know where they were looked for
+    /// or the first save goes somewhere else.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Preferences_are_saved_back_to_the_file_they_came_from()
+    {
+        AppPreferences fresh = AppPreferences.Load(_path);
+
+        Assert.Equal(_path, fresh.StoredAt);
+        Assert.False(File.Exists(_path));
+
+        fresh.LiveSync = false;
+        fresh.Save();
+
+        Assert.True(File.Exists(_path));
+        Assert.False(AppPreferences.Load(_path).LiveSync);
+
+        // And the default file is left alone, which is the whole point of carrying the path.
+        Assert.NotEqual(AppPreferences.DefaultPath, fresh.StoredAt);
+    }
+
+    /// <summary>Preferences nobody gave a file to still save where they always did.</summary>
+    [Fact]
+    public void Preferences_made_from_nothing_still_know_the_usual_place()
+    {
+        Assert.Equal(AppPreferences.DefaultPath, new AppPreferences().StoredAt);
+    }
+
     [Fact]
     public void Sync_comes_back_off_once_it_has_been_turned_off()
     {
