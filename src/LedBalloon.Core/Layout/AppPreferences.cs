@@ -30,6 +30,18 @@ public sealed class AppPreferences
     public bool LiveSync { get; set; } = true;
 
     /// <summary>
+    /// The file these came from, and the one <see cref="Save()"/> writes back to.
+    /// <para>
+    /// Carried rather than assumed, so that preferences read from somewhere are saved back to the
+    /// same somewhere. Everything in the app wants the one file in the user's own folder and gets it
+    /// by saying nothing; a test wants a file of its own and gets it by loading from one, which is
+    /// also how it avoids writing over the preferences of whoever ran the test.
+    /// </para>
+    /// </summary>
+    [JsonIgnore]
+    public string StoredAt { get; private set; } = DefaultPath;
+
+    /// <summary>
     /// Reads the preferences, or hands back the defaults.
     /// <para>
     /// Never throws. A missing file is the normal first run, and a damaged one is not worth
@@ -38,25 +50,37 @@ public sealed class AppPreferences
     /// </summary>
     public static AppPreferences Load(string? path = null)
     {
+        path ??= DefaultPath;
+
+        AppPreferences preferences;
+
         try
         {
-            path ??= DefaultPath;
-            return File.Exists(path)
-                ? JsonSerializer.Deserialize(File.ReadAllText(path), AppPreferencesJson.Default.AppPreferences) ?? new AppPreferences()
-                : new AppPreferences();
+            preferences = (File.Exists(path)
+                ? JsonSerializer.Deserialize(File.ReadAllText(path), AppPreferencesJson.Default.AppPreferences)
+                : null) ?? new AppPreferences();
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or JsonException)
         {
-            return new AppPreferences();
+            preferences = new AppPreferences();
         }
+
+        // Even the defaults remember where they were looked for, so a first run saves to the file it
+        // did not find rather than to whichever one is the default at the time.
+        preferences.StoredAt = path;
+
+        return preferences;
     }
 
-    /// <summary>Writes the preferences back. Never throws, for the same reasons.</summary>
+    /// <summary>
+    /// Writes the preferences back to <see cref="StoredAt"/>, or to <paramref name="path"/> if one is
+    /// given. Never throws, for the same reasons.
+    /// </summary>
     public void Save(string? path = null)
     {
         try
         {
-            path ??= DefaultPath;
+            path ??= StoredAt;
 
             if (Path.GetDirectoryName(path) is { Length: > 0 } directory)
             {
