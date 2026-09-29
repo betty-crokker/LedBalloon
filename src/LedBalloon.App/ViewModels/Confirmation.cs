@@ -32,10 +32,15 @@ public sealed record ConfirmRequest(
     string CancelText = "Cancel",
     string? AlternateText = null,
     string? OptionText = null,
-    bool OptionDefault = true);
+    bool OptionDefault = true,
+    string? InputLabel = null,
+    string? InputDefault = null);
 
 /// <summary>What came back.</summary>
-public sealed record ConfirmResult(ConfirmChoice Choice, bool OptionChecked = false)
+public sealed record ConfirmResult(
+    ConfirmChoice Choice,
+    bool OptionChecked = false,
+    string? Input = null)
 {
     public static ConfirmResult Cancelled { get; } = new(ConfirmChoice.Cancel);
 

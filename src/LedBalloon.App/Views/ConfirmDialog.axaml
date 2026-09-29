@@ -13,6 +13,11 @@
       <TextBlock Name="TitleText" FontSize="16" FontWeight="SemiBold" TextWrapping="Wrap" />
       <TextBlock Name="MessageText" TextWrapping="Wrap" Opacity="0.85" />
 
+      <StackPanel Name="InputArea" Spacing="4" IsVisible="False">
+        <TextBlock Name="InputLabel" Classes="hint" />
+        <TextBox Name="InputBox" AutomationProperties.AutomationId="DialogInput" />
+      </StackPanel>
+
       <CheckBox Name="OptionBox" IsVisible="False" />
 
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,6,0,0">

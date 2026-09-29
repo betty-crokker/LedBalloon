@@ -70,8 +70,8 @@ public sealed partial class SceneRow : ObservableObject
         {
             if (Scene is not { } scene)
             {
-                return "Made in the WLED app. It can be recalled but not changed, because its " +
-                       "segments are LED numbers rather than runs.";
+                return "Made in the WLED app. It can be recalled but not changed, because it stores " +
+                       "raw LED numbers rather than the segments you have named.";
             }
 
             if (scene.PublishedAs is null)
