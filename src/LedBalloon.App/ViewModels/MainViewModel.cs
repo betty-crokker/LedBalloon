@@ -63,14 +63,39 @@ public sealed record PresetDetail(
     string? LookName = null,
 
     /// <summary>
-    /// True for a segment the open scene says nothing about, which the scene leaves as it is.
+    /// Why there is nothing to describe, or null when there is something.
     /// </summary>
-    bool NotInScene = false)
+    /// <remarks>
+    /// One field rather than a flag per reason, because there turned out to be two and they read
+    /// the same way: a scene that says nothing about a segment, and a controller whose segment
+    /// table has nothing for it. Both are cards with a name and an explanation instead of an
+    /// appearance.
+    /// </remarks>
+    string? Aside = null)
 {
     public bool WearsLook => LookName is { Length: > 0 };
 
+    public bool HasAside => Aside is { Length: > 0 };
+
     /// <summary>Whether this card has anything to describe beyond the segment's name.</summary>
-    public bool Describes => !NotInScene && !IsOff;
+    public bool Describes => !HasAside && !IsOff;
+
+    /// <summary>True for a segment the open scene says nothing about.</summary>
+    public bool NotInScene => Aside is LeftAlone;
+
+    /// <summary>What a scene that leaves a segment alone does to it.</summary>
+    public const string LeftAlone = "keeps doing what it was doing";
+
+    /// <summary>
+    /// What it means for the layout to name a segment the controller is not currently cut for.
+    /// </summary>
+    /// <remarks>
+    /// Happens when something else rewrote the segment table - recalling a WLED preset that was
+    /// saved with different bounds will do it. The layout is still right and saving puts the cuts
+    /// back; until then there is no segment on the box for this one, and describing what it shows
+    /// would be describing a thing that is not there.
+    /// </remarks>
+    public const string NotCutOnTheController = "the controller has no segment for this right now";
 
     /// <summary>
     /// The palette and the movement on one line, with the separator only when both are there.
@@ -2322,6 +2347,24 @@ public sealed partial class MainViewModel : ViewModelBase
         RefreshSegmentPickers(SelectedSegment);
     }
 
+    /// <summary>
+    /// The open row's answers, or an empty one when no row is open.
+    /// </summary>
+    /// <remarks>
+    /// Asked here rather than as <c>SelectedScene.IsOwn</c> in the template. There is a moment
+    /// during startup, and another during a reload, when nothing is selected - the list is rebuilt
+    /// from a project that has just been replaced - and a binding that walks through a null logs an
+    /// error every time the panel is laid out. A fallback value silences the control and not the
+    /// log; answering the question here means there is no null to walk through.
+    /// </remarks>
+    public bool SceneIsSaved => SelectedScene?.IsSaved ?? false;
+
+    /// <inheritdoc cref="SceneIsSaved"/>
+    public bool SceneIsOwn => SelectedScene?.IsOwn ?? false;
+
+    /// <inheritdoc cref="SceneIsSaved"/>
+    public string SceneOrigin => SelectedScene?.Origin ?? string.Empty;
+
     /// <summary>What the strip over the photo says while a scene is open.</summary>
     public string PreviewNotice => SceneEdited
         ? $"{SceneTitle}, changed — not on the house."
@@ -2330,6 +2373,9 @@ public sealed partial class MainViewModel : ViewModelBase
     private void RefreshSceneHeading()
     {
         OnPropertyChanged(nameof(PreviewNotice));
+        OnPropertyChanged(nameof(SceneIsSaved));
+        OnPropertyChanged(nameof(SceneIsOwn));
+        OnPropertyChanged(nameof(SceneOrigin));
         OnPropertyChanged(nameof(SceneTitle));
         OnPropertyChanged(nameof(SceneState));
         OnPropertyChanged(nameof(SceneUnsaved));
@@ -2414,16 +2460,23 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 int id = Project.WledSegmentIdFor(segment);
 
-                if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
-                {
-                    // No picker: the house is not a scene, so there is no document to change.
-                    group.Segments.Add(new SceneSegmentRow(
-                        segment.Id,
-                        Describe(segment, wled, device, state.On != false, state.Brightness),
-                        choices: null,
-                        chosen: null,
-                        onChosen: null));
-                }
+                // Every segment the layout names, whether or not the controller is currently cut
+                // for it. Listing only the ones it reports made the house look smaller than it is:
+                // recalling a WLED preset saved with different bounds shrinks the segment table,
+                // and two thirds of South quietly vanished from the panel.
+                PresetDetail detail = state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled
+                    ? Describe(segment, wled, device, state.On != false, state.Brightness)
+                    : NotCut(segment);
+
+                // No picker: the house is not a scene, so there is no document to change. The name
+                // is still the way in to editing the segment.
+                group.Segments.Add(new SceneSegmentRow(
+                    segment.Id,
+                    detail,
+                    choices: null,
+                    chosen: null,
+                    onChosen: null,
+                    onEdit: EditSegment));
             }
 
             if (group.Segments.Count > 0)
@@ -4686,7 +4739,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// the ones it does not light. That is a description rather than a silence, so those get an
     /// "off" card and never reach this.
     /// </remarks>
-    private static PresetDetail NotInScene(Segment run) => new(
+    private static PresetDetail NotInScene(Segment run) =>
+        Nothing(run, PresetDetail.LeftAlone);
+
+    /// <summary>A card for a segment the controller has no segment cut for.</summary>
+    private static PresetDetail NotCut(Segment run) =>
+        Nothing(run, PresetDetail.NotCutOnTheController);
+
+    private static PresetDetail Nothing(Segment run, string aside) => new(
         run.Name,
         Effect: string.Empty,
         Palette: string.Empty,
@@ -4696,7 +4756,7 @@ public sealed partial class MainViewModel : ViewModelBase
         HasSecondary: false,
         Fidelity: string.Empty,
         IsOff: false,
-        NotInScene: true);
+        Aside: aside);
 
     /// <param name="controllerOn">
     /// Whether the controller this segment is on is switched on at all. A segment carries its own

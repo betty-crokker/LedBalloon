@@ -5,7 +5,13 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- False. Avalonia asks the operating system for its culture while starting - 1033 on this
+         machine - and in invariant mode every one of those asks throws, eighty times before the
+         window is up. They are caught and cost nothing but the noise, and noise in the exception
+         log is exactly the thing that hides a real one. Nothing here formats for a culture it has
+         not named: the comparisons are ordinal and the JSON is written with the invariant culture
+         explicitly. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
