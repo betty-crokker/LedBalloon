@@ -1980,7 +1980,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
                 {
-                    SceneDetails.Add(Describe(segment, wled, device));
+                    SceneDetails.Add(Describe(segment, wled, device, state.On != false));
                 }
             }
         }
@@ -2672,7 +2672,8 @@ public sealed partial class MainViewModel : ViewModelBase
                         ? Project.FindLook(entry.LookId)?.Name
                         : null;
 
-                    SceneDetails.Add(Describe(run, wled, device) with { LookName = wearing });
+                    SceneDetails.Add(
+                        Describe(run, wled, device, state.On != false) with { LookName = wearing });
                 }
             }
         }
@@ -4082,17 +4083,26 @@ public sealed partial class MainViewModel : ViewModelBase
                     continue;
                 }
 
-                PresetDetails.Add(Describe(run, wled, device));
+                PresetDetails.Add(
+                    Describe(run, wled, device, placement.Preset.On != false));
             }
         }
     }
 
-    private static PresetDetail Describe(Segment run, WledSegment wled, DeviceViewModel? device)
+    /// <param name="controllerOn">
+    /// Whether the controller this segment is on is switched on at all. A segment carries its own
+    /// switch, and the two are independent: a controller that is off still reports segments that say
+    /// they are on, and describing one of those as showing Colorwaves is describing something nobody
+    /// can see. The photo has always known this - it draws a run on a sleeping controller unlit - so
+    /// a card that did not would put two answers to the same question on one screen.
+    /// </param>
+    private static PresetDetail Describe(
+        Segment run, WledSegment wled, DeviceViewModel? device, bool controllerOn = true)
     {
         // A preset can turn a segment off, and several here do - that is what "Stairs white" is for.
         // Its stored effect, palette and color are all still in the preset, so describing them
         // without saying this promised an animation the house was never going to show.
-        bool isOff = wled.On == false;
+        bool isOff = !controllerOn || wled.On == false;
 
         string effect = wled.Effect is { } fx
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
