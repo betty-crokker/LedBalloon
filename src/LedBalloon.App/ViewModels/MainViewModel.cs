@@ -90,12 +90,19 @@ public sealed record PresetDetail(
     /// What it means for the layout to name a segment the controller is not currently cut for.
     /// </summary>
     /// <remarks>
-    /// Happens when something else rewrote the segment table - recalling a WLED preset that was
-    /// saved with different bounds will do it. The layout is still right and saving puts the cuts
-    /// back; until then there is no segment on the box for this one, and describing what it shows
-    /// would be describing a thing that is not there.
+    /// Happens when something else rewrote the segment table - recalling a WLED preset saved with
+    /// fewer segments will do it, and South is in that state now with one segment where the layout
+    /// names three.
+    /// <para>
+    /// Not the same as off, which is what it looks like it should be. Captured from the strip: with
+    /// the house on and one segment covering LEDs 0-19, the LEDs past it held a decaying yellow
+    /// tail, byte-identical across every frame of a two-second capture. They are not dark and they
+    /// are not running - they are frozen on the last thing the deleted segments drew, because
+    /// nothing owns them any more. Saving the layout cuts the segments again and they come back.
+    /// </para>
     /// </remarks>
-    public const string NotCutOnTheController = "the controller has no segment for this right now";
+    public const string NotCutOnTheController =
+        "no segment here on the controller — stuck on whatever it last showed";
 
     /// <summary>
     /// The palette and the movement on one line, with the separator only when both are there.
@@ -3305,8 +3312,45 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// What the chosen effect says it reads, so the controls it ignores can be turned off.
+    /// </summary>
+    /// <remarks>
+    /// Read from the controller rather than assumed, because it is per firmware build and the two
+    /// boxes need not be running the same one. An effect that declares nothing gets every control,
+    /// which is what WLED's own UI does with one.
+    /// </remarks>
+    private EffectMetadata ChosenEffect =>
+        SegmentEffectChoice is { } chosen && SegmentController?.Device is { } device
+            ? device.MetadataFor(chosen.Id)
+            : EffectMetadata.Unknown;
+
+    /// <summary>True when the chosen effect draws from the color slots at all.</summary>
+    public bool SegmentUsesColor => !ChosenEffect.Declared || ChosenEffect.UsedSlots.Count > 0;
+
+    /// <summary>True when the chosen effect draws from the palette at all.</summary>
+    public bool SegmentUsesPalette => !ChosenEffect.Declared || ChosenEffect.UsesPalette;
+
+    /// <summary>Why the color is unavailable, for the line under it. Empty when it is.</summary>
+    public string SegmentColorNote =>
+        SegmentUsesColor ? string.Empty : "This effect picks its own colors from the palette.";
+
+    /// <summary>Why the palette is unavailable. Empty when it is not.</summary>
+    public string SegmentPaletteNote =>
+        SegmentUsesPalette ? string.Empty : "This effect does not use a palette.";
+
+    private void RefreshEffectCapabilities()
+    {
+        OnPropertyChanged(nameof(SegmentUsesColor));
+        OnPropertyChanged(nameof(SegmentUsesPalette));
+        OnPropertyChanged(nameof(SegmentColorNote));
+        OnPropertyChanged(nameof(SegmentPaletteNote));
+    }
+
     partial void OnSegmentEffectChoiceChanged(PickerOption? value)
     {
+        RefreshEffectCapabilities();
+
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
             return;
@@ -3553,6 +3597,11 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _suppressPush = false;
         }
+
+        // Asked again here as well as when the effect changes, because picking a different segment
+        // can land on the same effect - and on the other controller, whose firmware need not say
+        // the same thing about it.
+        RefreshEffectCapabilities();
     }
 
     // ---- Checking the presets -------------------------------------------------------------------

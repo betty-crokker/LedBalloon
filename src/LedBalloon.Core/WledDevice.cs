@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using LedBalloon.Core.Effects;
 using LedBalloon.Core.Models;
 
 namespace LedBalloon.Core;
@@ -114,10 +115,41 @@ public sealed class WledDevice : INotifyPropertyChanged, IAsyncDisposable
         Palettes = snapshot.Palettes ?? [];
         State = snapshot.State ?? new WledState();
 
+        await LoadEffectMetadataAsync(cancellationToken).ConfigureAwait(false);
+
         await RefreshPresetsAsync(cancellationToken).ConfigureAwait(false);
 
         _socket.Start();
         StateChanged?.Invoke(this, State);
+    }
+
+    /// <summary>
+    /// What each effect says it reads, so the controls for the things it ignores can be turned off.
+    /// </summary>
+    /// <remarks>
+    /// Effects differ enormously: of the 187 this controller reports, 42 draw only from the palette
+    /// and ignore the color slots, and 25 ignore the palette. Offering both regardless is offering
+    /// controls that do nothing.
+    /// </remarks>
+    public IReadOnlyList<EffectMetadata> EffectData { get; private set; } = [];
+
+    /// <summary>What one effect reads, or <see cref="EffectMetadata.Unknown"/> when it does not say.</summary>
+    public EffectMetadata MetadataFor(int index) =>
+        index >= 0 && index < EffectData.Count ? EffectData[index] : EffectMetadata.Unknown;
+
+    private async Task LoadEffectMetadataAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            EffectData = EffectMetadata.ParseAll(
+                await _client.GetEffectMetadataAsync(cancellationToken).ConfigureAwait(false));
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            // /json/fxdata arrived in WLED 0.14. An older box says nothing and gets every control,
+            // which is what WLED's own UI does with an effect that declares nothing.
+            EffectData = [];
+        }
     }
 
     /// <summary>
