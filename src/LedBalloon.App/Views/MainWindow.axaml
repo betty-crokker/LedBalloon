@@ -302,7 +302,7 @@
                         <!-- Listed rather than left out, so the list is the house rather than the
                              part of it this scene happens to mention. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
-                                   Text="not included — left as it is"
+                                   Text="not included — keeps doing what it was doing"
                                    IsVisible="{Binding NotInScene}" />
 
                         <!-- Says where this appearance comes from, so that changing the look

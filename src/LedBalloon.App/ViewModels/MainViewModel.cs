@@ -4468,7 +4468,18 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>A card for a segment the open scene says nothing about.</summary>
+    /// <summary>
+    /// A card for a segment the open scene says nothing about.
+    /// </summary>
+    /// <remarks>
+    /// Only reached for a scene with <see cref="Scene.UnlistedSegmentsOff"/> off, which is what
+    /// adopting a WLED preset produces: a preset speaks only of the segments it lists. Resolving one
+    /// of those sends the segment its geometry and nothing else, and WLED merges that into what is
+    /// already there - so the segment really does carry on as it was, which is what the card says.
+    /// A scene captured here is the other way round: it accounts for every segment, and switches off
+    /// the ones it does not light. That is a description rather than a silence, so those get an
+    /// "off" card and never reach this.
+    /// </remarks>
     private static PresetDetail NotInScene(Segment run) => new(
         run.Name,
         Effect: string.Empty,
