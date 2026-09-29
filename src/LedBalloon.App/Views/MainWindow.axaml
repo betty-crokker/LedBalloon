@@ -375,45 +375,42 @@
                              has to be picked rather than inferred from whether anyone got round to
                              mentioning the segment. Absent while looking at the house, which is not
                              a scene and so has nothing to decide. -->
+                        <!-- Each row draws what it would put on the segment - its colors, its
+                             effect and how it moves - because that is the question being asked.
+                             A list of names answers it only for somebody who remembers what each
+                             name means, which is why the description used to be repeated
+                             underneath, where it described the selected row and none of the
+                             others. No palette: WLED names them, nothing here lets anybody make
+                             one or name one, so "Custom 0" is a slot number from the firmware. -->
                         <ComboBox ItemsSource="{Binding Choices}"
                          AutomationProperties.AutomationId="SegmentRole"
                                   SelectedItem="{Binding Choice, Mode=TwoWay}"
                                   IsVisible="{Binding Choosable}"
-                                  HorizontalAlignment="Stretch" Margin="0,2,0,2" />
+                                  HorizontalAlignment="Stretch" Margin="0,2,0,0">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SegmentChoice">
+                              <StackPanel Orientation="Horizontal" Spacing="6">
+                                <Border Width="14" Height="14" CornerRadius="3"
+                                        VerticalAlignment="Center"
+                                        Background="{Binding Primary}"
+                                        BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                        IsVisible="{Binding HasAppearance}" />
+                                <Border Width="14" Height="14" CornerRadius="3"
+                                        VerticalAlignment="Center"
+                                        Background="{Binding Secondary}"
+                                        BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                        IsVisible="{Binding HasSecondary}" />
+                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           IsVisible="{Binding HasName}" />
+                                <TextBlock Text="{Binding Description}" VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                              </StackPanel>
+                            </DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
 
-                        <!-- Listed rather than left out, so the list is the house rather than the
-                             part of it this scene happens to mention. The picker above already says
-                             "Not included"; this says what that does. -->
-                        <TextBlock Classes="hint" FontStyle="Italic"
-                                   Text="keeps doing what it was doing"
-                                   IsVisible="{Binding Detail.NotInScene}" />
-
-                        <!-- A scene still carries an effect and a color for a run it turns off.
-                             Showing them here read as a promise the house would not keep. -->
-                        <TextBlock Classes="hint" FontStyle="Italic"
-                                   Text="off"
-                                   IsVisible="{Binding Detail.IsOff}" />
-
-                        <StackPanel Orientation="Horizontal" Spacing="6"
-                                    IsVisible="{Binding Detail.Describes}">
-                          <Border Width="18" Height="18" CornerRadius="3"
-                                  Background="{Binding Detail.PrimarySwatch}"
-                                  BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
-                          <Border Width="18" Height="18" CornerRadius="3"
-                                  Background="{Binding Detail.SecondarySwatch}"
-                                  BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
-                                  IsVisible="{Binding Detail.HasSecondary}" />
-                          <TextBlock Classes="hint" VerticalAlignment="Center"
-                                     TextTrimming="CharacterEllipsis">
-                            <Run Text="effect " /><Run Text="{Binding Detail.Effect}" FontWeight="SemiBold" />
-                          </TextBlock>
-                        </StackPanel>
-
-                        <TextBlock Classes="hint" IsVisible="{Binding Detail.Describes}"
-                                   Text="{Binding Detail.Summary}" />
-
-                        <!-- Only ever the caveat now, so an empty one is a card with nothing to
-                             apologize for rather than a blank line. -->
+                        <!-- All that is left to say. The row above has the rest of it. -->
                         <TextBlock Classes="hint" FontStyle="Italic" Opacity="0.55"
                                    Text="{Binding Detail.Fidelity}"
                                    IsVisible="{Binding Detail.Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />

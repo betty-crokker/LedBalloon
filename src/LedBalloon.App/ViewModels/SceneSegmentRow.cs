@@ -16,33 +16,16 @@ namespace LedBalloon.App.ViewModels;
 /// </summary>
 public sealed partial class SceneSegmentRow : ObservableObject
 {
-    /// <summary>The choice that means the scene leaves this segment alone.</summary>
-    public const string NotIncluded = "Not included";
-
-    /// <summary>The choice that means the scene switches this segment off.</summary>
-    public const string Off = "Off";
-
-    /// <summary>
-    /// The choice standing for an appearance this scene holds on its own, rather than by name.
-    /// </summary>
-    /// <remarks>
-    /// Offered only when it is already the answer, and worded as a look with no name rather than as
-    /// a mode — because that is what it is. The list is looks first and these two last: picking what
-    /// a segment wears is the everyday thing, and the two ways of it wearing nothing are the
-    /// exceptions to it.
-    /// </remarks>
-    public const string ItsOwn = "This scene only, unnamed";
-
-    private readonly Action<string, string>? _chosen;
+    private readonly Action<string, SegmentChoice>? _chosen;
     private readonly Action<string>? _edit;
     private readonly bool _settling;
 
     public SceneSegmentRow(
         string segmentId,
         PresetDetail detail,
-        IEnumerable<string>? choices,
-        string? chosen,
-        Action<string, string>? onChosen,
+        IEnumerable<SegmentChoice>? choices,
+        SegmentChoice? chosen,
+        Action<string, SegmentChoice>? onChosen,
         Action<string>? onEdit = null)
     {
         SegmentId = segmentId;
@@ -50,7 +33,7 @@ public sealed partial class SceneSegmentRow : ObservableObject
         _chosen = onChosen;
         _edit = onEdit;
 
-        foreach (string choice in choices ?? [])
+        foreach (SegmentChoice choice in choices ?? [])
         {
             Choices.Add(choice);
         }
@@ -64,7 +47,7 @@ public sealed partial class SceneSegmentRow : ObservableObject
 
     public PresetDetail Detail { get; }
 
-    public ObservableCollection<string> Choices { get; } = [];
+    public ObservableCollection<SegmentChoice> Choices { get; } = [];
 
     /// <summary>
     /// Opens this segment for editing, which the name on the card is a button for.
@@ -80,9 +63,9 @@ public sealed partial class SceneSegmentRow : ObservableObject
     /// <summary>False while looking at the house, which is not a scene and has nothing to choose.</summary>
     public bool Choosable => Choices.Count > 0;
 
-    [ObservableProperty] private string? _choice;
+    [ObservableProperty] private SegmentChoice? _choice;
 
-    partial void OnChoiceChanged(string? value)
+    partial void OnChoiceChanged(SegmentChoice? value)
     {
         if (_settling || value is null)
         {
