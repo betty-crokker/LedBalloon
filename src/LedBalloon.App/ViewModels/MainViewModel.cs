@@ -720,6 +720,42 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void SelectWholeHouse() => SelectedSegment = null;
 
+    /// <summary>
+    /// Renames the open scene.
+    /// <para>
+    /// A button rather than a box, because the name was already on screen twice - in the picker and
+    /// in the heading - and a third copy that happened to be editable was not obviously a rename.
+    /// </para>
+    /// </summary>
+    [RelayCommand]
+    private async Task RenameSceneAsync()
+    {
+        if (SelectedScene is not { Scene: { } scene } row || Ask is not { } ask)
+        {
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: "Rename this scene",
+            Message: "The controllers keep a copy under this name, so saving afterwards renames it " +
+                     "there too and any timer pointing at it follows.",
+            AcceptText: "Rename",
+            CancelText: "Cancel",
+            InputLabel: "Scene name",
+            InputDefault: scene.Name));
+
+        if (!answer.Accepted || answer.Input is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        row.Name = name;
+        RebuildScenes();
+        SelectedScene = Scenes.FirstOrDefault(r => ReferenceEquals(r.Scene, scene));
+
+        AfterProjectChanged($"Renamed to '{scene.Name}'.");
+    }
+
     /// <summary>Opens the glossary.</summary>
     [RelayCommand]
     private async Task ShowGlossaryAsync()
@@ -1854,18 +1890,37 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private bool _touchedTheHouse;
 
-    /// <summary>Whether what the house is showing has been written down.</summary>
-    public bool SceneUnsaved => SceneOnTheHouse is null;
+    /// <summary>
+    /// Whether there is anything to write down: only ever true while looking at the house, since a
+    /// saved scene is by definition saved.
+    /// </summary>
+    public bool SceneUnsaved => LookingAtTheHouse && SceneOnTheHouse is null;
 
-    /// <summary>What to call the scene being edited.</summary>
-    public string SceneTitle => SceneOnTheHouse?.Name ?? "The house as it is now";
+    /// <summary>True when the picker is on the house rather than on something saved.</summary>
+    private bool LookingAtTheHouse => SelectedScene is null || SelectedScene.IsTheHouse;
 
-    /// <summary>Whether it is saved, and if not, how it came to be unsaved.</summary>
-    public string SceneState => SceneOnTheHouse is not null
-        ? "Saved. Changing anything makes it a new scene until you save it."
-        : _touchedTheHouse
-            ? "Not saved yet."
-            : "Not saved. The house was already showing this when the app opened.";
+    /// <summary>
+    /// What is being looked at - always the same as the picker, which is the whole point of it.
+    /// <para>
+    /// These used to be two ideas of "current" and they contradicted each other on screen: the
+    /// heading said the house while the picker said Twinkle both.
+    /// </para>
+    /// </summary>
+    public string SceneTitle => SelectedScene?.Name ?? "The house as it is now";
+
+    /// <summary>Everything the heading does not say: whether it is saved, or on the house.</summary>
+    public string SceneState => !LookingAtTheHouse
+        // Compared against what the house is showing rather than asked of the open row, because a
+        // row can be a preset made in the WLED app and there is no scene behind one of those to
+        // compare. What the house is showing is known either way.
+        ? SelectedScene?.Scene is { } opened && ReferenceEquals(opened, SceneOnTheHouse)
+            ? "On the house now."
+            : "A preview — not on the house."
+        : SceneOnTheHouse is { } saved
+            ? $"This is your scene '{saved.Name}'."
+            : _touchedTheHouse
+                ? "Not saved yet."
+                : "Not saved. The house was already showing this when the app opened.";
 
     partial void OnSceneOnTheHouseChanged(Scene? value)
     {
@@ -1886,6 +1941,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private void ReadSceneFromHouse()
     {
+        // Worked out from the house, never from the preview - see HouseStates.
         Scene? showing = Project.Scenes.FirstOrDefault(HouseIsShowing);
 
         if (!ReferenceEquals(showing, SceneOnTheHouse))
@@ -1901,9 +1957,24 @@ public sealed partial class MainViewModel : ViewModelBase
         DescribeTheHouse();
     }
 
+    private void ShowPreview(IReadOnlyDictionary<string, WledState>? states)
+    {
+        _previewStates = states;
+        Previewing = states is not null;
+
+        OnPropertyChanged(nameof(DisplayStates));
+    }
+
+    private void RefreshSceneHeading()
+    {
+        OnPropertyChanged(nameof(SceneTitle));
+        OnPropertyChanged(nameof(SceneState));
+        OnPropertyChanged(nameof(SceneUnsaved));
+    }
+
     private bool HouseIsShowing(Scene scene)
     {
-        IReadOnlyDictionary<string, WledState> live = DisplayStates;
+        IReadOnlyDictionary<string, WledState> live = HouseStates;
 
         if (live.Count == 0)
         {
@@ -1954,16 +2025,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private void DescribeTheHouse()
     {
-        if (SelectedScene is not null)
+        if (SelectedScene is { IsTheHouse: false })
         {
-            // A picked scene describes itself, and is doing so already.
+            // A saved scene describes itself, and is doing so already. The house is a row in that
+            // list now, so "something is selected" no longer means "a scene is open".
             return;
         }
 
         SceneDetails.Clear();
         SceneNotes.Clear();
 
-        IReadOnlyDictionary<string, WledState> live = DisplayStates;
+        IReadOnlyDictionary<string, WledState> live = HouseStates;
 
         foreach (string key in Project.ActiveControllerKeys())
         {
@@ -2005,9 +2077,10 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Writes the house down as a scene, under <paramref name="name"/> if one is given.</summary>
     private void CaptureSceneNamed(string? name)
     {
-        // What the photo is showing, not what the hardware is doing. With Sync off they differ, and
-        // the photo is the thing being looked at while deciding this is worth keeping.
-        IReadOnlyDictionary<string, WledState> states = DisplayStates;
+        // What the house is doing, or about to: with Sync off those differ from the hardware, and
+        // what is held is still what is being decided about. Not the photo, which may be previewing
+        // a saved scene - capturing that would only write a second copy of it.
+        IReadOnlyDictionary<string, WledState> states = HouseStates;
 
         if (states.Count == 0)
         {
@@ -2577,6 +2650,9 @@ public sealed partial class MainViewModel : ViewModelBase
 
         Scenes.Clear();
 
+        // First, always: the list is what you can look at, and the house is one of those.
+        Scenes.Add(SceneRow.TheHouse(Project));
+
         foreach (Scene scene in Project.Scenes)
         {
             Scenes.Add(SceneRow.For(Project, scene, PublishedCopyOf(scene)));
@@ -2594,11 +2670,11 @@ public sealed partial class MainViewModel : ViewModelBase
             Scenes.Add(SceneRow.For(Project, preset));
         }
 
-        if (was is not null)
-        {
-            SelectedScene = Scenes.FirstOrDefault(row =>
-                string.Equals(row.Name, was, StringComparison.OrdinalIgnoreCase));
-        }
+        SelectedScene = (was is null
+            ? null
+            : Scenes.FirstOrDefault(row =>
+                string.Equals(row.Name, was, StringComparison.OrdinalIgnoreCase)))
+            ?? Scenes[0];
     }
 
     /// <summary>The controllers' copy of a scene, under either its name or the one it used to have.</summary>
@@ -2627,6 +2703,15 @@ public sealed partial class MainViewModel : ViewModelBase
         SceneDetails.Clear();
         SceneNotes.Clear();
 
+        // Looking at the house again: no preview, and the cards describe what is really on it.
+        if (value is null || value.IsTheHouse)
+        {
+            ShowPreview(null);
+            DescribeTheHouse();
+            RefreshSceneHeading();
+            return;
+        }
+
         Scene? scene = value?.Scene;
 
         // An un-adopted preset is described through what adopting it would produce, so the cards
@@ -2646,9 +2731,16 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (scene is null)
         {
+            ShowPreview(null);
             DescribeTheHouse();
+            RefreshSceneHeading();
             return;
         }
+
+        // On the photo but not on the house. Opening a scene is reading it, not applying it - "Put
+        // it on the house" is how it gets applied, and it is right there under this.
+        ShowPreview(SceneResolver.Resolve(Project, scene));
+        RefreshSceneHeading();
 
         foreach (string key in Project.ActiveControllerKeys())
         {
@@ -3596,7 +3688,25 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// What the photo draws: the house plus anything picked but not sent, or the house as it is.
     /// </summary>
-    public IReadOnlyDictionary<string, WledState> DisplayStates => _pendingStates ?? ControllerStates;
+    /// <summary>
+    /// What the house is doing, or will be as soon as held changes are sent.
+    /// <para>
+    /// Not the same as <see cref="DisplayStates"/>, and the difference matters: opening a saved
+    /// scene shows it on the photo without putting it on the house, so anything asking "what is the
+    /// house showing" - naming it, or deciding whether a scene is on it - has to look past the
+    /// preview or it would answer about a picture.
+    /// </para>
+    /// </summary>
+    public IReadOnlyDictionary<string, WledState> HouseStates => _pendingStates ?? ControllerStates;
+
+    /// <summary>What the photo is showing, which is a preview whenever a saved scene is open.</summary>
+    public IReadOnlyDictionary<string, WledState> DisplayStates =>
+        _previewStates ?? _pendingStates ?? ControllerStates;
+
+    private IReadOnlyDictionary<string, WledState>? _previewStates;
+
+    /// <summary>True while the photo is showing a scene the house is not.</summary>
+    [ObservableProperty] private bool _previewing;
 
     /// <summary>What the chosen preset does, run by run.</summary>
     public ObservableCollection<PresetDetail> PresetDetails { get; } = [];

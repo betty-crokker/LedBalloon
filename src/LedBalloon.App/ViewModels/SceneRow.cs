@@ -27,6 +27,16 @@ public sealed partial class SceneRow : ObservableObject
         Preset = preset;
     }
 
+    /// <summary>
+    /// True for the one row that is not a saved anything: the house, as it is at this moment.
+    /// <para>
+    /// It is in the list so that the list is "what you are looking at" rather than "saved scenes",
+    /// which means the picker always has an answer and there is always a way back. Without it,
+    /// opening a scene was a one-way door: nothing in the list meant the house any more.
+    /// </para>
+    /// </summary>
+    public bool IsTheHouse { get; private init; }
+
     /// <summary>The scene this row is, or null when it is an un-adopted preset.</summary>
     public Scene? Scene { get; }
 
@@ -36,18 +46,21 @@ public sealed partial class SceneRow : ObservableObject
     /// <summary>True when LedBalloon owns this and can change it.</summary>
     public bool IsOwn => Scene is not null;
 
+    /// <summary>True for anything that is a saved entry rather than the house itself.</summary>
+    public bool IsSaved => !IsTheHouse;
+
     /// <summary>
     /// True for a preset made in the WLED app. It is shown but not edited: its segments are LED
     /// ranges rather than runs, and some of them may match nothing in the layout at all.
     /// </summary>
-    public bool NeedsAdopting => Scene is null;
+    public bool NeedsAdopting => Scene is null && !IsTheHouse;
 
     /// <summary>True once this scene has a copy on at least one controller.</summary>
     public bool IsPublished => Preset is not null;
 
     public string Name
     {
-        get => Scene?.Name ?? Preset?.Name ?? "Scene";
+        get => IsTheHouse ? "The house as it is now" : Scene?.Name ?? Preset?.Name ?? "Scene";
         set
         {
             if (Scene is not { } scene || string.Equals(scene.Name, value, StringComparison.Ordinal))
@@ -68,10 +81,19 @@ public sealed partial class SceneRow : ObservableObject
     {
         get
         {
+            if (IsTheHouse)
+            {
+                return string.Empty;
+            }
+
             if (Scene is not { } scene)
             {
-                return "Made in the WLED app. It can be recalled but not changed, because it stores " +
-                       "raw LED numbers rather than the segments you have named.";
+                // What it is, what can be done with it, and what the button beside it would do -
+                // in that order, because the first version said only the first and read as an
+                // apology for something nobody had asked about.
+                return "This one was made in the WLED app, so it can be put on the house but not " +
+                       "changed here. Make it a scene to edit it: it will follow the segments you " +
+                       "have named from then on, instead of the LED numbers it was saved with.";
             }
 
             if (scene.PublishedAs is null)
@@ -85,6 +107,10 @@ public sealed partial class SceneRow : ObservableObject
                   "taking any timer pointing at it along.";
         }
     }
+
+    /// <summary>The row that means the house itself.</summary>
+    public static SceneRow TheHouse(LedBalloonProject project) =>
+        new(project, null, null) { IsTheHouse = true };
 
     public static SceneRow For(LedBalloonProject project, Scene scene, HousePreset? published) =>
         new(project, scene, published);

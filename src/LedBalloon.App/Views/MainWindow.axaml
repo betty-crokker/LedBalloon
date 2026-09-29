@@ -191,6 +191,20 @@
           </DockPanel>
         </Border>
 
+        <!-- A preview is a picture of somewhere the house is not, and the photo is the thing that
+             looks most like the truth - so the warning goes on it rather than only in the panel. -->
+        <Border DockPanel.Dock="Top" Padding="12,8" Background="#2F7BD6"
+                IsVisible="{Binding Previewing}">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Put it on the house"
+                    Command="{Binding ApplySceneCommand}" />
+            <TextBlock Foreground="White" VerticalAlignment="Center" TextWrapping="Wrap"
+                       Margin="0,0,12,0">
+              <Run Text="Showing" /><Run Text=" " /><Run Text="{Binding SceneTitle}" FontWeight="SemiBold" /><Run Text=" " /><Run Text="— the house itself is still showing something else." />
+            </TextBlock>
+          </DockPanel>
+        </Border>
+
         <!-- Color and presets. Wider than the setup sidebar, because a preset needs describing
              and the photo only has to be big enough to read. -->
         <Border DockPanel.Dock="Right" Width="420" Padding="14"
@@ -221,30 +235,24 @@
 
               <TextBlock Classes="heading" Text="Scenes" Margin="0,10,0,0" />
               <TextBlock Classes="hint" TextWrapping="Wrap"
-                         Text="A scene is a named way for the whole house to look — what every segment is doing, saved together. It spans the controllers, so there is one list and it does not matter which box stores what." />
+                         Text="A scene is a named way for the whole house to look — what every segment is doing, saved together. Open one to see it on the photo." />
 
               <ComboBox ItemsSource="{Binding Scenes}"
                AutomationProperties.AutomationId="SceneList"
                         SelectedItem="{Binding SelectedScene}"
                         DisplayMemberBinding="{Binding Name}"
-                        PlaceholderText="Open a saved scene"
+                        PlaceholderText="The house as it is now"
                         HorizontalAlignment="Stretch"
                         Margin="0,4,0,0" />
 
               <!-- No banner and no buttons for sending: whether this has reached the lights is what
                    the Sync switch says, in one place, for everything on this panel. -->
-              <StackPanel Spacing="8"
-                          IsVisible="{Binding SelectedScene, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+              <!-- Everything a saved scene can have done to it. The house is in that list too now,
+                   and none of this applies to it. -->
+              <StackPanel Spacing="8" IsVisible="{Binding SelectedScene.IsSaved, FallbackValue=False}">
 
-                <!-- On losing focus rather than on every keystroke: the setter refuses a name
-                     another scene already has, and doing that mid-word would fight the typing. -->
-                <TextBox Text="{Binding SelectedScene.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                 AutomationProperties.AutomationId="SceneName"
-                         PlaceholderText="Scene name"
-                         IsEnabled="{Binding SelectedScene.IsOwn}"
-                         Margin="0,4,0,0" />
-
-                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedScene.Origin}" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedScene.Origin}"
+                           IsVisible="{Binding SelectedScene.Origin, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                 <!-- What the layout cannot account for, said before the adopt button rather than
                      only when it is pressed. -->
@@ -268,6 +276,8 @@
 
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Button Content="Put it on the house" Command="{Binding ApplySceneCommand}" />
+                  <Button Content="Rename" Command="{Binding RenameSceneCommand}"
+                          IsVisible="{Binding SelectedScene.IsOwn}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
                           IsVisible="{Binding SelectedScene.IsOwn}" />
                   <!-- Deliberate, and it says what it will cost first: a preset made against an
