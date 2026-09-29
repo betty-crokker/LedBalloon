@@ -88,12 +88,9 @@ public sealed partial class SceneRow : ObservableObject
 
             if (Scene is not { } scene)
             {
-                // What it is, what can be done with it, and what the button beside it would do -
-                // in that order, because the first version said only the first and read as an
-                // apology for something nobody had asked about.
-                return "This one was made in the WLED app, so it can be put on the house but not " +
-                       "changed here. Make it a scene to edit it: it will follow the segments you " +
-                       "have named from then on, instead of the LED numbers it was saved with.";
+                // Nothing. Where it came from is this app's business, not the reader's, and it is
+                // no longer even a limitation: changing one of these converts it on the spot.
+                return string.Empty;
             }
 
             if (scene.PublishedAs is null)
