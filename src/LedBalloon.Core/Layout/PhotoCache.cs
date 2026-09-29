@@ -18,11 +18,21 @@ namespace LedBalloon.Core.Layout;
 /// </summary>
 public static class PhotoCache
 {
-    /// <summary>Where photos are kept on this machine. Created on first write.</summary>
-    public static string Directory => Path.Combine(
+    /// <summary>The usual place: this machine's local application data.</summary>
+    public static string DefaultDirectory { get; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "LedBalloon",
         "photos");
+
+    /// <summary>
+    /// Where photos are kept on this machine. Created on first write.
+    /// </summary>
+    /// <remarks>
+    /// Settable so that a test can be given a directory of its own. Without that the only way to
+    /// exercise this is to write into the cache the app is actually using, which is somebody's real
+    /// house photo and not a thing a test run should be able to damage.
+    /// </remarks>
+    public static string Directory { get; set; } = DefaultDirectory;
 
     /// <summary>The identity of a photo: the first 16 hex characters of its SHA-256.</summary>
     public static string HashOf(byte[] jpeg)
@@ -43,6 +53,21 @@ public static class PhotoCache
 
         string path = PathFor(hash);
         return File.Exists(path) ? File.ReadAllBytes(path) : null;
+    }
+
+    /// <summary>
+    /// Reads a cached photo and checks it is the one asked for, or null.
+    /// </summary>
+    /// <remarks>
+    /// Checked rather than trusted, because the file is named after its own hash: a copy that does
+    /// not match its name is a half-finished write rather than the photo. Returning null for one is
+    /// the repair, since the caller's fallback is to fetch it again.
+    /// </remarks>
+    public static byte[]? LoadVerified(string? hash)
+    {
+        byte[]? cached = Load(hash);
+
+        return cached is { Length: > 0 } && Matches(cached, hash) ? cached : null;
     }
 
     /// <summary>Files a photo under its own hash. Returns that hash.</summary>

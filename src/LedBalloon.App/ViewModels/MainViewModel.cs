@@ -1070,13 +1070,24 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
             }
 
-            // The controllers first, then this machine's cache, then ask. Never a file path.
-            byte[]? photo = await ProjectSync.LoadPhotoAsync(targets) ?? PhotoCache.Load(Project.PhotoHash);
+            // This machine's cache first, then the controllers, then ask. Never a file path.
+            // The cache is keyed by the hash of the contents and that hash is in the layout just
+            // read, so a hit is provably the right photo - and proving it is worth doing, because
+            // the alternative is pulling 400 KB off an ESP32's flash, which takes the better part
+            // of two seconds and was being done on every single start for a file already on disk.
+            byte[]? photo = PhotoCache.LoadVerified(Project.PhotoHash);
+            bool fromCache = photo is not null;
+
+            photo ??= await ProjectSync.LoadPhotoAsync(targets);
 
             if (photo is { Length: > 0 })
             {
                 PhotoBytes = photo;
-                PhotoCache.Save(photo);
+
+                if (!fromCache)
+                {
+                    PhotoCache.Save(photo);
+                }
             }
             else if (!string.IsNullOrWhiteSpace(Project.PhotoHash))
             {
@@ -1130,8 +1141,10 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private async Task ScanAsync()
     {
-        if (IsScanning)
+        if (IsScanning || _listening is { IsCompleted: false })
         {
+            // The second condition is the one that is easy to miss: the scan returns while the
+            // listener is still going, so "not scanning" does not mean "not looking".
             return;
         }
 
@@ -1148,9 +1161,28 @@ public sealed partial class MainViewModel : ViewModelBase
 
         try
         {
-            await foreach (WledDiscoveryResult found in _discovery.DiscoverAsync(TimeSpan.FromSeconds(5)))
+            // Not awaited: the listener runs to the end of its window in the background while the
+            // rest of this method gets on with the controllers it already has. It is started, not
+            // spawned - an async method called from the UI thread resumes on the UI thread - so
+            // everything it touches is still touched from the one thread that owns it.
+            var first = new TaskCompletionSource();
+            Task listening = ListenForControllersAsync(first);
+            _listening = listening;
+
+            await Task.WhenAny(first.Task, listening);
+
+            if (first.Task.IsCompletedSuccessfully)
             {
-                await AddDeviceAsync(found.ConnectHost, found.Name);
+                // Controllers on one network answer within milliseconds of each other - measured
+                // at one - so a second is a generous grace for the rest. It is only a grace: one
+                // that misses it is picked up by the listener, so the number decides how often
+                // the slower path runs, never whether a controller is found.
+                await Task.Delay(SettlingTime);
+            }
+            else
+            {
+                // Nothing answered. The window closing is the only answer there is.
+                await listening;
             }
 
             Status = Devices.Count == 0
@@ -1171,6 +1203,10 @@ public sealed partial class MainViewModel : ViewModelBase
             // The controllers hold the layout, so a fresh machine finds the house already described.
             await LoadProjectAsync();
 
+            // From here a controller that turns up late has to be caught up by the listener
+            // instead, because this pass is over.
+            _readyForLatecomers = true;
+
             if (_starting)
             {
                 FinishStarting();
@@ -1190,6 +1226,83 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             IsScanning = false;
         }
+    }
+
+    /// <summary>How long to keep the startup sequence waiting for a second controller.</summary>
+    private static readonly TimeSpan SettlingTime = TimeSpan.FromSeconds(1);
+
+    /// <summary>The discovery window, while it is still open.</summary>
+    private Task? _listening;
+
+    /// <summary>True once the startup passes have run and a new controller has missed them.</summary>
+    private bool _readyForLatecomers;
+
+    /// <summary>
+    /// Watches the network for the whole discovery window, adding controllers as they answer.
+    /// </summary>
+    /// <remarks>
+    /// The window is a fixed five seconds and mDNS gives no way to know it is finished, so waiting
+    /// it out used to be half of startup - four seconds of nothing, after both controllers had
+    /// already answered in the first one. Listening past the point where the app carries on costs
+    /// nothing and means the number can stay generous: a controller slow to answer is added when
+    /// it does, rather than missed because the window was shortened to make startup quick.
+    /// </remarks>
+    /// <param name="first">Completed when the first controller is added, to release the caller.</param>
+    private async Task ListenForControllersAsync(TaskCompletionSource first)
+    {
+        try
+        {
+            await foreach (WledDiscoveryResult found in _discovery.DiscoverAsync(TimeSpan.FromSeconds(5)))
+            {
+                int before = Devices.Count;
+                await AddDeviceAsync(found.ConnectHost, found.Name);
+
+                if (Devices.Count == before)
+                {
+                    // Already known, so nothing has changed and nobody needs telling.
+                    continue;
+                }
+
+                first.TrySetResult();
+
+                if (_readyForLatecomers)
+                {
+                    await CatchUpAsync();
+                }
+            }
+        }
+        finally
+        {
+            // Cleared here rather than at the end of the scan, which returns while this is still
+            // running - clearing it there set it and unset it in consecutive statements, and the
+            // catch-up below could never have fired.
+            _readyForLatecomers = false;
+
+            // So a caller waiting on it is released even when nothing was ever found.
+            first.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Gives a controller that answered after the startup passes had run the same treatment they
+    /// would have given it.
+    /// </summary>
+    /// <remarks>
+    /// The passes read every controller rather than one, so this repeats work already done. That is
+    /// the cheap half of startup and this is the rare path; a newcomer getting the same handling as
+    /// the rest is worth more than saving it. Re-reading the layout is the point of the exercise
+    /// rather than a side effect: a controller that was not there for the first read never had its
+    /// copy weighed against the others, and its revision may be the newest of them.
+    /// </remarks>
+    private async Task CatchUpAsync()
+    {
+        await LoadPalettesAsync();
+        await LoadFrameTimesAsync();
+        await LoadScheduleAsync();
+        await LoadProjectAsync();
+
+        AfterDevicesChanged();
+        Status = ControllerSummary + ".";
     }
 
     /// <summary>
