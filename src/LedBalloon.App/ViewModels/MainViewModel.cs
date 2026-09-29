@@ -2193,7 +2193,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Starts a group for one controller, wired so that moving its slider is an ordinary edit.
     /// </summary>
-    private ControllerSegments GroupFor(string key, byte? sceneBrightness)
+    private ControllerSegments GroupFor(string key, byte? sceneBrightness, bool settable = true)
     {
         DeviceViewModel? device = DeviceFor(key);
 
@@ -2202,7 +2202,8 @@ public sealed partial class MainViewModel : ViewModelBase
             Project.FindController(key)?.Name ?? device?.DisplayName ?? key,
             sceneBrightness,
             device?.Brightness is { } live ? (byte)live : null,
-            SetControllerBrightness);
+            SetControllerBrightness,
+            settable);
     }
 
     /// <summary>
@@ -3205,7 +3206,10 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             DeviceViewModel? device = DeviceFor(key);
             WledState state = SceneResolver.ResolveFor(Project, scene, key);
-            ControllerSegments group = GroupFor(key, scene.BrightnessOn(key));
+            ControllerSegments group = GroupFor(
+                key,
+                scene.BrightnessOn(key),
+                scene.Mentions(Project.SegmentsOn(key).Select(segment => segment.Id)));
 
             foreach (Segment run in Project.SegmentsOn(key))
             {
