@@ -293,7 +293,36 @@
               <!-- What the scene actually does, which its name does not tell you. -->
               <ItemsControl ItemsSource="{Binding SceneDetails}">
                 <ItemsControl.ItemTemplate>
-                  <DataTemplate x:DataType="vm:PresetDetail">
+                  <DataTemplate x:DataType="vm:ControllerSegments">
+                   <StackPanel Margin="0,0,0,10">
+
+                    <!-- The controller heading carries its own brightness, because that is what
+                         brightness belongs to: a scene is one preset per controller and each one
+                         has its own. Above the segments it governs, so there is nothing to say. -->
+                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Margin="0,0,0,2" />
+
+                    <DockPanel Margin="0,0,0,6">
+                      <TextBlock Classes="hint" DockPanel.Dock="Left" Text="brightness"
+                                 VerticalAlignment="Center" Margin="0,0,8,0" />
+                      <TextBlock Classes="hint" DockPanel.Dock="Right" Width="32"
+                                 TextAlignment="Right" VerticalAlignment="Center"
+                                 Margin="6,0,10,0"
+                                 Text="{Binding Brightness, StringFormat={}{0:0}}" />
+                      <Slider Minimum="0" Maximum="255"
+                       AutomationProperties.AutomationId="ControllerBrightness"
+                              Value="{Binding Brightness, Mode=TwoWay}" />
+                    </DockPanel>
+
+                    <!-- Said only when it is true, and it is the less usual case: the scene came
+                         from a WLED preset that left this controller's brightness alone. -->
+                    <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap"
+                               Margin="0,-4,0,6"
+                               Text="This scene does not set it — the slider shows what the controller is doing now."
+                               IsVisible="{Binding !SetByTheScene}" />
+
+                    <ItemsControl ItemsSource="{Binding Segments}">
+                     <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PresetDetail">
                     <Border Classes="card" Margin="0,0,0,6" Padding="10">
                       <StackPanel Spacing="4">
                         <TextBlock Text="{Binding SegmentName}" FontWeight="SemiBold" FontSize="12"
@@ -344,6 +373,10 @@
                                    IsVisible="{Binding Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       </StackPanel>
                     </Border>
+                      </DataTemplate>
+                     </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                   </StackPanel>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
