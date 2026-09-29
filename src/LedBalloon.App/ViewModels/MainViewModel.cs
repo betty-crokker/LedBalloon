@@ -2013,6 +2013,97 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<ControllerSegments> SceneDetails { get; } = [];
 
     /// <summary>
+    /// A segment's card with the three things a scene can do about it, and the one it does now.
+    /// </summary>
+    /// <remarks>
+    /// The looks come after the two fixed choices because they are the open-ended half of the list:
+    /// there are two ways for a scene to say nothing visible and as many ways to say something as
+    /// you have named.
+    /// </remarks>
+    private SceneSegmentRow Choosable(Scene scene, Segment run, PresetDetail detail)
+    {
+        Scene.SegmentRole role = scene.RoleOf(run.Id);
+
+        string? wearing = scene.Segments.TryGetValue(run.Id, out SceneEntry? entry)
+            ? Project.FindLook(entry.LookId)?.Name
+            : null;
+
+        // Shown, but by fields of its own rather than by a name. Nothing to pick, so it is in the
+        // list only so that the list can say what is true.
+        bool itsOwn = role is Scene.SegmentRole.Shown && wearing is null;
+
+        List<string> choices = [SceneSegmentRow.NotIncluded, SceneSegmentRow.Off];
+
+        if (itsOwn)
+        {
+            choices.Add(SceneSegmentRow.ItsOwn);
+        }
+
+        choices.AddRange(Project.Looks.Select(look => look.Name));
+
+        string chosen = role switch
+        {
+            Scene.SegmentRole.NotIncluded => SceneSegmentRow.NotIncluded,
+            Scene.SegmentRole.Off => SceneSegmentRow.Off,
+            _ => wearing ?? SceneSegmentRow.ItsOwn,
+        };
+
+        return new SceneSegmentRow(run.Id, detail, choices, chosen, ChooseSegmentRole);
+    }
+
+    /// <summary>Applies one of the three choices to the open scene.</summary>
+    private void ChooseSegmentRole(string segmentId, string choice)
+    {
+        if (_applyingScene)
+        {
+            return;
+        }
+
+        // Same silent conversion a hand edit makes: changing a row that came from the WLED app
+        // turns it into a scene rather than refusing.
+        if (SelectedScene is { Scene: null, Preset: { } fromWled })
+        {
+            Adopt(fromWled);
+        }
+
+        if (SelectedScene is not { Scene: { } scene })
+        {
+            return;
+        }
+
+        switch (choice)
+        {
+            case SceneSegmentRow.NotIncluded:
+                scene.Exclude(segmentId, Project.Segments.Select(segment => segment.Id));
+                break;
+
+            case SceneSegmentRow.Off:
+                scene.TurnOff(segmentId);
+                break;
+
+            case SceneSegmentRow.ItsOwn:
+                // Already what it is. Picking it is picking the thing that is showing.
+                return;
+
+            default:
+                if (Project.Looks.FirstOrDefault(look =>
+                        string.Equals(look.Name, choice, StringComparison.Ordinal)) is not { } chosen)
+                {
+                    return;
+                }
+
+                scene.Wear(segmentId, chosen.Id);
+                break;
+        }
+
+        SceneEdited = true;
+        _editedScenes.Add(scene.Id);
+
+        OnSelectedSceneChanged(SelectedScene);
+        AfterProjectChanged($"'{scene.Name}' changed. Save to put it on the controllers.");
+    }
+
+    /// <summary>
     /// Starts a group for one controller, wired so that moving its slider is an ordinary edit.
     /// </summary>
     private ControllerSegments GroupFor(string key, byte? sceneBrightness)
@@ -2270,8 +2361,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
                 {
-                    group.Segments.Add(
-                        Describe(segment, wled, device, state.On != false, state.Brightness));
+                    // No picker: the house is not a scene, so there is no document to change.
+                    group.Segments.Add(new SceneSegmentRow(
+                        segment.Id,
+                        Describe(segment, wled, device, state.On != false, state.Brightness),
+                        choices: null,
+                        chosen: null,
+                        onChosen: null));
                 }
             }
 
@@ -3005,7 +3101,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 // listed, and the card says which of the two it is.
                 if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(run.Id))
                 {
-                    group.Segments.Add(NotInScene(run));
+                    group.Segments.Add(Choosable(scene, run, NotInScene(run)));
                     continue;
                 }
 
@@ -3017,9 +3113,11 @@ public sealed partial class MainViewModel : ViewModelBase
                         ? Project.FindLook(entry.LookId)?.Name
                         : null;
 
-                    group.Segments.Add(
+                    group.Segments.Add(Choosable(
+                        scene,
+                        run,
                         Describe(run, wled, device, state.On != false, state.Brightness)
-                            with { LookName = wearing });
+                            with { LookName = wearing }));
                 }
             }
 
@@ -4596,7 +4694,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // is not.
         bool exact = device is not null && EffectLibrary.Find(wled.Effect, device.Effects) is not null;
 
-        string fidelity = exact ? string.Empty : "approximated on the photo";
+        // Nothing to own up to on a card that is describing darkness. A segment that is off has no
+        // effect to stand in for, so "approximated on the photo" read as a caveat about nothing.
+        string fidelity = exact || isOff ? string.Empty : "approximated on the photo";
 
         return new PresetDetail(
             run.Name,

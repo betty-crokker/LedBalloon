@@ -47,7 +47,7 @@ public sealed partial class ControllerSegments : ObservableObject
 
     public string Name { get; }
 
-    public ObservableCollection<PresetDetail> Segments { get; } = [];
+    public ObservableCollection<SceneSegmentRow> Segments { get; } = [];
 
     /// <summary>
     /// False when the open scene says nothing about this controller's brightness, so the slider is

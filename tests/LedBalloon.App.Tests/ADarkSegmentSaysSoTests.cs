@@ -84,6 +84,18 @@ public class ADarkSegmentSaysSoTests
     }
 
     [Fact]
+    public void A_dark_card_has_no_caveat_about_how_well_the_photo_draws_it()
+    {
+        // "approximated on the photo" is an apology for standing in for an effect. A segment that is
+        // off has no effect being stood in for, so the apology was about nothing - and it appeared
+        // the moment a segment was switched off, because an absent effect matches nothing in the
+        // library and so counted as inexact.
+        Assert.Equal(
+            string.Empty,
+            MainViewModel.Describe(Porch, Running(), null, controllerOn: true, 0).Fidelity);
+    }
+
+    [Fact]
     public void A_brightness_nobody_has_stated_is_not_a_dark_one()
     {
         // Null is "no opinion", which reaches WLED as no bri field at all and leaves the controller
