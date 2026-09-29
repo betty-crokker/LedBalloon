@@ -148,7 +148,6 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private string _controllerNameEdit = string.Empty;
     [ObservableProperty] private int _activeTab = SetupTab;
     [ObservableProperty] private bool _masterOn;
-    [ObservableProperty] private double _masterBrightness = 128;
     [ObservableProperty] private PickerOption? _segmentEffectChoice;
     [ObservableProperty] private PickerOption? _segmentPaletteChoice;
     [ObservableProperty] private DeviceViewModel? _segmentController;
@@ -3087,20 +3086,6 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    partial void OnMasterBrightnessChanged(double value)
-    {
-        if (_suppressPush)
-        {
-            return;
-        }
-
-        var brightness = (byte)Math.Clamp(value, 0, 255);
-        foreach (DeviceViewModel device in Devices)
-        {
-            Send(device, new WledState { Brightness = brightness });
-        }
-    }
-
     partial void OnSegmentEffectChoiceChanged(PickerOption? value)
     {
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
@@ -4033,20 +4018,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>What the chosen preset does, run by run.</summary>
     public ObservableCollection<PresetDetail> PresetDetails { get; } = [];
 
-    /// <summary>Puts the master switch and slider back where the hardware actually is.</summary>
+    /// <summary>Puts the master switch back where the hardware actually is.</summary>
+    /// <remarks>
+    /// Any rather than all, because a house with one controller lit is not off. There is no
+    /// brightness here any more: it is per controller, and each controller's slider reads its own.
+    /// </remarks>
     private void ReadMasterFromDevices()
     {
         _suppressPush = true;
         try
         {
             MasterOn = Devices.Any(d => d.IsOn);
-
-            // The brightest, not the first to answer. This is a house-wide control - dragging it
-            // sets every controller - and it used to show whichever controller mDNS happened to
-            // reach first, so with one box at 255 and another at 38 it read differently from one
-            // start to the next. The per-controller sliders in the panel are where the two are told
-            // apart; this one only has to be the same every time.
-            MasterBrightness = Devices.Count > 0 ? Devices.Max(d => d.Brightness) : 128;
         }
         finally
         {
