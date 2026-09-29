@@ -3055,6 +3055,16 @@ public sealed partial class MainViewModel : ViewModelBase
 
         _touchedTheHouse = true;
 
+        // WLED reads a brightness as a request to light up: a controller that is off and is sent a
+        // bri switches on. Dragging a brightness slider says how bright, not whether, so a patch
+        // that would only have changed the brightness of a dark controller says to stay dark.
+        // After NoteSceneEdit rather than before, because the scene should record what was asked
+        // for - a brightness, and nothing about power - and this is only about the wire.
+        if (patch.Brightness is not null && patch.On is null && !device.IsOn)
+        {
+            patch.On = false;
+        }
+
         if (LiveSync)
         {
             device.Device.Post(patch);
