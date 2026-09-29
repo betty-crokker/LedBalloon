@@ -299,6 +299,12 @@
                         <TextBlock Text="{Binding SegmentName}" FontWeight="SemiBold" FontSize="12"
                                    TextTrimming="CharacterEllipsis" />
 
+                        <!-- Listed rather than left out, so the list is the house rather than the
+                             part of it this scene happens to mention. -->
+                        <TextBlock Classes="hint" FontStyle="Italic"
+                                   Text="not included — left as it is"
+                                   IsVisible="{Binding NotInScene}" />
+
                         <!-- Says where this appearance comes from, so that changing the look
                              later is not a surprise arriving from nowhere. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
@@ -314,7 +320,7 @@
                                    IsVisible="{Binding IsOff}" />
 
                         <StackPanel Orientation="Horizontal" Spacing="6"
-                                    IsVisible="{Binding !IsOff}">
+                                    IsVisible="{Binding Describes}">
                           <Border Width="18" Height="18" CornerRadius="3"
                                   Background="{Binding PrimarySwatch}"
                                   BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
@@ -328,21 +334,20 @@
                           </TextBlock>
                         </StackPanel>
 
-                        <TextBlock Classes="hint" IsVisible="{Binding !IsOff}">
-                          <Run Text="palette " /><Run Text="{Binding Palette}" /><Run Text="  ·  " /><Run Text="{Binding Motion}" />
-                        </TextBlock>
+                        <TextBlock Classes="hint" IsVisible="{Binding Describes}"
+                                   Text="{Binding Summary}" />
 
+                        <!-- Only ever the caveat now, so an empty one is a card with nothing to
+                             apologize for rather than a blank line. -->
                         <TextBlock Classes="hint" FontStyle="Italic" Opacity="0.55"
-                                   IsVisible="{Binding !IsOff}"
-                                   Text="{Binding Fidelity}" />
+                                   Text="{Binding Fidelity}"
+                                   IsVisible="{Binding Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       </StackPanel>
                     </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>
 
-              <TextBlock Classes="hint" TextWrapping="Wrap"
-                         Text="Effects LedBalloon knows are run properly, at the frame rate the controller is set to. The rest are stood in for by sliding the segment's palette along it, which gets the colors right and the movement only roughly." />
 
               </StackPanel>
 
