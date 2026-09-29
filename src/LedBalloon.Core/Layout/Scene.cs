@@ -264,6 +264,101 @@ public sealed class Scene
     /// </summary>
     [JsonPropertyName("unlistedSegmentsOff")] public bool UnlistedSegmentsOff { get; set; } = true;
 
+    /// <summary>What a scene does about one segment.</summary>
+    /// <remarks>
+    /// Three states, not two. A scene that turns a segment off and a scene that has nothing to say
+    /// about it look identical on the wall the moment the segment happens to be dark, and are
+    /// completely different the rest of the time - one is a decision and the other is a silence.
+    /// </remarks>
+    public enum SegmentRole
+    {
+        /// <summary>Left alone. The scene sends this segment nothing and it carries on.</summary>
+        NotIncluded,
+
+        /// <summary>Switched off, which is a thing the scene says rather than a thing it omits.</summary>
+        Off,
+
+        /// <summary>Showing something: a named look, or an appearance of this scene's own.</summary>
+        Shown,
+    }
+
+    /// <summary>What this scene does about one segment.</summary>
+    public SegmentRole RoleOf(string segmentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(segmentId);
+
+        if (!Segments.TryGetValue(segmentId, out SceneEntry? entry))
+        {
+            // Absent means off in a scene that accounts for everything, and nothing at all in one
+            // that does not. Which of those a scene is used to be its only say in the matter.
+            return UnlistedSegmentsOff ? SegmentRole.Off : SegmentRole.NotIncluded;
+        }
+
+        return entry.On == false ? SegmentRole.Off : SegmentRole.Shown;
+    }
+
+    /// <summary>Takes a segment out of this scene, so that applying it leaves that segment alone.</summary>
+    /// <param name="segmentId">The segment to stop saying anything about.</param>
+    /// <param name="everySegmentId">
+    /// Every segment in the house, needed only when this scene is one that accounts for all of them.
+    /// </param>
+    /// <remarks>
+    /// The awkward case, and the reason this is a method rather than a dictionary removal. A scene
+    /// with <see cref="UnlistedSegmentsOff"/> set says "everything I do not mention is off", so
+    /// taking one segment out of it would not exclude that segment - it would switch it off, and
+    /// silently do the same to every other segment nobody had got round to mentioning.
+    /// <para>
+    /// So the scene is first written out in full: every segment it was switching off by omission
+    /// gets an entry that says so. It then means exactly what it meant before, in a form where one
+    /// segment can be removed without the removal spreading.
+    /// </para>
+    /// </remarks>
+    public void Exclude(string segmentId, IEnumerable<string> everySegmentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(segmentId);
+        ArgumentNullException.ThrowIfNull(everySegmentId);
+
+        if (UnlistedSegmentsOff)
+        {
+            foreach (string id in everySegmentId)
+            {
+                if (!string.Equals(id, segmentId, StringComparison.Ordinal) &&
+                    !Segments.ContainsKey(id))
+                {
+                    Segments[id] = new SceneEntry { On = false };
+                }
+            }
+
+            UnlistedSegmentsOff = false;
+        }
+
+        Segments.Remove(segmentId);
+    }
+
+    /// <summary>Has this scene switch a segment off, which is a thing it says rather than omits.</summary>
+    public void TurnOff(string segmentId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(segmentId);
+
+        // A fresh entry rather than the old one with On cleared, so that what it used to show does
+        // not sit underneath waiting to come back if it is ever switched on again by accident.
+        Segments[segmentId] = new SceneEntry { On = false };
+    }
+
+    /// <summary>Has a segment wear a named look in this scene.</summary>
+    /// <remarks>
+    /// Only the reference is kept. An entry carries either a look or its own fields and never both,
+    /// so the fields the segment used to have go with them - leaving them would be storing an
+    /// answer that nothing reads and that would reappear if the look were ever deleted.
+    /// </remarks>
+    public void Wear(string segmentId, string lookId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(segmentId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(lookId);
+
+        Segments[segmentId] = new SceneEntry { LookId = lookId };
+    }
+
     /// <summary>
     /// An independent copy, down to the entries.
     /// <para>

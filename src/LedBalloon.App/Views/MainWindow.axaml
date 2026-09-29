@@ -331,55 +331,67 @@
 
                     <ItemsControl ItemsSource="{Binding Segments}">
                      <ItemsControl.ItemTemplate>
-                      <DataTemplate x:DataType="vm:PresetDetail">
+                      <DataTemplate x:DataType="vm:SceneSegmentRow">
                     <Border Classes="card" Margin="0,0,0,6" Padding="10">
                       <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding SegmentName}" FontWeight="SemiBold" FontSize="12"
+                        <TextBlock Text="{Binding Detail.SegmentName}" FontWeight="SemiBold" FontSize="12"
                                    TextTrimming="CharacterEllipsis" />
+
+                        <!-- The three things a scene can do about a segment, in one control, because
+                             they are one decision. Off and "not included" look the same on a dark
+                             house and are opposites the rest of the time, so which of them applies
+                             has to be picked rather than inferred from whether anyone got round to
+                             mentioning the segment. Absent while looking at the house, which is not
+                             a scene and so has nothing to decide. -->
+                        <ComboBox ItemsSource="{Binding Choices}"
+                         AutomationProperties.AutomationId="SegmentRole"
+                                  SelectedItem="{Binding Choice, Mode=TwoWay}"
+                                  IsVisible="{Binding Choosable}"
+                                  HorizontalAlignment="Stretch" Margin="0,2,0,2" />
 
                         <!-- Listed rather than left out, so the list is the house rather than the
                              part of it this scene happens to mention. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
-                                   Text="not included — keeps doing what it was doing"
-                                   IsVisible="{Binding NotInScene}" />
+                                   Text="keeps doing what it was doing"
+                                   IsVisible="{Binding Detail.NotInScene}" />
 
                         <!-- Says where this appearance comes from, so that changing the look
                              later is not a surprise arriving from nowhere. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
-                                   IsVisible="{Binding WearsLook}"
+                                   IsVisible="{Binding Detail.WearsLook}"
                                    TextTrimming="CharacterEllipsis">
-                          <Run Text="wearing " /><Run Text="{Binding LookName}" FontWeight="SemiBold" />
+                          <Run Text="wearing " /><Run Text="{Binding Detail.LookName}" FontWeight="SemiBold" />
                         </TextBlock>
 
                         <!-- A scene still carries an effect and a color for a run it turns off.
                              Showing them here read as a promise the house would not keep. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
                                    Text="off"
-                                   IsVisible="{Binding IsOff}" />
+                                   IsVisible="{Binding Detail.IsOff}" />
 
                         <StackPanel Orientation="Horizontal" Spacing="6"
-                                    IsVisible="{Binding Describes}">
+                                    IsVisible="{Binding Detail.Describes}">
                           <Border Width="18" Height="18" CornerRadius="3"
-                                  Background="{Binding PrimarySwatch}"
+                                  Background="{Binding Detail.PrimarySwatch}"
                                   BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
                           <Border Width="18" Height="18" CornerRadius="3"
-                                  Background="{Binding SecondarySwatch}"
+                                  Background="{Binding Detail.SecondarySwatch}"
                                   BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
-                                  IsVisible="{Binding HasSecondary}" />
+                                  IsVisible="{Binding Detail.HasSecondary}" />
                           <TextBlock Classes="hint" VerticalAlignment="Center"
                                      TextTrimming="CharacterEllipsis">
-                            <Run Text="effect " /><Run Text="{Binding Effect}" FontWeight="SemiBold" />
+                            <Run Text="effect " /><Run Text="{Binding Detail.Effect}" FontWeight="SemiBold" />
                           </TextBlock>
                         </StackPanel>
 
-                        <TextBlock Classes="hint" IsVisible="{Binding Describes}"
-                                   Text="{Binding Summary}" />
+                        <TextBlock Classes="hint" IsVisible="{Binding Detail.Describes}"
+                                   Text="{Binding Detail.Summary}" />
 
                         <!-- Only ever the caveat now, so an empty one is a card with nothing to
                              apologize for rather than a blank line. -->
                         <TextBlock Classes="hint" FontStyle="Italic" Opacity="0.55"
-                                   Text="{Binding Fidelity}"
-                                   IsVisible="{Binding Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                   Text="{Binding Detail.Fidelity}"
+                                   IsVisible="{Binding Detail.Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       </StackPanel>
                     </Border>
                       </DataTemplate>
