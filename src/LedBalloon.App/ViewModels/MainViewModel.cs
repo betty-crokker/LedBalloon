@@ -2270,7 +2270,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
                 {
-                    group.Segments.Add(Describe(segment, wled, device, state.On != false));
+                    group.Segments.Add(
+                        Describe(segment, wled, device, state.On != false, state.Brightness));
                 }
             }
 
@@ -3017,7 +3018,8 @@ public sealed partial class MainViewModel : ViewModelBase
                         : null;
 
                     group.Segments.Add(
-                        Describe(run, wled, device, state.On != false) with { LookName = wearing });
+                        Describe(run, wled, device, state.On != false, state.Brightness)
+                            with { LookName = wearing });
                 }
             }
 
@@ -4512,8 +4514,8 @@ public sealed partial class MainViewModel : ViewModelBase
                     continue;
                 }
 
-                PresetDetails.Add(
-                    Describe(run, wled, device, placement.Preset.On != false));
+                PresetDetails.Add(Describe(
+                    run, wled, device, placement.Preset.On != false, placement.Preset.Brightness));
             }
         }
     }
@@ -4549,13 +4551,30 @@ public sealed partial class MainViewModel : ViewModelBase
     /// can see. The photo has always known this - it draws a run on a sleeping controller unlit - so
     /// a card that did not would put two answers to the same question on one screen.
     /// </param>
-    private static PresetDetail Describe(
-        Segment run, WledSegment wled, DeviceViewModel? device, bool controllerOn = true)
+    /// <param name="controllerBrightness">
+    /// What the controller is turned up to, where zero is as dark as switched off. WLED's own Off
+    /// preset is built this way - brightness nothing, segments left alone - so this is not a corner
+    /// case but the ordinary way a house is put to bed, and without it opening that scene listed
+    /// every segment as running an effect.
+    /// </param>
+    internal static PresetDetail Describe(
+        Segment run,
+        WledSegment wled,
+        DeviceViewModel? device,
+        bool controllerOn = true,
+        byte? controllerBrightness = null)
     {
         // A preset can turn a segment off, and several here do - that is what "Stairs white" is for.
         // Its stored effect, palette and color are all still in the preset, so describing them
         // without saying this promised an animation the house was never going to show.
-        bool isOff = !controllerOn || wled.On == false;
+        //
+        // Turned down to nothing counts as off, at either level, which is the rule the photo has
+        // always drawn by: it folds both brightnesses into the color and stops calling a run lit
+        // once there is nothing left of it.
+        bool isOff = !controllerOn
+            || wled.On == false
+            || controllerBrightness == 0
+            || wled.Brightness == 0;
 
         string effect = wled.Effect is { } fx
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
