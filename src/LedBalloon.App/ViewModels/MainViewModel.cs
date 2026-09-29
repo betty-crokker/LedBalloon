@@ -60,9 +60,29 @@ public sealed record PresetDetail(
     bool IsOff,
 
     /// <summary>The named look this run is wearing, or null when its appearance is a one-off.</summary>
-    string? LookName = null)
+    string? LookName = null,
+
+    /// <summary>
+    /// True for a segment the open scene says nothing about, which the scene leaves as it is.
+    /// </summary>
+    bool NotInScene = false)
 {
     public bool WearsLook => LookName is { Length: > 0 };
+
+    /// <summary>Whether this card has anything to describe beyond the segment's name.</summary>
+    public bool Describes => !NotInScene && !IsOff;
+
+    /// <summary>
+    /// The palette and the movement on one line, with the separator only when both are there.
+    /// </summary>
+    /// <remarks>
+    /// Composed here rather than in the template, which had the separator hard-coded between two
+    /// runs and would have printed a leading dot the moment the palette stopped being named.
+    /// </remarks>
+    public string Summary => string.Join(
+        "  ·  ",
+        new[] { Palette.Length > 0 ? $"palette {Palette}" : string.Empty, Motion }
+            .Where(part => part.Length > 0));
 }
 
 /// <summary>
@@ -843,6 +863,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             SaveBlockedByNewerRevision = false;
             HasUnsavedChanges = false;
+            _editedScenes.Clear();
 
             // Saving the description and making the hardware match it are the same intention.
             // The outputs go first: a segment cannot reach past the total, so lengthening the
@@ -1115,6 +1136,9 @@ public sealed partial class MainViewModel : ViewModelBase
             // Freshly loaded is not unsaved. Working the starts out again is not a change: for a
             // layout that already agreed with its wiring it lands on the same numbers.
             HasUnsavedChanges = false;
+
+            // The scenes those ids named belong to the project just thrown away.
+            _editedScenes.Clear();
 
             if (_starting)
             {
@@ -2604,6 +2628,11 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SceneEdited = true;
+
+        // By id rather than name, because renaming one is itself an edit and the prompt on the way
+        // out should say what the scene is called then, not what it was called when it was touched.
+        _editedScenes.Add(scene.Id);
+
         OnSelectedSceneChanged(SelectedScene);
         AfterProjectChanged($"'{scene.Name}' changed. Save to put it on the controllers.");
     }
@@ -2921,10 +2950,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
             foreach (Segment run in Project.SegmentsOn(key))
             {
-                // A scene that leaves unlisted runs alone has nothing to say about them, so they
-                // get no card rather than one reading "unchanged".
+                // A scene need not mention every segment, and one that does not leaves those alone.
+                // They used to be left out of this list entirely, which made the list look like the
+                // house had fewer segments than it has - the reader has no way to tell "this scene
+                // says nothing about the garage" from "there is no garage". So the segment is
+                // listed, and the card says which of the two it is.
                 if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(run.Id))
                 {
+                    SceneDetails.Add(NotInScene(run));
                     continue;
                 }
 
@@ -3693,12 +3726,20 @@ public sealed partial class MainViewModel : ViewModelBase
             return true;
         }
 
+        // Changing a scene used to arrive here and be described as a change to the layout, which
+        // is the one thing it is not. The two are one save and one prompt - a scene lives in the
+        // project and goes to the controllers with it - so the prompt names what was changed
+        // rather than being split in two.
+        string changed = EditedSceneNames(Project.Scenes, _editedScenes);
+
         ConfirmResult answer = await ask(new ConfirmRequest(
-            Title: "Save the layout before closing?",
+            Title: "Save your changes before closing?",
             // What each button does, including the one that costs something. The third choice used
             // to be the only one whose consequence was left to be inferred, and it is the only
             // irreversible one of the three.
-            Message: "The house has changes the controllers have not been told about. " +
+            Message: (changed.Length > 0
+                         ? $"You changed {changed}, and the controllers still have the old version. "
+                         : "The house has changes the controllers have not been told about. ") +
                      "Saving writes them to every controller, which takes a few seconds. " +
                      "Closing without saving loses them.",
             AcceptText: "Save and close",
@@ -3728,6 +3769,43 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </summary>
     /// <returns>False to stay open.</returns>
+    /// <summary>
+    /// Scenes changed here and not yet written to the controllers, by id.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="SceneEdited"/>, which is about the scene open right now and is
+    /// forgotten the moment a different one is picked. Changing two scenes and closing has to
+    /// mention both, and changing one and then looking at another still has to mention the first.
+    /// </remarks>
+    private readonly HashSet<string> _editedScenes = [];
+
+    /// <summary>
+    /// The changed scenes as a list to read aloud, or empty when nothing was changed.
+    /// </summary>
+    /// <remarks>
+    /// Only names scenes the project still has: one changed and then removed before closing is not
+    /// a pending change, and offering to save it would be offering to save nothing.
+    /// <para>
+    /// Static and given both halves rather than reading the fields, so that what it says can be
+    /// checked without a window, a controller and a project on the other end of one.
+    /// </para>
+    /// </remarks>
+    internal static string EditedSceneNames(
+        IEnumerable<Scene> scenes, IReadOnlySet<string> editedIds)
+    {
+        string[] names = [.. scenes
+            .Where(scene => editedIds.Contains(scene.Id))
+            .Select(scene => $"'{scene.Name}'")];
+
+        return names.Length switch
+        {
+            0 => string.Empty,
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => $"{string.Join(", ", names[..^1])} and {names[^1]}",
+        };
+    }
+
     private async Task<bool> KeepTheSceneAsync()
     {
         if (!SceneUnsaved || SyncTargets().Count == 0 || Ask is not { } ask)
@@ -4390,6 +4468,19 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>A card for a segment the open scene says nothing about.</summary>
+    private static PresetDetail NotInScene(Segment run) => new(
+        run.Name,
+        Effect: string.Empty,
+        Palette: string.Empty,
+        Motion: string.Empty,
+        PrimarySwatch: Brushes.Transparent,
+        SecondarySwatch: Brushes.Transparent,
+        HasSecondary: false,
+        Fidelity: string.Empty,
+        IsOff: false,
+        NotInScene: true);
+
     /// <param name="controllerOn">
     /// Whether the controller this segment is on is switched on at all. A segment carries its own
     /// switch, and the two are independent: a controller that is off still reports segments that say
@@ -4409,20 +4500,23 @@ public sealed partial class MainViewModel : ViewModelBase
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
             : "unchanged";
 
-        string palette = wled.Palette is { } pal
+        // WLED's palette 0 is called "Default", which names nothing: it means the effect picks its
+        // own colors, which is what an effect does unless told otherwise. Printing the word told the
+        // reader that the ordinary case was in force, in a vocabulary belonging to the firmware.
+        string palette = wled.Palette is { } pal and not 0
             ? device?.Device.PaletteName(pal) ?? $"Palette {pal}"
-            : "—";
+            : string.Empty;
 
         RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
         RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
 
-        // Whether the photo is running this effect or standing in for it. Worth saying rather than
-        // leaving the picture to imply a fidelity it does not have.
+        // Only when the photo is standing in for the effect rather than running it. The other half
+        // of this used to be printed too - "drawn from the effect itself" - on the great majority of
+        // cards, where it announced that nothing was wrong. A caveat is worth a line; its absence
+        // is not.
         bool exact = device is not null && EffectLibrary.Find(wled.Effect, device.Effects) is not null;
 
-        string fidelity = exact
-            ? "drawn from the effect itself"
-            : "approximated on the photo";
+        string fidelity = exact ? string.Empty : "approximated on the photo";
 
         return new PresetDetail(
             run.Name,
