@@ -1922,6 +1922,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? "Not saved yet."
                 : "Not saved. The house was already showing this when the app opened.";
 
+    partial void OnSceneEditedChanged(bool value) => OnPropertyChanged(nameof(PreviewNotice));
+
     partial void OnSceneOnTheHouseChanged(Scene? value)
     {
         OnPropertyChanged(nameof(SceneUnsaved));
@@ -1957,16 +1959,58 @@ public sealed partial class MainViewModel : ViewModelBase
         DescribeTheHouse();
     }
 
+    /// <summary>
+    /// Turns a preset into a scene in place, keeping the slot it already holds on the controllers.
+    /// </summary>
+    /// <remarks>
+    /// Whatever the layout cannot account for goes into the notes beside it rather than into a
+    /// dialog. There is only one case worth saying anything about - a preset lighting LED ranges no
+    /// segment covers - and it is worth saying then, not every time.
+    /// </remarks>
+    private void Adopt(HousePreset preset)
+    {
+        AdoptionReport report = PresetAdoption.Plan(Project, preset);
+
+        report.Scene.Name = Project.UniqueSceneName(preset.Name);
+
+        // Already on the controllers under this name, in slots the timers may point at, so saving
+        // has to land in those slots rather than adding a second copy beside it.
+        if (string.Equals(report.Scene.Name, preset.Name, StringComparison.Ordinal))
+        {
+            report.Scene.PublishedAs = preset.Name;
+        }
+
+        Project.Scenes.Add(report.Scene);
+
+        RebuildScenes();
+        SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, report.Scene));
+
+        // After the reselect, which clears them.
+        foreach (AdoptionNote note in report.Notes)
+        {
+            SceneNotes.Add(Spell(note));
+        }
+    }
+
     private void ShowPreview(IReadOnlyDictionary<string, WledState>? states)
     {
         _previewStates = states;
         Previewing = states is not null;
 
         OnPropertyChanged(nameof(DisplayStates));
+
+        // The per-segment controls read whatever the photo is reading, so they move with it.
+        RefreshSegmentPickers(SelectedSegment);
     }
+
+    /// <summary>What the strip over the photo says while a scene is open.</summary>
+    public string PreviewNotice => SceneEdited
+        ? $"{SceneTitle}, changed — not on the house."
+        : $"Showing {SceneTitle} — the house itself is still showing something else.";
 
     private void RefreshSceneHeading()
     {
+        OnPropertyChanged(nameof(PreviewNotice));
         OnPropertyChanged(nameof(SceneTitle));
         OnPropertyChanged(nameof(SceneState));
         OnPropertyChanged(nameof(SceneUnsaved));
@@ -2404,7 +2448,22 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private void NoteSceneEdit(string controllerKey, WledState patch)
     {
-        if (_applyingScene || SelectedScene is not { Scene: { } scene })
+        if (_applyingScene)
+        {
+            return;
+        }
+
+        // Presets made in the WLED app used to be read-only until adopted, behind a button and a
+        // paragraph explaining why. Adopting is not destructive - it re-describes the same preset in
+        // terms of the named segments and keeps the slot it already occupies on the controllers - so
+        // the gate was ceremony. A row in this list is a thing you can change; changing one that came
+        // from WLED converts it, here, without being asked.
+        if (SelectedScene is { Scene: null, Preset: { } fromWled })
+        {
+            Adopt(fromWled);
+        }
+
+        if (SelectedScene is not { Scene: { } scene })
         {
             return;
         }
@@ -2787,6 +2846,15 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         NoteSceneEdit(key, patch);
+
+        // A scene that is only being previewed is a document, not the house. Changing it changes the
+        // document; the house carries on as it was until "Put it on the house". The photo follows
+        // the document, so the change is visible immediately - just not outside.
+        if (Previewing)
+        {
+            return;
+        }
+
         _touchedTheHouse = true;
 
         if (LiveSync)
@@ -3054,7 +3122,13 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             int segmentId = Project.WledSegmentIdFor(segment);
-            WledSegment? live = device.State?.Segments?.FirstOrDefault(s => s.Id == segmentId);
+
+            // What the photo is showing, not what the hardware is: with a scene open these differ,
+            // and the panel is describing the scene.
+            WledSegment? live = segment.ControllerKey is { } key
+                ? DisplayStates.GetValueOrDefault(key)?.Segments?
+                    .FirstOrDefault(x => x.Id == segmentId)
+                : device.State?.Segments?.FirstOrDefault(x => x.Id == segmentId);
 
             if (live?.Effect is { } effect)
             {

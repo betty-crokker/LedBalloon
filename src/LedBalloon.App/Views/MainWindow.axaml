@@ -199,9 +199,7 @@
             <Button DockPanel.Dock="Right" Content="Put it on the house"
                     Command="{Binding ApplySceneCommand}" />
             <TextBlock Foreground="White" VerticalAlignment="Center" TextWrapping="Wrap"
-                       Margin="0,0,12,0">
-              <Run Text="Showing" /><Run Text=" " /><Run Text="{Binding SceneTitle}" FontWeight="SemiBold" /><Run Text=" " /><Run Text="— the house itself is still showing something else." />
-            </TextBlock>
+                       Margin="0,0,12,0" Text="{Binding PreviewNotice}" />
           </DockPanel>
         </Border>
 
@@ -213,11 +211,21 @@
           <ScrollViewer HorizontalScrollBarVisibility="Disabled">
             <StackPanel Spacing="8">
 
-              <!-- This screen is a scene editor, so its title is the scene being edited. There is
-                   always one: whatever the house is showing, named if it has been written down and
-                   not if it has not. Clicking a segment changes that segment within it. -->
-              <TextBlock Classes="panelTitle" Text="{Binding SceneTitle}"
-                         TextTrimming="CharacterEllipsis" />
+              <!-- This screen is a scene editor, so the scene being edited is the first thing on it
+                   and the picker is the heading. There is always one: whatever the house is showing,
+                   named if it has been written down and not if it has not.
+                   The picker rather than a title above it, because a title would be the name a
+                   second time, and the picker is the one of the two that can also change it. -->
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBlock Classes="panelTitle" Text="Scene:" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding Scenes}"
+                 AutomationProperties.AutomationId="SceneList"
+                          SelectedItem="{Binding SelectedScene}"
+                          DisplayMemberBinding="{Binding Name}"
+                          PlaceholderText="The house as it is now"
+                          HorizontalAlignment="Stretch" Width="300" />
+              </StackPanel>
+
               <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SceneState}" />
 
               <!-- The house changes on its own, so say so here rather than letting it look like
@@ -232,18 +240,6 @@
               <Button Classes="block" Content="Name it…" Margin="0,4,0,0"
                       Command="{Binding CaptureSceneCommand}"
                       IsVisible="{Binding SceneUnsaved}" />
-
-              <TextBlock Classes="heading" Text="Scenes" Margin="0,10,0,0" />
-              <TextBlock Classes="hint" TextWrapping="Wrap"
-                         Text="A scene is a named way for the whole house to look — what every segment is doing, saved together. Open one to see it on the photo." />
-
-              <ComboBox ItemsSource="{Binding Scenes}"
-               AutomationProperties.AutomationId="SceneList"
-                        SelectedItem="{Binding SelectedScene}"
-                        DisplayMemberBinding="{Binding Name}"
-                        PlaceholderText="The house as it is now"
-                        HorizontalAlignment="Stretch"
-                        Margin="0,4,0,0" />
 
               <!-- No banner and no buttons for sending: whether this has reached the lights is what
                    the Sync switch says, in one place, for everything on this panel. -->
@@ -280,10 +276,6 @@
                           IsVisible="{Binding SelectedScene.IsOwn}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
                           IsVisible="{Binding SelectedScene.IsOwn}" />
-                  <!-- Deliberate, and it says what it will cost first: a preset made against an
-                       older layout may light ranges no run agrees with any more. -->
-                  <Button Content="Make it a scene" Command="{Binding AdoptPresetCommand}"
-                          IsVisible="{Binding SelectedScene.NeedsAdopting}" />
                 </StackPanel>
 
               </StackPanel>
