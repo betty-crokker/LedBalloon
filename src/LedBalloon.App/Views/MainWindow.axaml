@@ -180,11 +180,13 @@
               <CheckBox Content="Sync" IsChecked="{Binding LiveSync}" VerticalAlignment="Center" />
             </StackPanel>
 
+            <!-- The switch, and no brightness beside it. Brightness belongs to a controller, and
+                 each one now has its own slider at the head of its segments; a house-wide one could
+                 only set them all to the same number, which is to say it could only destroy the
+                 difference between them. It also had nothing honest to display, since two
+                 controllers rarely agree. -->
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
               <ToggleSwitch IsChecked="{Binding MasterOn}" OnContent="On" OffContent="Off" />
-              <TextBlock Text="Brightness" VerticalAlignment="Center" Classes="hint" />
-              <Slider Width="170" Minimum="0" Maximum="255"
-                      Value="{Binding MasterBrightness}" VerticalAlignment="Center" />
               <TextBlock Classes="hint" VerticalAlignment="Center"
                          Text="{Binding SyncHint}" TextTrimming="CharacterEllipsis" />
             </StackPanel>
