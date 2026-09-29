@@ -3582,8 +3582,12 @@ public sealed partial class MainViewModel : ViewModelBase
 
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: "Save the layout before closing?",
+            // What each button does, including the one that costs something. The third choice used
+            // to be the only one whose consequence was left to be inferred, and it is the only
+            // irreversible one of the three.
             Message: "The house has changes the controllers have not been told about. " +
-                     "Saving writes them to every controller, which takes a few seconds.",
+                     "Saving writes them to every controller, which takes a few seconds. " +
+                     "Closing without saving loses them.",
             AcceptText: "Save and close",
             CancelText: "Don't close",
             AlternateText: "Close without saving"));
