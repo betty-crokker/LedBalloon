@@ -299,8 +299,10 @@
                           Command="{Binding SaveSceneAsNewCommand}" />
                 </StackPanel>
 
+                <!-- No "Put it on the house" here. Opening a scene always previews it, so the
+                     strip over the photo always carries that button, and two of them a few
+                     centimetres apart is two chances to wonder whether they do the same thing. -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Content="Put it on the house" Command="{Binding ApplySceneCommand}" />
                   <Button Content="Rename" Command="{Binding RenameSceneCommand}"
                           IsVisible="{Binding SelectedScene.IsOwn}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
@@ -314,10 +316,6 @@
                    nothing to show for the house in front of you. ===== -->
               <StackPanel Spacing="8"
                           IsVisible="{Binding SelectedSegment, Converter={x:Static conv:ObjectConverters.IsNull}}">
-
-                <TextBlock Classes="heading" Text="Segments" Margin="0,14,0,0" />
-                <TextBlock Classes="hint" TextWrapping="Wrap"
-                           Text="Click a name to change what that segment is showing." />
 
               <!-- What the scene actually does, which its name does not tell you. -->
               <ItemsControl ItemsSource="{Binding SceneDetails}">
@@ -409,6 +407,31 @@
                             </DataTemplate>
                           </ComboBox.ItemTemplate>
                         </ComboBox>
+
+                        <!-- The house gets no picker, being not a scene, so its cards would have
+                             been a column of bare names. What the picker says in a scene, this
+                             says there - in the same shape, so the two read as one thing. -->
+                        <StackPanel Spacing="4" IsVisible="{Binding !Choosable}">
+                          <TextBlock Classes="hint" FontStyle="Italic" Text="off"
+                                     IsVisible="{Binding Detail.IsOff}" />
+
+                          <StackPanel Orientation="Horizontal" Spacing="6"
+                                      IsVisible="{Binding Detail.Describes}">
+                            <Border Width="14" Height="14" CornerRadius="3"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding Detail.PrimarySwatch}"
+                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                            <Border Width="14" Height="14" CornerRadius="3"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding Detail.SecondarySwatch}"
+                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                    IsVisible="{Binding Detail.HasSecondary}" />
+                            <TextBlock Classes="hint" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis">
+                              <Run Text="{Binding Detail.Effect}" FontWeight="SemiBold" /><Run Text=" · " /><Run Text="{Binding Detail.Motion}" />
+                            </TextBlock>
+                          </StackPanel>
+                        </StackPanel>
 
                         <!-- All that is left to say. The row above has the rest of it. -->
                         <TextBlock Classes="hint" FontStyle="Italic" Opacity="0.55"
