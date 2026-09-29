@@ -53,6 +53,10 @@ public sealed partial class ControllerSegments : ObservableObject
     /// False when the open scene says nothing about this controller's brightness, so the slider is
     /// showing what the controller happens to be doing rather than what the scene asks for.
     /// </summary>
+    /// <remarks>
+    /// Drives whether the slider can be moved, rather than a sentence beside it saying it is not in
+    /// force. A control that cannot do anything should look like one.
+    /// </remarks>
     public bool SetByTheScene { get; }
 
     [ObservableProperty] private double _brightness;

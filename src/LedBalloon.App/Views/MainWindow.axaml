@@ -341,17 +341,14 @@
                                  TextAlignment="Right" VerticalAlignment="Center"
                                  Margin="6,0,10,0"
                                  Text="{Binding Brightness, StringFormat={}{0:0}}" />
+                      <!-- Disabled rather than explained when the scene does not set it. A
+                           control that cannot do anything should look like one; a sentence saying
+                           so is a second thing to read to learn what the grey already says. -->
                       <Slider Minimum="0" Maximum="255"
                        AutomationProperties.AutomationId="ControllerBrightness"
+                              IsEnabled="{Binding SetByTheScene}"
                               Value="{Binding Brightness, Mode=TwoWay}" />
                     </DockPanel>
-
-                    <!-- Said only when it is true, and it is the less usual case: the scene came
-                         from a WLED preset that left this controller's brightness alone. -->
-                    <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap"
-                               Margin="0,-4,0,6"
-                               Text="This scene does not set it — the slider shows what the controller is doing now."
-                               IsVisible="{Binding !SetByTheScene}" />
 
                     <ItemsControl ItemsSource="{Binding Segments}">
                      <ItemsControl.ItemTemplate>
@@ -478,7 +475,9 @@
                 <!-- A swatch that opens the picker, rather than a picker that is always open:
                      most of the time an effect is what is wanted and the wheel is just bulk. -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Button Padding="6,4" VerticalAlignment="Center">
+                  <Button Padding="6,4" VerticalAlignment="Center"
+                   AutomationProperties.AutomationId="SegmentColor"
+                          IsEnabled="{Binding SegmentUsesColor}">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <Border Width="22" Height="22" CornerRadius="4"
                               Background="{Binding PickedBrush}"
@@ -496,6 +495,10 @@
                   </Button>
                 </StackPanel>
 
+                <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap" Margin="0,4,0,0"
+                           Text="{Binding SegmentColorNote}"
+                           IsVisible="{Binding SegmentColorNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Effect" />
                 <ComboBox ItemsSource="{Binding SegmentEffects}"
                  AutomationProperties.AutomationId="SegmentEffect"
@@ -503,12 +506,21 @@
                           PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
 
+                <!-- Off when the effect ignores it. Of the 187 effects this controller reports,
+                     25 never look at the palette and 64 never look at the color slots, so offering
+                     both for every effect offers controls that do nothing. Which is which comes
+                     from the controller's own /json/fxdata, per firmware build. -->
                 <TextBlock Classes="hint" Margin="0,8,0,2" Text="Palette" />
                 <ComboBox ItemsSource="{Binding SegmentPalettes}"
                  AutomationProperties.AutomationId="SegmentPalette"
                           SelectedItem="{Binding SegmentPaletteChoice}"
+                          IsEnabled="{Binding SegmentUsesPalette}"
                           PlaceholderText="Not reported yet"
                           HorizontalAlignment="Stretch" />
+
+                <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap" Margin="0,2,0,0"
+                           Text="{Binding SegmentPaletteNote}"
+                           IsVisible="{Binding SegmentPaletteNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
               </StackPanel>
 
               <!-- Naming is a promotion, not a requirement: most segments in most scenes are
