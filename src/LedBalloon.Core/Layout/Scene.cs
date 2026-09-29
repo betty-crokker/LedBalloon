@@ -157,8 +157,76 @@ public sealed class Scene
     /// <summary>Master power. Null leaves it alone.</summary>
     [JsonPropertyName("on")] public bool? On { get; set; }
 
-    /// <summary>Master brightness. Null leaves it alone.</summary>
-    [JsonPropertyName("brightness")] public byte? Brightness { get; set; }
+    /// <summary>
+    /// Master brightness, per controller. A controller with no entry here is left alone.
+    /// </summary>
+    /// <remarks>
+    /// Per controller because that is what it is: a scene becomes one WLED preset on each
+    /// controller, and each of those carries its own <c>bri</c>. Holding one number for the house
+    /// meant whichever controller was read first decided the brightness of all of them, and a
+    /// preset pair that really was bright on one box and dim on the other could not be described
+    /// at all - which is exactly what adopting one of the existing presets here ran into.
+    /// </remarks>
+    [JsonPropertyName("brightnessByController")]
+    public Dictionary<string, byte> Brightness { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The one house-wide brightness that schema 2 and earlier stored. Migration reads it.
+    /// </summary>
+    /// <remarks>
+    /// Kept only so that a file written before the split can still be read, where it means the
+    /// same value on every controller. <see cref="ProjectSerialization"/> spreads it and clears it,
+    /// so it is null in anything this build writes and does not appear in the file.
+    /// </remarks>
+    [JsonPropertyName("brightness")] public byte? SharedBrightness { get; set; }
+
+    /// <summary>This scene's brightness for one controller, or null to leave that one alone.</summary>
+    public byte? BrightnessOn(string controllerKey) =>
+        Brightness.TryGetValue(controllerKey, out byte value) ? value : null;
+
+    /// <summary>Sets, or with null removes, this scene's brightness for one controller.</summary>
+    public void SetBrightnessOn(string controllerKey, byte? value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(controllerKey);
+
+        if (value is { } brightness)
+        {
+            Brightness[controllerKey] = brightness;
+        }
+        else
+        {
+            Brightness.Remove(controllerKey);
+        }
+    }
+
+    /// <summary>
+    /// Spreads a pre-split brightness across the controllers given, and forgets it.
+    /// </summary>
+    /// <remarks>
+    /// One number meaning "everywhere" becomes that number on each controller, which is what the
+    /// old file was asking for. Doing nothing when the scene already has per-controller values
+    /// keeps this idempotent, so reading a file twice cannot undo an edit made in between.
+    /// </remarks>
+    public void SplitSharedBrightness(IEnumerable<string> controllerKeys)
+    {
+        ArgumentNullException.ThrowIfNull(controllerKeys);
+
+        if (SharedBrightness is not { } shared)
+        {
+            return;
+        }
+
+        if (Brightness.Count == 0)
+        {
+            foreach (string key in controllerKeys)
+            {
+                Brightness[key] = shared;
+            }
+        }
+
+        SharedBrightness = null;
+    }
 
     /// <summary>Crossfade into this scene, in 100 ms units.</summary>
     [JsonPropertyName("transition")] public int? Transition { get; set; }
@@ -210,7 +278,7 @@ public sealed class Scene
             Id = Id,
             Name = Name,
             On = On,
-            Brightness = Brightness,
+            Brightness = new Dictionary<string, byte>(Brightness, StringComparer.OrdinalIgnoreCase),
             Transition = Transition,
             PublishedAs = PublishedAs,
             UnlistedSegmentsOff = UnlistedSegmentsOff,

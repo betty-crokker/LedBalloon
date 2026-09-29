@@ -44,7 +44,7 @@ public static class SceneResolver
         var state = new WledState
         {
             On = scene.On,
-            Brightness = scene.Brightness,
+            Brightness = scene.BrightnessOn(controllerKey),
             TransitionOnce = scene.Transition,
             Segments = [],
         };
@@ -124,10 +124,11 @@ public static class SceneResolver
 
         foreach ((string controllerKey, WledState state) in states)
         {
-            // Master power and brightness are per-controller on the wire but one idea to the user,
-            // so the first controller that reports them wins.
+            // Power is still one idea for the house, so the first controller to state it wins.
+            // Brightness is not: each controller keeps its own, and reading them is the only way a
+            // house that really is brighter on one side than the other survives being written down.
             scene.On ??= state.On;
-            scene.Brightness ??= state.Brightness;
+            scene.SetBrightnessOn(controllerKey, state.Brightness);
 
             foreach (Segment segment in project.SegmentsOn(controllerKey))
             {

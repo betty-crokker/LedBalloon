@@ -30,10 +30,17 @@ public sealed class LedBalloonProject
     /// <para>
     /// 1 stored a slice per controller: each box held only its own runs. 2 mirrors the whole house
     /// onto every box, which is what makes any one of them enough to rebuild it. Loading a 1 unions
-    /// the slices exactly as before; the next save writes 2 everywhere and the question goes away.
+    /// the slices exactly as before; the next save writes the current schema everywhere and the
+    /// question goes away.
+    /// </para>
+    /// <para>
+    /// 3 gives each scene a brightness per controller instead of one for the house. A 2 is read by
+    /// spreading its single number across the controllers, which is what that number meant. The
+    /// bump matters because an older build would read a 3, understand no brightness at all, and
+    /// write the scene back without one.
     /// </para>
     /// </summary>
-    public const int CurrentSchema = 2;
+    public const int CurrentSchema = 3;
 
     /// <summary>The first schema that mirrors rather than slices.</summary>
     public const int MirroredSchema = 2;

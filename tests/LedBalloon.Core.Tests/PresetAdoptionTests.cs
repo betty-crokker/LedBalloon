@@ -150,7 +150,7 @@ public class PresetAdoptionTests
         Assert.True(report.IsClean);
         Assert.Equal(3, report.Scene.Segments.Count);
         Assert.Equal("Tidy", report.Scene.Name);
-        Assert.Equal((byte)128, report.Scene.Brightness);
+        Assert.Equal((byte)128, report.Scene.BrightnessOn(South));
     }
 
     /// <summary>
