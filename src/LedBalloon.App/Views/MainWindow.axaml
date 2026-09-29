@@ -77,6 +77,17 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
+    <!-- A segment name that is also the way in to editing it: a name first and a control second,
+         so the card does not turn into a row of buttons. -->
+    <Style Selector="Button.segmentName">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Cursor" Value="Hand" />
+    </Style>
+    <Style Selector="Button.segmentName:pointerover">
+      <Setter Property="TextBlock.TextDecorations" Value="Underline" />
+    </Style>
+
     <Style Selector="Border.card">
       <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}" />
       <Setter Property="BorderThickness" Value="1" />
@@ -227,12 +238,21 @@
                    second time, and the picker is the one of the two that can also change it. -->
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <TextBlock Classes="panelTitle" Text="Scene:" VerticalAlignment="Center" />
+                <!-- Italic for the house, upright for a scene. The first row of this list is not
+                     a name somebody chose, it is a description of the thing that has no name yet,
+                     and sitting in the same column as the named ones it read like one of them. -->
                 <ComboBox ItemsSource="{Binding Scenes}"
                  AutomationProperties.AutomationId="SceneList"
                           SelectedItem="{Binding SelectedScene}"
-                          DisplayMemberBinding="{Binding Name}"
                           PlaceholderText="The house as it is now"
-                          HorizontalAlignment="Stretch" Width="300" />
+                          HorizontalAlignment="Stretch" Width="300">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SceneRow">
+                      <TextBlock Text="{Binding Name}" FontStyle="{Binding NameStyle}"
+                                 TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
               </StackPanel>
 
               <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SceneState}" />
@@ -297,13 +317,19 @@
 
                 <TextBlock Classes="heading" Text="Segments" Margin="0,14,0,0" />
                 <TextBlock Classes="hint" TextWrapping="Wrap"
-                           Text="Click one on the photo to change what it is showing." />
+                           Text="Click a name to change what that segment is showing." />
 
               <!-- What the scene actually does, which its name does not tell you. -->
               <ItemsControl ItemsSource="{Binding SceneDetails}">
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="vm:ControllerSegments">
-                   <StackPanel Margin="0,0,0,10">
+                   <!-- Drawn as a box so that which segments belong to which controller is a thing
+                        you see rather than a thing you work out from the order. It matters more now
+                        that the brightness inside it applies to everything in it and nothing
+                        outside it. -->
+                   <Border BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                           CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+                   <StackPanel>
 
                     <!-- The controller heading carries its own brightness, because that is what
                          brightness belongs to: a scene is one preset per controller and each one
@@ -334,8 +360,14 @@
                       <DataTemplate x:DataType="vm:SceneSegmentRow">
                     <Border Classes="card" Margin="0,0,0,6" Padding="10">
                       <StackPanel Spacing="4">
-                        <TextBlock Text="{Binding Detail.SegmentName}" FontWeight="SemiBold" FontSize="12"
-                                   TextTrimming="CharacterEllipsis" />
+
+                        <!-- The name is the way in to editing the segment. Finding the right few
+                             pixels of a traced line on a photograph is a poor way to ask for
+                             something, and worse for the short segments - Porch is five LEDs. -->
+                        <Button Classes="row segmentName" Content="{Binding Detail.SegmentName}"
+                         AutomationProperties.AutomationId="EditSegment"
+                                Command="{Binding EditCommand}"
+                                Padding="0" HorizontalAlignment="Left" />
 
                         <!-- The three things a scene can do about a segment, in one control, because
                              they are one decision. Off and "not included" look the same on a dark
@@ -350,18 +382,11 @@
                                   HorizontalAlignment="Stretch" Margin="0,2,0,2" />
 
                         <!-- Listed rather than left out, so the list is the house rather than the
-                             part of it this scene happens to mention. -->
+                             part of it this scene happens to mention. The picker above already says
+                             "Not included"; this says what that does. -->
                         <TextBlock Classes="hint" FontStyle="Italic"
                                    Text="keeps doing what it was doing"
                                    IsVisible="{Binding Detail.NotInScene}" />
-
-                        <!-- Says where this appearance comes from, so that changing the look
-                             later is not a surprise arriving from nowhere. -->
-                        <TextBlock Classes="hint" FontStyle="Italic"
-                                   IsVisible="{Binding Detail.WearsLook}"
-                                   TextTrimming="CharacterEllipsis">
-                          <Run Text="wearing " /><Run Text="{Binding Detail.LookName}" FontWeight="SemiBold" />
-                        </TextBlock>
 
                         <!-- A scene still carries an effect and a color for a run it turns off.
                              Showing them here read as a promise the house would not keep. -->
@@ -398,6 +423,7 @@
                      </ItemsControl.ItemTemplate>
                     </ItemsControl>
                    </StackPanel>
+                   </Border>
                   </DataTemplate>
                 </ItemsControl.ItemTemplate>
               </ItemsControl>

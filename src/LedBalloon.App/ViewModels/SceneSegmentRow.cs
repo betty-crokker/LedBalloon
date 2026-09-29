@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace LedBalloon.App.ViewModels;
 
@@ -25,14 +26,15 @@ public sealed partial class SceneSegmentRow : ObservableObject
     /// The choice standing for an appearance this scene holds on its own, rather than by name.
     /// </summary>
     /// <remarks>
-    /// Offered only when it is already the answer. Most segments in most scenes are one-offs, and
-    /// there is nothing to pick here — "give this segment settings of its own" is done by editing
-    /// it, not by choosing it from a list. It is in the list so that the list can show what the
-    /// segment is doing now without pretending it is a look.
+    /// Offered only when it is already the answer, and worded as a look with no name rather than as
+    /// a mode — because that is what it is. The list is looks first and these two last: picking what
+    /// a segment wears is the everyday thing, and the two ways of it wearing nothing are the
+    /// exceptions to it.
     /// </remarks>
-    public const string ItsOwn = "Its own settings";
+    public const string ItsOwn = "This scene only, unnamed";
 
     private readonly Action<string, string>? _chosen;
+    private readonly Action<string>? _edit;
     private readonly bool _settling;
 
     public SceneSegmentRow(
@@ -40,11 +42,13 @@ public sealed partial class SceneSegmentRow : ObservableObject
         PresetDetail detail,
         IEnumerable<string>? choices,
         string? chosen,
-        Action<string, string>? onChosen)
+        Action<string, string>? onChosen,
+        Action<string>? onEdit = null)
     {
         SegmentId = segmentId;
         Detail = detail;
         _chosen = onChosen;
+        _edit = onEdit;
 
         foreach (string choice in choices ?? [])
         {
@@ -61,6 +65,17 @@ public sealed partial class SceneSegmentRow : ObservableObject
     public PresetDetail Detail { get; }
 
     public ObservableCollection<string> Choices { get; } = [];
+
+    /// <summary>
+    /// Opens this segment for editing, which the name on the card is a button for.
+    /// </summary>
+    /// <remarks>
+    /// The photo could always do this and is a poor way to ask: it means finding the right few
+    /// pixels of a traced line, and the shorter segments are barely a target at all - Porch is five
+    /// LEDs. The name is already on screen, already says which segment it is, and cannot be missed.
+    /// </remarks>
+    [RelayCommand]
+    private void Edit() => _edit?.Invoke(SegmentId);
 
     /// <summary>False while looking at the house, which is not a scene and has nothing to choose.</summary>
     public bool Choosable => Choices.Count > 0;

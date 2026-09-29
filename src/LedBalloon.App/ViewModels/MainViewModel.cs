@@ -2032,14 +2032,18 @@ public sealed partial class MainViewModel : ViewModelBase
         // list only so that the list can say what is true.
         bool itsOwn = role is Scene.SegmentRole.Shown && wearing is null;
 
-        List<string> choices = [SceneSegmentRow.NotIncluded, SceneSegmentRow.Off];
+        // Looks first, then the two ways of wearing nothing. Choosing what a segment wears is the
+        // everyday use of this list, and the fixed pair are the exceptions to it - reading them
+        // first made the list look like a mode switch that happened to have some looks attached.
+        List<string> choices = [.. Project.Looks.Select(look => look.Name)];
 
         if (itsOwn)
         {
             choices.Add(SceneSegmentRow.ItsOwn);
         }
 
-        choices.AddRange(Project.Looks.Select(look => look.Name));
+        choices.Add(SceneSegmentRow.NotIncluded);
+        choices.Add(SceneSegmentRow.Off);
 
         string chosen = role switch
         {
@@ -2048,7 +2052,17 @@ public sealed partial class MainViewModel : ViewModelBase
             _ => wearing ?? SceneSegmentRow.ItsOwn,
         };
 
-        return new SceneSegmentRow(run.Id, detail, choices, chosen, ChooseSegmentRole);
+        return new SceneSegmentRow(run.Id, detail, choices, chosen, ChooseSegmentRole, EditSegment);
+    }
+
+    /// <summary>Opens a segment for editing, from its name on the card.</summary>
+    private void EditSegment(string segmentId)
+    {
+        if (Project.Segments.FirstOrDefault(segment =>
+                string.Equals(segment.Id, segmentId, StringComparison.Ordinal)) is { } run)
+        {
+            PickSegment(run);
+        }
     }
 
     /// <summary>Applies one of the three choices to the open scene.</summary>

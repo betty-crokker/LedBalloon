@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using LedBalloon.Core.Layout;
 
@@ -36,6 +37,16 @@ public sealed partial class SceneRow : ObservableObject
     /// </para>
     /// </summary>
     public bool IsTheHouse { get; private init; }
+
+    /// <summary>
+    /// Italic for the house, upright for everything else.
+    /// </summary>
+    /// <remarks>
+    /// The first row of the scene list is not a name anybody chose - it is a description of the
+    /// thing that has no name yet - and in the same column as the named ones it read like one of
+    /// them. Slanting it is enough to say so without a second word.
+    /// </remarks>
+    public FontStyle NameStyle => IsTheHouse ? FontStyle.Italic : FontStyle.Normal;
 
     /// <summary>The scene this row is, or null when it is an un-adopted preset.</summary>
     public Scene? Scene { get; }
