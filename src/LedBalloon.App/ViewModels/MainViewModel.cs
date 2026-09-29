@@ -2606,7 +2606,11 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         scene.On = patch.On ?? scene.On;
-        scene.Brightness = patch.Brightness ?? scene.Brightness;
+        if (patch.Brightness is not null)
+        {
+            // The patch came from one controller, so it says nothing about the others.
+            scene.SetBrightnessOn(controllerKey, patch.Brightness);
+        }
 
         foreach (WledSegment touched in patch.Segments ?? [])
         {

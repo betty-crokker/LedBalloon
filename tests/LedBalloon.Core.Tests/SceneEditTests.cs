@@ -134,16 +134,19 @@ public class SceneEditTests
         var scene = new Scene
         {
             Name = "All red",
-            Brightness = 200,
+            Brightness = { [South] = 200 },
             Segments = { ["porch"] = new SceneEntry { Effect = 74, Primary = RgbColor.White } },
         };
 
         Scene copy = scene.Clone();
         copy.Segments["porch"].Effect = 9;
-        copy.Brightness = 10;
+
+        // The brightness dictionary is its own, not the same one under two names. It used to be a
+        // single number, where copying it was nothing to get wrong.
+        copy.SetBrightnessOn(South, 10);
 
         Assert.Equal(74, scene.Segments["porch"].Effect);
-        Assert.Equal((byte)200, scene.Brightness);
+        Assert.Equal((byte)200, scene.BrightnessOn(South));
     }
 
     /// <summary>

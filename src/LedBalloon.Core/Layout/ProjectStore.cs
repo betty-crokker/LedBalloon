@@ -18,7 +18,10 @@ public static class ProjectStore
             .DeserializeAsync(stream, WledJson.Default.LedBalloonProject, cancellationToken)
             .ConfigureAwait(false);
 
-        return project ?? throw new WledException($"{path} is not a LedBalloon project.");
+        // Through the same migration as a project read off a controller. This used to return what
+        // the file said, which for anything written by an older build was not what it meant.
+        return ProjectSerialization.Migrate(project)
+            ?? throw new WledException($"{path} is not a LedBalloon project.");
     }
 
     public static async Task SaveAsync(

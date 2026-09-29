@@ -39,25 +39,32 @@ internal static class ProjectSerialization
     internal static byte[] ToUtf8(LedBalloonProject project) =>
         Encoding.UTF8.GetBytes(JsonSerializer.Serialize(project, TypeInfo));
 
+    /// <summary>Reads a project back from bytes, migrated.</summary>
+    internal static LedBalloonProject? FromUtf8(byte[]? utf8) =>
+        utf8 is null or { Length: 0 } ? null : Migrate(JsonSerializer.Deserialize(utf8, TypeInfo));
+
     /// <summary>
-    /// Reads a project back, folding retired settings onto the ones that replaced them.
+    /// Folds retired settings onto the ones that replaced them.
     /// <para>
-    /// Every path into the app goes through here - both stores, and the copies pulled off other
-    /// controllers - so this is the one place a migration has to be written.
+    /// The one place a migration is written, and every loader has to call it. That used to be said
+    /// of the byte-reader above, and it was not true: the file-backed store deserializes straight
+    /// from a stream and reached none of this, so a project opened from a file on disk was the one
+    /// that did not get its segments sorted or its retired fixture settings folded in.
     /// </para>
     /// </summary>
-    internal static LedBalloonProject? FromUtf8(byte[]? utf8)
+    internal static LedBalloonProject? Migrate(LedBalloonProject? project)
     {
-        if (utf8 is null or { Length: 0 })
-        {
-            return null;
-        }
-
-        LedBalloonProject? project = JsonSerializer.Deserialize(utf8, TypeInfo);
-
         foreach (Segment segment in project?.Segments ?? [])
         {
             segment.Fixture.RetireFlipAim();
+        }
+
+        // Schema 2 kept one master brightness per scene. It is now one per controller, because that
+        // is what a scene turns into on the way out. An old file's single number meant the same
+        // everywhere, so that is what it becomes.
+        foreach (Scene scene in project?.Scenes ?? [])
+        {
+            scene.SplitSharedBrightness(project!.Controllers.Select(c => c.Key));
         }
 
         // Wiring order is the order of this list, because the starts are worked out from it rather

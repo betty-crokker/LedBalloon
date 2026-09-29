@@ -58,10 +58,12 @@ public static class PresetAdoption
 
         foreach (PresetPlacement placement in preset.Placements)
         {
-            // Master power and brightness are per-controller on the wire but one idea to the user,
-            // so the first placement that states them wins.
+            // Power is one idea for the house, so the first placement to state it wins. Brightness
+            // is the preset's own, and each placement is a different controller's preset: the pair
+            // these are adopted from can disagree, and collapsing them used to be how that
+            // disagreement was lost.
             scene.On ??= placement.Preset.On;
-            scene.Brightness ??= placement.Preset.Brightness;
+            scene.SetBrightnessOn(placement.ControllerKey, placement.Preset.Brightness);
 
             AdoptOne(project, placement, scene, notes);
         }
