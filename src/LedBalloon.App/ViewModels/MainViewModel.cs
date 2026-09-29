@@ -2003,7 +2003,44 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<SceneRow> Scenes { get; } = [];
 
     /// <summary>What the scene being edited does, segment by segment.</summary>
-    public ObservableCollection<PresetDetail> SceneDetails { get; } = [];
+    /// <summary>
+    /// What the scene does, a group per controller.
+    /// </summary>
+    /// <remarks>
+    /// Grouped rather than flat because brightness belongs to a controller. A flat list of segment
+    /// names gives the reader no way to tell which of them a brightness would reach, so the slider
+    /// sits at the head of the segments it governs and the arrangement does the explaining.
+    /// </remarks>
+    public ObservableCollection<ControllerSegments> SceneDetails { get; } = [];
+
+    /// <summary>
+    /// Starts a group for one controller, wired so that moving its slider is an ordinary edit.
+    /// </summary>
+    private ControllerSegments GroupFor(string key, byte? sceneBrightness)
+    {
+        DeviceViewModel? device = DeviceFor(key);
+
+        return new ControllerSegments(
+            key,
+            Project.FindController(key)?.Name ?? device?.DisplayName ?? key,
+            sceneBrightness,
+            device?.Brightness is { } live ? (byte)live : null,
+            SetControllerBrightness);
+    }
+
+    /// <summary>
+    /// Takes a controller's brightness slider through the same path as every other hand edit, so
+    /// that it lands on the scene when one is open and on the house when one is not.
+    /// </summary>
+    private void SetControllerBrightness(string key, byte brightness)
+    {
+        if (_suppressPush)
+        {
+            return;
+        }
+
+        Send(DeviceFor(key), new WledState { Brightness = brightness });
+    }
 
     /// <summary>
     /// The saved scene the house is showing, if it is showing one.
@@ -2226,6 +2263,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             DeviceViewModel? device = DeviceFor(key);
+            ControllerSegments group = GroupFor(key, state.Brightness);
 
             foreach (Segment segment in Project.SegmentsOn(key))
             {
@@ -2233,8 +2271,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
                 {
-                    SceneDetails.Add(Describe(segment, wled, device, state.On != false));
+                    group.Segments.Add(Describe(segment, wled, device, state.On != false));
                 }
+            }
+
+            if (group.Segments.Count > 0)
+            {
+                SceneDetails.Add(group);
             }
         }
     }
@@ -2951,6 +2994,7 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             DeviceViewModel? device = DeviceFor(key);
             WledState state = SceneResolver.ResolveFor(Project, scene, key);
+            ControllerSegments group = GroupFor(key, scene.BrightnessOn(key));
 
             foreach (Segment run in Project.SegmentsOn(key))
             {
@@ -2961,7 +3005,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 // listed, and the card says which of the two it is.
                 if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(run.Id))
                 {
-                    SceneDetails.Add(NotInScene(run));
+                    group.Segments.Add(NotInScene(run));
                     continue;
                 }
 
@@ -2973,9 +3017,14 @@ public sealed partial class MainViewModel : ViewModelBase
                         ? Project.FindLook(entry.LookId)?.Name
                         : null;
 
-                    SceneDetails.Add(
+                    group.Segments.Add(
                         Describe(run, wled, device, state.On != false) with { LookName = wearing });
                 }
+            }
+
+            if (group.Segments.Count > 0)
+            {
+                SceneDetails.Add(group);
             }
         }
     }
@@ -3990,9 +4039,14 @@ public sealed partial class MainViewModel : ViewModelBase
         _suppressPush = true;
         try
         {
-            DeviceViewModel? first = Devices.FirstOrDefault();
-            MasterOn = first?.IsOn ?? false;
-            MasterBrightness = first?.Brightness ?? 128;
+            MasterOn = Devices.Any(d => d.IsOn);
+
+            // The brightest, not the first to answer. This is a house-wide control - dragging it
+            // sets every controller - and it used to show whichever controller mDNS happened to
+            // reach first, so with one box at 255 and another at 38 it read differently from one
+            // start to the next. The per-controller sliders in the panel are where the two are told
+            // apart; this one only has to be the same every time.
+            MasterBrightness = Devices.Count > 0 ? Devices.Max(d => d.Brightness) : 128;
         }
         finally
         {
