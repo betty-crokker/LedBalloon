@@ -350,6 +350,13 @@
                               Value="{Binding Brightness, Mode=TwoWay}" />
                     </DockPanel>
 
+                    <!-- The one promise on this screen the hardware cannot keep. Nothing fixes it,
+                         so it is said rather than hidden. -->
+                    <TextBlock Classes="hint" TextWrapping="Wrap" Foreground="#C9821B"
+                               Margin="0,-2,0,6"
+                               Text="{Binding BrightnessReaches}"
+                               IsVisible="{Binding HasBrightnessWarning}" />
+
                     <ItemsControl ItemsSource="{Binding Segments}">
                      <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:SceneSegmentRow">

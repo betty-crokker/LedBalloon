@@ -27,11 +27,13 @@ public sealed partial class ControllerSegments : ObservableObject
         byte? sceneBrightness,
         byte? liveBrightness,
         Action<string, byte>? brightnessChanged,
-        bool settable = true)
+        bool settable = true,
+        string brightnessReaches = "")
     {
         Key = key;
         Name = name;
         _brightnessChanged = brightnessChanged;
+        BrightnessReaches = brightnessReaches;
 
         // Settable when the scene is about this controller at all, rather than when it happens to
         // have a brightness for it already: a scene that lights something here but has not been
@@ -62,6 +64,24 @@ public sealed partial class ControllerSegments : ObservableObject
     /// force. A control that cannot do anything should look like one.
     /// </remarks>
     public bool SetByTheScene { get; }
+
+    /// <summary>
+    /// The one thing a scene can promise that the hardware cannot keep, said plainly.
+    /// </summary>
+    /// <remarks>
+    /// A controller has one brightness. A scene that lights some of its segments and leaves others
+    /// alone has two intentions for it and one dial, so the brightness reaches the segments it is
+    /// leaving alone as well - "keeps doing what it was doing" is then true of their effect and
+    /// their colors and false of how bright they are.
+    /// <para>
+    /// Nothing can fix this, so it is written down rather than engineered around. It is reachable
+    /// only by adopting a preset that does not cover every segment, because a scene made here
+    /// always covers all of them.
+    /// </para>
+    /// </remarks>
+    public string BrightnessReaches { get; } = string.Empty;
+
+    public bool HasBrightnessWarning => BrightnessReaches.Length > 0;
 
     [ObservableProperty] private double _brightness;
 

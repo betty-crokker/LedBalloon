@@ -2207,7 +2207,8 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>
     /// Starts a group for one controller, wired so that moving its slider is an ordinary edit.
     /// </summary>
-    private ControllerSegments GroupFor(string key, byte? sceneBrightness, bool settable = true)
+    private ControllerSegments GroupFor(
+        string key, byte? sceneBrightness, bool settable = true, string brightnessReaches = "")
     {
         DeviceViewModel? device = DeviceFor(key);
 
@@ -2217,8 +2218,41 @@ public sealed partial class MainViewModel : ViewModelBase
             sceneBrightness,
             device?.Brightness is { } live ? (byte)live : null,
             SetControllerBrightness,
-            settable);
+            settable,
+            brightnessReaches);
     }
+
+    /// <summary>
+    /// The segments on one controller that a scene lights around but does not include, as a warning
+    /// to put beside that controller's brightness — or empty when there are none.
+    /// </summary>
+    /// <remarks>
+    /// Only when the scene does both on the same controller. All of them included and there is
+    /// nothing being reached that should not be; none of them and no brightness is sent at all.
+    /// </remarks>
+    private string BrightnessReaches(Scene scene, string controllerKey)
+    {
+        string[] left = [.. Project.SegmentsOn(controllerKey)
+            .Where(segment => scene.RoleOf(segment.Id) is Scene.SegmentRole.NotIncluded)
+            .Select(segment => segment.Name)];
+
+        bool anyIncluded = Project.SegmentsOn(controllerKey)
+            .Any(segment => scene.RoleOf(segment.Id) is not Scene.SegmentRole.NotIncluded);
+
+        return left.Length > 0 && anyIncluded
+            ? $"One brightness for the whole controller, so this reaches {NameList(left)} too — " +
+              "which this scene otherwise leaves alone."
+            : string.Empty;
+    }
+
+    /// <summary>A list of names to read aloud: "a", "a and b", "a, b and c".</summary>
+    internal static string NameList(string[] names) => names.Length switch
+    {
+        0 => string.Empty,
+        1 => names[0],
+        2 => $"{names[0]} and {names[1]}",
+        _ => $"{string.Join(", ", names[..^1])} and {names[^1]}",
+    };
 
     /// <summary>
     /// Takes a controller's brightness slider through the same path as every other hand edit, so
@@ -3223,7 +3257,8 @@ public sealed partial class MainViewModel : ViewModelBase
             ControllerSegments group = GroupFor(
                 key,
                 scene.BrightnessOn(key),
-                scene.Mentions(Project.SegmentsOn(key).Select(segment => segment.Id)));
+                scene.Mentions(Project.SegmentsOn(key).Select(segment => segment.Id)),
+                BrightnessReaches(scene, key));
 
             foreach (Segment run in Project.SegmentsOn(key))
             {
@@ -4117,17 +4152,10 @@ public sealed partial class MainViewModel : ViewModelBase
     internal static string EditedSceneNames(
         IEnumerable<Scene> scenes, IReadOnlySet<string> editedIds)
     {
-        string[] names = [.. scenes
-            .Where(scene => editedIds.Contains(scene.Id))
-            .Select(scene => $"'{scene.Name}'")];
-
-        return names.Length switch
-        {
-            0 => string.Empty,
-            1 => names[0],
-            2 => $"{names[0]} and {names[1]}",
-            _ => $"{string.Join(", ", names[..^1])} and {names[^1]}",
-        };
+        return NameList(
+        [
+            .. scenes.Where(scene => editedIds.Contains(scene.Id)).Select(scene => $"'{scene.Name}'"),
+        ]);
     }
 
     private async Task<bool> KeepTheSceneAsync()
