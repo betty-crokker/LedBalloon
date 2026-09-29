@@ -100,7 +100,7 @@ public sealed partial class ControllerCoverage(
 
     /// <summary>Why this card is greyed, for the card to say rather than leave to be guessed.</summary>
     public string AbsenceNote => IsAbsent
-        ? "Not answering. Its runs are here because the layout is kept on every controller, so they " +
+        ? "Not answering. Its segments are here because the layout is kept on every controller, so they " +
           "can be changed now and reach it when it comes back."
         : string.Empty;
 

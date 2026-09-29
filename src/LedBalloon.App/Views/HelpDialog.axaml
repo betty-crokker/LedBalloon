@@ -1,0 +1,70 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LedBalloon.App.Views.HelpDialog"
+        Title="What the words mean"
+        Width="520" Height="600"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <Window.Styles>
+    <Style Selector="TextBlock.term">
+      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,14,0,2" />
+    </Style>
+    <Style Selector="TextBlock.meaning">
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Opacity" Value="0.85" />
+    </Style>
+  </Window.Styles>
+
+  <DockPanel>
+
+    <Border DockPanel.Dock="Bottom" Padding="20,12" Background="{DynamicResource StatusBackground}">
+      <Button Content="Close" HorizontalAlignment="Right" Click="OnClose" />
+    </Border>
+
+    <ScrollViewer>
+      <StackPanel Margin="20,20,20,8">
+
+        <TextBlock FontSize="18" FontWeight="SemiBold" Text="What the words mean" />
+        <TextBlock Classes="meaning" Margin="0,6,0,0"
+                   Text="Smallest to largest. Each one is built out of the one before it." />
+
+        <TextBlock Classes="term" Text="Controller" />
+        <TextBlock Classes="meaning"
+                   Text="A box that drives the lights, with the LEDs plugged into it. There are two here, one for each side of the house. They do the work — the app tells them what to do and then they carry on by themselves, whether it is open or not." />
+
+        <TextBlock Classes="term" Text="Segment" />
+        <TextBlock Classes="meaning"
+                   Text="One stretch of lights on one controller: Porchline, Roofline, Under stairs. This is WLED's own word, and these are the same segments the WLED app shows — LedBalloon has only given them names and traced them onto the photo, which is done in Setup." />
+        <TextBlock Classes="meaning" Margin="0,6,0,0"
+                   Text="Clicking one on the photo is how you change what it is showing." />
+
+        <TextBlock Classes="term" Text="Effect" />
+        <TextBlock Classes="meaning"
+                   Text="What a segment is doing: a pattern that moves, like Pacifica or Rolling Balls. Nothing to do with color — the same effect looks quite different on a different palette. The controller runs it, so it keeps going with the app closed." />
+
+        <TextBlock Classes="term" Text="Palette" />
+        <TextBlock Classes="meaning"
+                   Text="The colors an effect draws from. Change the palette and you get the same movement in different colors." />
+
+        <TextBlock Classes="term" Text="Look" />
+        <TextBlock Classes="meaning"
+                   Text="A named appearance for one segment — its effect, palette, speed and colors, written down once. Put the same look on several segments, or use it in several scenes, and changing it changes all of them at once. Naming one is optional; most segments in most scenes are one-offs." />
+
+        <TextBlock Classes="term" Text="Scene" />
+        <TextBlock Classes="meaning"
+                   Text="A named way for the whole house to look: what every segment is doing, saved together. It spans both controllers, so there is one list of scenes and it does not matter which box stores what." />
+        <TextBlock Classes="meaning" Margin="0,6,0,0"
+                   Text="The main screen is where scenes are made. Whatever the house is showing is the scene you are working on, and clicking a segment changes that segment within it." />
+
+        <TextBlock Classes="term" Text="Preset" />
+        <TextBlock Classes="meaning"
+                   Text="What WLED calls its own saved states. A scene becomes a preset on each controller when it is saved, which is how the timers can reach it. Presets made in the WLED app can be recalled here but not edited, because they store raw LED numbers rather than the segments you have named." />
+
+      </StackPanel>
+    </ScrollViewer>
+
+  </DockPanel>
+</Window>

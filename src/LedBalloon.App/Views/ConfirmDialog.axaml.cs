@@ -37,6 +37,18 @@ public partial class ConfirmDialog : Window
             dialog.AlternateButton.IsVisible = true;
         }
 
+        if (request.InputLabel is { Length: > 0 } label)
+        {
+            dialog.InputLabel.Text = label;
+            dialog.InputBox.Text = request.InputDefault ?? string.Empty;
+            dialog.InputArea.IsVisible = true;
+
+            // Named and ready to type over, because the default is a placeholder rather than an
+            // answer: nobody wants a house full of scenes called "New scene".
+            dialog.InputBox.SelectAll();
+            dialog.InputBox.Focus();
+        }
+
         if (request.OptionText is { Length: > 0 } option)
         {
             dialog.OptionBox.Content = option;
@@ -56,7 +68,10 @@ public partial class ConfirmDialog : Window
 
     private void Finish(ConfirmChoice choice)
     {
-        _result = new ConfirmResult(choice, OptionBox.IsChecked == true);
+        _result = new ConfirmResult(
+            choice,
+            OptionBox.IsChecked == true,
+            InputArea.IsVisible ? InputBox.Text?.Trim() : null);
         Close();
     }
 }

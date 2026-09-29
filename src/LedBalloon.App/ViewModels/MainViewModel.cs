@@ -49,7 +49,7 @@ public enum AppMode
 /// </para>
 /// </summary>
 public sealed record PresetDetail(
-    string RunName,
+    string SegmentName,
     string Effect,
     string Palette,
     string Motion,
@@ -109,6 +109,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </summary>
     public AskUser? Ask { get; set; }
+
+    /// <summary>
+    /// How this opens the glossary. Set by the window, for the same reason as <see cref="Ask"/>.
+    /// </summary>
+    public Func<Task>? ShowHelp { get; set; }
 
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
@@ -707,13 +712,23 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         Mode = AppMode.Design;
         Status = HasSegments
-            ? "Click a segment on the photo to change it, or pick a color for the whole house."
+            ? "Click a segment on the photo to change what it is showing."
             : "Nothing described yet — describe at least one segment in Setup first.";
     }
 
     /// <summary>Points the color controls back at the whole house.</summary>
     [RelayCommand]
     private void SelectWholeHouse() => SelectedSegment = null;
+
+    /// <summary>Opens the glossary.</summary>
+    [RelayCommand]
+    private async Task ShowGlossaryAsync()
+    {
+        if (ShowHelp is { } show)
+        {
+            await show();
+        }
+    }
 
     /// <summary>The kinds of light you can hang, in the words someone hanging them would use.</summary>
     public IReadOnlyList<FixtureChoice> FixtureStyles { get; } =
@@ -1002,8 +1017,13 @@ public sealed partial class MainViewModel : ViewModelBase
             // very edits being undone - while editing nothing that still exists.
             CloseSegmentEditor();
 
-            Project = result.Project!;
-            SelectedSegment = Project.Segments.FirstOrDefault();
+                Project = result.Project!;
+
+            // Nothing selected: the main screen is about the whole house until a segment is clicked.
+            // This used to pick the first segment so that Setup's list opened on a row - but the two
+            // screens share the selection, so Setup's convenience decided what the main screen opened
+            // on, and it opened on whichever segment happened to be first in the project.
+            SelectedSegment = null;
 
             // Names in the loaded project win over whatever the devices call themselves.
             foreach (DeviceViewModel device in Devices)
@@ -1155,8 +1175,12 @@ public sealed partial class MainViewModel : ViewModelBase
         _starting = false;
         Mode = HasSegments ? AppMode.Design : AppMode.Setup;
 
+        // The last thing that happens at startup, and the first moment both halves are in hand:
+        // the controllers have answered and the project describing them has loaded.
+        ReadSceneFromHouse();
+
         Status = HasSegments
-            ? "Click a segment on the photo to change it, or pick a color for the whole house."
+            ? "Click a segment on the photo to change what it is showing."
             : "Describe the segments plugged into each controller to get started.";
     }
 
@@ -1478,7 +1502,7 @@ public sealed partial class MainViewModel : ViewModelBase
         // their starts are worked out from the lengths rather than stored.
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: $"Remove '{segment.Name}'?",
-            Message: $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. The runs after it " +
+            Message: $"{segment.Count} LEDs on {ControllerNameFor(segment.ControllerKey)}. The segments after it " +
                      "on that output move back to close up. Nothing reaches the controllers until you save, " +
                      "so Revert - or closing without saving - brings it back.",
             AcceptText: "Remove",
@@ -1492,7 +1516,7 @@ public sealed partial class MainViewModel : ViewModelBase
         string? key = segment.ControllerKey;
 
         Project.Segments.Remove(segment);
-        SelectedSegment = Project.Segments.FirstOrDefault();
+        SelectedSegment = null;
 
         if (key is not null)
         {
@@ -1805,8 +1829,162 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     public ObservableCollection<SceneRow> Scenes { get; } = [];
 
-    /// <summary>What the chosen scene does, run by run.</summary>
+    /// <summary>What the scene being edited does, segment by segment.</summary>
     public ObservableCollection<PresetDetail> SceneDetails { get; } = [];
+
+    /// <summary>
+    /// The saved scene the house is showing, if it is showing one.
+    /// <para>
+    /// Derived from the house rather than remembered, which is what makes the main screen a scene
+    /// editor rather than a panel of controls that happens to have scenes on it. There is always a
+    /// scene being worked on - it is whatever the house is doing - and this says whether it is one
+    /// that has been written down. Nothing has to be marked dirty, because "changed" is just
+    /// "no longer matching anything saved".
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private Scene? _sceneOnTheHouse;
+
+    /// <summary>
+    /// Whether anything has been changed through the app since it opened.
+    /// <para>
+    /// Only used to explain the prompt on the way out. The house can fail to match a saved scene
+    /// without anyone here having touched it - somebody used the WLED app, or a timer fired - and
+    /// being asked to name a scene you did not make is baffling unless it says why.
+    /// </para>
+    /// </summary>
+    private bool _touchedTheHouse;
+
+    /// <summary>Whether what the house is showing has been written down.</summary>
+    public bool SceneUnsaved => SceneOnTheHouse is null;
+
+    /// <summary>What to call the scene being edited.</summary>
+    public string SceneTitle => SceneOnTheHouse?.Name ?? "The house as it is now";
+
+    /// <summary>Whether it is saved, and if not, how it came to be unsaved.</summary>
+    public string SceneState => SceneOnTheHouse is not null
+        ? "Saved. Changing anything makes it a new scene until you save it."
+        : _touchedTheHouse
+            ? "Not saved yet."
+            : "Not saved. The house was already showing this when the app opened.";
+
+    partial void OnSceneOnTheHouseChanged(Scene? value)
+    {
+        OnPropertyChanged(nameof(SceneUnsaved));
+        OnPropertyChanged(nameof(SceneTitle));
+        OnPropertyChanged(nameof(SceneState));
+    }
+
+    /// <summary>
+    /// Works out which saved scene, if any, the house is showing.
+    /// <para>
+    /// Compared through the same two pieces that make a scene in the first place - the resolver,
+    /// which says what a scene means for a controller, and <c>Appearance.Matches</c>, which decides
+    /// what counts as the same appearance. So "the house is showing this scene" means exactly
+    /// "saving now would write this scene again", which is the only definition that cannot
+    /// contradict the Name it button standing next to it.
+    /// </para>
+    /// </summary>
+    private void ReadSceneFromHouse()
+    {
+        Scene? showing = Project.Scenes.FirstOrDefault(HouseIsShowing);
+
+        if (!ReferenceEquals(showing, SceneOnTheHouse))
+        {
+            SceneOnTheHouse = showing;
+        }
+        else
+        {
+            // The line underneath depends on more than the scene, so it is refreshed either way.
+            OnPropertyChanged(nameof(SceneState));
+        }
+
+        DescribeTheHouse();
+    }
+
+    private bool HouseIsShowing(Scene scene)
+    {
+        IReadOnlyDictionary<string, WledState> live = DisplayStates;
+
+        if (live.Count == 0)
+        {
+            return false;
+        }
+
+        foreach (string key in Project.ActiveControllerKeys())
+        {
+            if (!live.TryGetValue(key, out WledState? now))
+            {
+                return false;
+            }
+
+            WledState wanted = SceneResolver.ResolveFor(Project, scene, key);
+
+            // A house that is off is not showing a scene that is on, whatever its segments say.
+            if ((wanted.On ?? true) != (now.On ?? true))
+            {
+                return false;
+            }
+
+            foreach (Segment segment in Project.SegmentsOn(key))
+            {
+                // A scene that leaves unlisted segments alone says nothing about them, so they
+                // cannot disagree with it.
+                if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(segment.Id))
+                {
+                    continue;
+                }
+
+                int id = Project.WledSegmentIdFor(segment);
+
+                if (wanted.Segments?.FirstOrDefault(x => x.Id == id) is not { } a ||
+                    now.Segments?.FirstOrDefault(x => x.Id == id) is not { } b ||
+                    !SceneResolver.Describe(a).Matches(SceneResolver.Describe(b)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Fills the cards from what the house is doing now, which is the scene being edited when no
+    /// saved one has been opened.
+    /// </summary>
+    private void DescribeTheHouse()
+    {
+        if (SelectedScene is not null)
+        {
+            // A picked scene describes itself, and is doing so already.
+            return;
+        }
+
+        SceneDetails.Clear();
+        SceneNotes.Clear();
+
+        IReadOnlyDictionary<string, WledState> live = DisplayStates;
+
+        foreach (string key in Project.ActiveControllerKeys())
+        {
+            if (!live.TryGetValue(key, out WledState? state))
+            {
+                continue;
+            }
+
+            DeviceViewModel? device = DeviceFor(key);
+
+            foreach (Segment segment in Project.SegmentsOn(key))
+            {
+                int id = Project.WledSegmentIdFor(segment);
+
+                if (state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled)
+                {
+                    SceneDetails.Add(Describe(segment, wled, device));
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// What the layout cannot account for in the chosen preset. Empty for a scene, which has no
@@ -1822,7 +2000,10 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </summary>
     [RelayCommand]
-    private void CaptureScene()
+    private void CaptureScene() => CaptureSceneNamed(null);
+
+    /// <summary>Writes the house down as a scene, under <paramref name="name"/> if one is given.</summary>
+    private void CaptureSceneNamed(string? name)
     {
         // What the photo is showing, not what the hardware is doing. With Sync off they differ, and
         // the photo is the thing being looked at while deciding this is worth keeping.
@@ -1834,7 +2015,10 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        Scene scene = SceneResolver.Capture(Project, states, Project.UniqueSceneName("New scene"));
+        Scene scene = SceneResolver.Capture(
+            Project,
+            states,
+            Project.UniqueSceneName(name is { Length: > 0 } chosen ? chosen : "New scene"));
 
         // A run already showing a named look is written down as wearing it, rather than as another
         // copy of the same description. Without this, editing the look afterwards would reach every
@@ -1853,7 +2037,7 @@ public sealed partial class MainViewModel : ViewModelBase
         AfterProjectChanged(
             $"Saved what the house looks like now as '{scene.Name}'. Give it a name, then Save to " +
             "put it on the controllers." +
-            (bound > 0 ? $" {bound} run(s) are wearing a look you have named." : string.Empty));
+            (bound > 0 ? $" {bound} segment(s) are wearing a look you have named." : string.Empty));
     }
 
     /// <summary>Puts the chosen scene on the house.</summary>
@@ -1910,7 +2094,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (SelectedSegment is not { } segment || AppearanceOf(segment) is not { } appearance)
         {
-            Status = "Pick a run on the photo first — a look is one run's appearance.";
+            Status = "Pick a segment on the photo first — a look is one segment's appearance.";
             return;
         }
 
@@ -1921,7 +2105,7 @@ public sealed partial class MainViewModel : ViewModelBase
         RebuildLooks();
         SelectedLook = Looks.FirstOrDefault(row => ReferenceEquals(row.Look, look));
 
-        AfterProjectChanged($"'{look.Name}' written down. Rename it, then use it on any run you like.");
+        AfterProjectChanged($"'{look.Name}' written down. Rename it, then use it on any segment you like.");
     }
 
     /// <summary>Puts the chosen look on the chosen run.</summary>
@@ -1930,7 +2114,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         if (SelectedLook is not { } row || SelectedSegment is not { } segment)
         {
-            Status = "Pick a run on the photo to put this look on.";
+            Status = "Pick a segment on the photo to put this look on.";
             return;
         }
 
@@ -1958,7 +2142,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (SelectedLook is not { } row || SelectedSegment is not { } segment ||
             AppearanceOf(segment) is not { } appearance)
         {
-            Status = "Pick a run on the photo to take the new appearance from.";
+            Status = "Pick a segment on the photo to take the new appearance from.";
             return;
         }
 
@@ -2082,8 +2266,8 @@ public sealed partial class MainViewModel : ViewModelBase
         AdoptionReport report = PresetAdoption.Plan(Project, preset);
 
         string message = report.IsClean
-            ? "Everything it does matches a run, so nothing is lost. From then on it follows the " +
-              "layout: correct a run's length and the scene covers the new length by itself, " +
+            ? "Everything it does matches a segment, so nothing is lost. From then on it follows the " +
+              "layout: correct a segment's length and the scene covers the new length by itself, " +
               "instead of leaving the LEDs you found later dark."
             : "Most of it carries across. These are the parts the layout cannot account for:\n\n" +
               string.Join("\n\n", report.Notes.Select(Spell));
@@ -2462,6 +2646,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (scene is null)
         {
+            DescribeTheHouse();
             return;
         }
 
@@ -2509,6 +2694,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         NoteSceneEdit(key, patch);
+        _touchedTheHouse = true;
 
         if (LiveSync)
         {
@@ -2654,7 +2840,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public void PickSegment(Segment segment)
     {
         SelectedSegment = segment;
-        Status = $"'{segment.Name}' selected. Choose a color, or click the photo again to pick another segment.";
+        Status = $"Changing '{segment.Name}' in this scene. Click the photo again for another segment.";
     }
 
     partial void OnIsDrawingSegmentChanged(bool value) => OnPropertyChanged(nameof(PhotoHint));
@@ -2910,8 +3096,6 @@ public sealed partial class MainViewModel : ViewModelBase
         RebuildSegmentRows();
         OnPropertyChanged(nameof(ControllerSummary));
 
-        SelectedSegment ??= Project.Segments.FirstOrDefault();
-
         ReadMasterFromDevices();
 
         // Once the house is described, the hardware stops being the interesting thing.
@@ -2936,8 +3120,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
         WatchProjectSegments();
         RebuildSegmentRows();
-        SelectedSegment ??= Project.Segments.FirstOrDefault();
         RefreshSegmentPickers(SelectedSegment);
+
+        // The cards are one per segment, so a project with different segments in it describes a
+        // different house. This also covers the opening: the controllers usually answer before the
+        // project has finished loading, and without this the first description is of a house with
+        // no segments in it and nothing ever asks again.
+        ReadSceneFromHouse();
     }
 
     /// <summary>
@@ -2949,7 +3138,7 @@ public sealed partial class MainViewModel : ViewModelBase
         // selected with nothing to edit, which reads as the editor being broken.
         if (SelectedSegment is { } current && !Project.Segments.Contains(current))
         {
-            SelectedSegment = Project.Segments.FirstOrDefault();
+            SelectedSegment = null;
         }
 
         // Re-entrant: rebuilding the lists below can land here again mid-rebuild and duplicate
@@ -3188,7 +3377,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 {
                     LayoutWarnings.Add(
                         $"{device.DisplayName}: output {i + 1} is set to run reversed in the controller's own " +
-                        "LED settings. The photo cannot show that, so turn it off there and put the runs in " +
+                        "LED settings. The photo cannot show that, so turn it off there and put the segments in " +
                         "the other order here instead.");
                 }
             }
@@ -3207,6 +3396,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <returns>False when the user would rather not close after all.</returns>
     public async Task<bool> ConfirmClosingAsync()
     {
+        if (!await KeepTheSceneAsync())
+        {
+            return false;
+        }
+
         if (!HasUnsavedChanges || SyncTargets().Count == 0)
         {
             return true;
@@ -3234,6 +3428,51 @@ public sealed partial class MainViewModel : ViewModelBase
 
         if (answer.Choice == ConfirmChoice.Accept)
         {
+            await SaveAsync(force: false);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Offers to write down what the house is showing, if it is not something already written down.
+    /// <para>
+    /// The main screen is a scene editor, so closing it with something on the house that is not a
+    /// scene is closing an unsaved document. The wording turns on whether anything here caused it:
+    /// being asked to name a scene you did not make - because a timer fired, or somebody used the
+    /// WLED app - is baffling unless it says so, and that is the case this will meet most often.
+    /// </para>
+    /// </summary>
+    /// <returns>False to stay open.</returns>
+    private async Task<bool> KeepTheSceneAsync()
+    {
+        if (!SceneUnsaved || SyncTargets().Count == 0 || Ask is not { } ask)
+        {
+            return true;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: "Save this scene before closing?",
+            Message: _touchedTheHouse
+                ? "What the house is showing has not been written down. Name it and it joins your " +
+                  "list of scenes, ready to put back any time."
+                : "What the house is showing is not one of your scenes - it was already like this " +
+                  "when the app opened, so nothing you did here caused this. Name it to keep it, " +
+                  "or discard it and nothing is lost but the arrangement on screen.",
+            AcceptText: "Name it",
+            CancelText: "Cancel",
+            AlternateText: "Discard",
+            InputLabel: "Scene name",
+            InputDefault: "New scene"));
+
+        if (answer.Choice == ConfirmChoice.Cancel)
+        {
+            return false;
+        }
+
+        if (answer.Choice == ConfirmChoice.Accept)
+        {
+            CaptureSceneNamed(answer.Input);
             await SaveAsync(force: false);
         }
 
@@ -3775,6 +4014,7 @@ public sealed partial class MainViewModel : ViewModelBase
             _pendingStates = null;
             OnPropertyChanged(nameof(DisplayStates));
             OnPropertyChanged(nameof(HasPendingChanges));
+            ReadSceneFromHouse();
             return;
         }
 
@@ -3815,6 +4055,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _pendingStates = states;
         OnPropertyChanged(nameof(DisplayStates));
         OnPropertyChanged(nameof(HasPendingChanges));
+        ReadSceneFromHouse();
     }
 
     private void RebuildPresetDetails(HousePreset? preset)

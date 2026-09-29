@@ -26,6 +26,7 @@ public partial class MainWindow : Window
             if (ViewModel is { } viewModel)
             {
                 viewModel.Ask = request => ConfirmDialog.AskAsync(this, request);
+                viewModel.ShowHelp = () => HelpDialog.ShowAsync(this);
             }
         };
     }
