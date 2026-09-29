@@ -2020,39 +2020,81 @@ public sealed partial class MainViewModel : ViewModelBase
     /// there are two ways for a scene to say nothing visible and as many ways to say something as
     /// you have named.
     /// </remarks>
-    private SceneSegmentRow Choosable(Scene scene, Segment run, PresetDetail detail)
+    private SceneSegmentRow Choosable(
+        Scene scene, Segment run, PresetDetail detail, DeviceViewModel? device)
     {
         Scene.SegmentRole role = scene.RoleOf(run.Id);
+        scene.Segments.TryGetValue(run.Id, out SceneEntry? entry);
 
-        string? wearing = scene.Segments.TryGetValue(run.Id, out SceneEntry? entry)
-            ? Project.FindLook(entry.LookId)?.Name
-            : null;
+        Look? worn = entry is null ? null : Project.FindLook(entry.LookId);
 
-        // Shown, but by fields of its own rather than by a name. Nothing to pick, so it is in the
-        // list only so that the list can say what is true.
-        bool itsOwn = role is Scene.SegmentRole.Shown && wearing is null;
+        // Shown, but by fields of its own rather than by a name.
+        bool itsOwn = role is Scene.SegmentRole.Shown && worn is null;
 
         // Looks first, then the two ways of wearing nothing. Choosing what a segment wears is the
         // everyday use of this list, and the fixed pair are the exceptions to it - reading them
         // first made the list look like a mode switch that happened to have some looks attached.
-        List<string> choices = [.. Project.Looks.Select(look => look.Name)];
+        List<SegmentChoice> choices =
+        [
+            .. Project.Looks.Select(look => Wearable(run, look, look.Name, look.Id, device)),
+        ];
 
         if (itsOwn)
         {
-            choices.Add(SceneSegmentRow.ItsOwn);
+            choices.Add(Wearable(run, entry!, name: null, lookId: null, device));
         }
 
-        choices.Add(SceneSegmentRow.NotIncluded);
-        choices.Add(SceneSegmentRow.Off);
-
-        string chosen = role switch
+        choices.Add(new SegmentChoice
         {
-            Scene.SegmentRole.NotIncluded => SceneSegmentRow.NotIncluded,
-            Scene.SegmentRole.Off => SceneSegmentRow.Off,
-            _ => wearing ?? SceneSegmentRow.ItsOwn,
+            Kind = SegmentChoiceKind.NotIncluded,
+            Description = "Not included — keeps doing what it was doing",
+        });
+
+        choices.Add(new SegmentChoice { Kind = SegmentChoiceKind.Off, Description = "Off" });
+
+        SegmentChoice chosen = role switch
+        {
+            Scene.SegmentRole.NotIncluded => choices[^2],
+            Scene.SegmentRole.Off => choices[^1],
+            _ when worn is { } look => choices.FirstOrDefault(c =>
+                string.Equals(c.LookId, look.Id, StringComparison.Ordinal)) ?? choices[^1],
+            _ => choices[^3],
         };
 
         return new SceneSegmentRow(run.Id, detail, choices, chosen, ChooseSegmentRole, EditSegment);
+    }
+
+    /// <summary>
+    /// A picker row for something a segment can wear, drawn the way the segment would look.
+    /// </summary>
+    /// <remarks>
+    /// Rendered through the same <see cref="Describe"/> the cards use, against a throwaway segment
+    /// carrying the appearance, so a row and the thing it would produce cannot drift apart.
+    /// <para>
+    /// The palette is deliberately not in the text. WLED names them and nothing here lets anybody
+    /// make one or name one, so "Custom 0" is a slot number from the firmware rather than anything
+    /// the reader chose or could act on.
+    /// </para>
+    /// </remarks>
+    private SegmentChoice Wearable(
+        Segment run, Appearance appearance, string? name, string? lookId, DeviceViewModel? device)
+    {
+        var wled = new WledSegment { Id = 0 };
+        SceneResolver.Apply(wled, appearance);
+
+        PresetDetail drawn = Describe(run, wled, device);
+
+        return new SegmentChoice
+        {
+            Kind = lookId is null ? SegmentChoiceKind.Unnamed : SegmentChoiceKind.Look,
+            LookId = lookId,
+            Name = name,
+            Description = drawn.IsOff ? "off" : $"{drawn.Effect} · {drawn.Motion}",
+            HasAppearance = !drawn.IsOff,
+            Primary = drawn.PrimarySwatch,
+            Secondary = drawn.SecondarySwatch,
+            HasSecondary = drawn.HasSecondary,
+        };
     }
 
     /// <summary>Opens a segment for editing, from its name on the card.</summary>
@@ -2066,7 +2108,7 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>Applies one of the three choices to the open scene.</summary>
-    private void ChooseSegmentRole(string segmentId, string choice)
+    private void ChooseSegmentRole(string segmentId, SegmentChoice choice)
     {
         if (_applyingScene)
         {
@@ -2085,28 +2127,27 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        switch (choice)
+        switch (choice.Kind)
         {
-            case SceneSegmentRow.NotIncluded:
+            case SegmentChoiceKind.NotIncluded:
                 scene.Exclude(segmentId, Project.Segments.Select(segment => segment.Id));
                 break;
 
-            case SceneSegmentRow.Off:
+            case SegmentChoiceKind.Off:
                 scene.TurnOff(segmentId);
                 break;
 
-            case SceneSegmentRow.ItsOwn:
+            case SegmentChoiceKind.Unnamed:
                 // Already what it is. Picking it is picking the thing that is showing.
                 return;
 
             default:
-                if (Project.Looks.FirstOrDefault(look =>
-                        string.Equals(look.Name, choice, StringComparison.Ordinal)) is not { } chosen)
+                if (choice.LookId is not { } lookId)
                 {
                     return;
                 }
 
-                scene.Wear(segmentId, chosen.Id);
+                scene.Wear(segmentId, lookId);
                 break;
         }
 
@@ -3115,7 +3156,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 // listed, and the card says which of the two it is.
                 if (!scene.UnlistedSegmentsOff && !scene.Segments.ContainsKey(run.Id))
                 {
-                    group.Segments.Add(Choosable(scene, run, NotInScene(run)));
+                    group.Segments.Add(Choosable(scene, run, NotInScene(run), device));
                     continue;
                 }
 
@@ -3131,7 +3172,8 @@ public sealed partial class MainViewModel : ViewModelBase
                         scene,
                         run,
                         Describe(run, wled, device, state.On != false, state.Brightness)
-                            with { LookName = wearing }));
+                            with { LookName = wearing },
+                        device));
                 }
             }
 
