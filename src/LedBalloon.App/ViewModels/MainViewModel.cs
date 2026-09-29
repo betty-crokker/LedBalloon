@@ -2063,9 +2063,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // Shown, but by fields of its own rather than by a name.
         bool itsOwn = role is Scene.SegmentRole.Shown && worn is null;
 
-        // Looks first, then the two ways of wearing nothing. Choosing what a segment wears is the
-        // everyday use of this list, and the fixed pair are the exceptions to it - reading them
-        // first made the list look like a mode switch that happened to have some looks attached.
+        // Looks first, then the ways of wearing nothing. Choosing what a segment wears is the
+        // everyday use of this list, and those are the exceptions to it - reading them first made
+        // the list look like a mode switch that happened to have some looks attached.
         List<SegmentChoice> choices =
         [
             .. Project.Looks.Select(look => Wearable(run, look, look.Name, look.Id, device)),
@@ -2076,21 +2076,35 @@ public sealed partial class MainViewModel : ViewModelBase
             choices.Add(Wearable(run, entry!, name: null, lookId: null, device));
         }
 
-        choices.Add(new SegmentChoice
-        {
-            Kind = SegmentChoiceKind.NotIncluded,
-            Description = "Not included — keeps doing what it was doing",
-        });
+        // Only in a scene that is already partial, which means one adopted from a preset that did
+        // not cover everything. A scene made here covers every segment, and nothing offered on this
+        // screen can put a hole in it: one brightness per controller reaches the segments a scene
+        // leaves alone as well as the ones it lights, so a hole is a promise the hardware cannot
+        // keep. A preset that arrives with one is a different matter - it exists, and pretending
+        // otherwise would be editing it into something it is not.
+        SegmentChoice? notIncluded = scene.UnlistedSegmentsOff
+            ? null
+            : new SegmentChoice
+            {
+                Kind = SegmentChoiceKind.NotIncluded,
+                Description = "Not included — keeps doing what it was doing",
+            };
 
-        choices.Add(new SegmentChoice { Kind = SegmentChoiceKind.Off, Description = "Off" });
+        if (notIncluded is not null)
+        {
+            choices.Add(notIncluded);
+        }
+
+        var off = new SegmentChoice { Kind = SegmentChoiceKind.Off, Description = "Off" };
+        choices.Add(off);
 
         SegmentChoice chosen = role switch
         {
-            Scene.SegmentRole.NotIncluded => choices[^2],
-            Scene.SegmentRole.Off => choices[^1],
+            Scene.SegmentRole.NotIncluded => notIncluded ?? off,
+            Scene.SegmentRole.Off => off,
             _ when worn is { } look => choices.FirstOrDefault(c =>
-                string.Equals(c.LookId, look.Id, StringComparison.Ordinal)) ?? choices[^1],
-            _ => choices[^3],
+                string.Equals(c.LookId, look.Id, StringComparison.Ordinal)) ?? off,
+            _ => choices[^(notIncluded is null ? 2 : 3)],
         };
 
         return new SceneSegmentRow(run.Id, detail, choices, chosen, ChooseSegmentRole, EditSegment);

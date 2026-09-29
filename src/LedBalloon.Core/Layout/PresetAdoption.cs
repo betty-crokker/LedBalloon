@@ -79,11 +79,19 @@ public static class PresetAdoption
     {
         string key = placement.ControllerKey;
 
-        List<WledSegment> lit =
+        // Every segment the preset defines, switched on or not. Off used to be filtered out here,
+        // on the grounds that a segment showing nothing cannot say what a run should look like -
+        // which is true, and was the wrong conclusion. A preset that switches Porchline off is not
+        // a preset with nothing to say about Porchline: it says off, and dropping that turned
+        // "Stairs white" into a scene that left the porchline running.
+        List<WledSegment> defined =
         [
-            .. (placement.Preset.Segments ?? [])
-                .Where(s => !s.IsPlaceholder && s.Stop is > 0 && s.On != false),
+            .. (placement.Preset.Segments ?? []).Where(s => !s.IsPlaceholder && s.Stop is > 0),
         ];
+
+        // The lit ones on their own, for counting LEDs the preset lights that no run covers. An
+        // unlit segment lights nothing, so it strays nowhere.
+        List<WledSegment> lit = [.. defined.Where(s => s.On != false)];
 
         IReadOnlyList<Segment> runs = project.SegmentsOn(key);
 
@@ -92,7 +100,7 @@ public static class PresetAdoption
             WledSegment? best = null;
             int covered = 0;
 
-            foreach (WledSegment segment in lit)
+            foreach (WledSegment segment in defined)
             {
                 int overlap = Overlap(run.Start, run.StopExclusive, segment.Start ?? 0, segment.Stop ?? 0);
 
@@ -107,9 +115,18 @@ public static class PresetAdoption
             {
                 notes.Add(new AdoptionNote(key, covered == 0
                     ? $"'{run.Name}' is not in this preset, so the scene leaves it as it is."
-                    : $"'{run.Name}' is only lit for {covered} of its {run.Count} LEDs, which is too " +
-                      "little to say what it should look like, so the scene leaves it as it is."));
+                    : $"'{run.Name}' is only covered for {covered} of its {run.Count} LEDs, which is " +
+                      "too little to say what it should look like, so the scene leaves it as it is."));
 
+                continue;
+            }
+
+            // Off is a thing the preset says, so the scene says it too. A fresh entry rather than
+            // Describe's, because what an unlit segment was last set to show is not part of what
+            // the preset is asking for.
+            if (best.On == false)
+            {
+                scene.TurnOff(run.Id);
                 continue;
             }
 
