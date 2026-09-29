@@ -177,6 +177,16 @@
               <Button Content="Discard"
                       Command="{Binding DiscardPendingCommand}"
                       IsVisible="{Binding HasPendingChanges}" />
+
+              <!-- Beside the checkbox it belongs to. It used to sit next to the on/off switch,
+                   where the only thing telling you which control it described was that it was
+                   nearer the wrong one - it says what the lights are doing, and so does the
+                   switch. Nothing in the sentence names sync, so the adjacency is the whole
+                   explanation and it has to be right. -->
+              <TextBlock Classes="hint" VerticalAlignment="Center" MaxWidth="440"
+                         Margin="0,0,4,0" TextWrapping="NoWrap"
+                         Text="{Binding SyncHint}" TextTrimming="CharacterEllipsis" />
+
               <CheckBox Content="Sync" IsChecked="{Binding LiveSync}" VerticalAlignment="Center" />
             </StackPanel>
 
@@ -185,11 +195,8 @@
                  only set them all to the same number, which is to say it could only destroy the
                  difference between them. It also had nothing honest to display, since two
                  controllers rarely agree. -->
-            <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-              <ToggleSwitch IsChecked="{Binding MasterOn}" OnContent="On" OffContent="Off" />
-              <TextBlock Classes="hint" VerticalAlignment="Center"
-                         Text="{Binding SyncHint}" TextTrimming="CharacterEllipsis" />
-            </StackPanel>
+            <ToggleSwitch IsChecked="{Binding MasterOn}" OnContent="On" OffContent="Off"
+                          VerticalAlignment="Center" />
           </DockPanel>
         </Border>
 
