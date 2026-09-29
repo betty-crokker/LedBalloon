@@ -26,13 +26,17 @@ public sealed partial class ControllerSegments : ObservableObject
         string name,
         byte? sceneBrightness,
         byte? liveBrightness,
-        Action<string, byte>? brightnessChanged)
+        Action<string, byte>? brightnessChanged,
+        bool settable = true)
     {
         Key = key;
         Name = name;
         _brightnessChanged = brightnessChanged;
 
-        SetByTheScene = sceneBrightness is not null;
+        // Settable when the scene is about this controller at all, rather than when it happens to
+        // have a brightness for it already: a scene that lights something here but has not been
+        // given a brightness yet still has one to give.
+        SetByTheScene = settable;
 
         _settling = true;
 

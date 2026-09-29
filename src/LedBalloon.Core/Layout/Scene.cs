@@ -282,6 +282,20 @@ public sealed class Scene
         Shown,
     }
 
+    /// <summary>
+    /// True when this scene has anything to say about a controller holding these segments.
+    /// </summary>
+    /// <remarks>
+    /// A scene that accounts for every segment speaks about every controller by definition. One
+    /// that does not speaks only about the controllers whose segments it lists.
+    /// </remarks>
+    public bool Mentions(IEnumerable<string> segmentIds)
+    {
+        ArgumentNullException.ThrowIfNull(segmentIds);
+
+        return UnlistedSegmentsOff || segmentIds.Any(Segments.ContainsKey);
+    }
+
     /// <summary>What this scene does about one segment.</summary>
     public SegmentRole RoleOf(string segmentId)
     {

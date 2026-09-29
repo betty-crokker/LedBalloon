@@ -41,10 +41,16 @@ public static class SceneResolver
         ArgumentNullException.ThrowIfNull(project);
         ArgumentNullException.ThrowIfNull(scene);
 
+        // Silence about every segment on a controller is silence about its brightness too.
+        // Brightness is one value for the whole box, so sending it to a controller this scene
+        // leaves alone would dim or raise segments it has just promised to keep out of - which is
+        // most of the way to not leaving them alone at all.
+        bool mentioned = scene.Mentions(project.SegmentsOn(controllerKey).Select(s => s.Id));
+
         var state = new WledState
         {
             On = scene.On,
-            Brightness = scene.BrightnessOn(controllerKey),
+            Brightness = mentioned ? scene.BrightnessOn(controllerKey) : null,
             TransitionOnce = scene.Transition,
             Segments = [],
         };
