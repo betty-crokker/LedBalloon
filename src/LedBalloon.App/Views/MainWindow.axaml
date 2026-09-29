@@ -274,10 +274,10 @@
                    the Sync switch says, in one place, for everything on this panel. -->
               <!-- Everything a saved scene can have done to it. The house is in that list too now,
                    and none of this applies to it. -->
-              <StackPanel Spacing="8" IsVisible="{Binding SelectedScene.IsSaved, FallbackValue=False}">
+              <StackPanel Spacing="8" IsVisible="{Binding SceneIsSaved}">
 
-                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SelectedScene.Origin}"
-                           IsVisible="{Binding SelectedScene.Origin, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Classes="hint" TextWrapping="Wrap" Text="{Binding SceneOrigin}"
+                           IsVisible="{Binding SceneOrigin, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                 <!-- What the layout cannot account for, said before the adopt button rather than
                      only when it is pressed. -->
@@ -304,9 +304,9 @@
                      centimetres apart is two chances to wonder whether they do the same thing. -->
                 <StackPanel Orientation="Horizontal" Spacing="8">
                   <Button Content="Rename" Command="{Binding RenameSceneCommand}"
-                          IsVisible="{Binding SelectedScene.IsOwn}" />
+                          IsVisible="{Binding SceneIsOwn}" />
                   <Button Content="Remove" Command="{Binding DeleteSceneCommand}"
-                          IsVisible="{Binding SelectedScene.IsOwn}" />
+                          IsVisible="{Binding SceneIsOwn}" />
                 </StackPanel>
 
               </StackPanel>
@@ -412,6 +412,15 @@
                              been a column of bare names. What the picker says in a scene, this
                              says there - in the same shape, so the two read as one thing. -->
                         <StackPanel Spacing="4" IsVisible="{Binding !Choosable}">
+
+                          <!-- Why there is nothing to show, when there is nothing. The list is the
+                               house rather than the part of it the controllers happen to be cut
+                               for, so a segment with no segment on the box is still a row. -->
+                          <TextBlock Classes="hint" FontStyle="Italic"
+                                     TextWrapping="Wrap"
+                                     Text="{Binding Detail.Aside}"
+                                     IsVisible="{Binding Detail.HasAside}" />
+
                           <TextBlock Classes="hint" FontStyle="Italic" Text="off"
                                      IsVisible="{Binding Detail.IsOff}" />
 
