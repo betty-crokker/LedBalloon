@@ -121,7 +121,8 @@ public class PresetAdoptionTests
 
         // One LED of 285 is not a description of the roofline.
         Assert.DoesNotContain("roof", report.Scene.Segments.Keys);
-        Assert.Contains(report.Notes, n => n.Message.Contains("'Roofline' is only lit for 1 of its 285"));
+        Assert.Contains(
+            report.Notes, n => n.Message.Contains("'Roofline' is only covered for 1 of its 285"));
     }
 
     [Fact]
@@ -154,11 +155,18 @@ public class PresetAdoptionTests
     }
 
     /// <summary>
-    /// A segment the preset switches off describes nothing, so it must not claim the run it covers
-    /// — otherwise a run would adopt an appearance from a segment that never lit it.
+    /// A segment the preset switches off says off, and the scene has to say it too.
+    /// <para>
+    /// This used to drop the run entirely, on the grounds that a segment showing nothing cannot
+    /// describe what a run should look like. That much is true and is still honoured — the effect
+    /// on an unlit segment does not reach the scene. The conclusion was wrong: a preset that
+    /// switches the garage off is not a preset with nothing to say about the garage. Dropping it
+    /// turned "Stairs white", which switches the porchline off and lights the stairs, into a scene
+    /// that left the porchline running.
+    /// </para>
     /// </summary>
     [Fact]
-    public void A_segment_the_preset_switches_off_does_not_claim_a_run()
+    public void A_segment_the_preset_switches_off_is_adopted_as_off()
     {
         HousePreset half = Preset(
             "Half off",
@@ -167,8 +175,42 @@ public class PresetAdoptionTests
 
         AdoptionReport report = PresetAdoption.Plan(House(), half);
 
-        Assert.DoesNotContain("garage", report.Scene.Segments.Keys);
+        Assert.Equal(Scene.SegmentRole.Off, report.Scene.RoleOf("garage"));
         Assert.Equal(74, report.Scene.Segments["roof"].Effect);
+    }
+
+    [Fact]
+    public void And_what_that_segment_was_set_to_show_does_not_come_with_it()
+    {
+        // The original concern, which still stands: effect 9 was on a segment nobody could see, so
+        // it is not part of what the preset is asking for and must not arrive in the scene.
+        HousePreset half = Preset(
+            "Half off",
+            new WledSegment { Id = 0, Start = 0, Stop = 20, On = false, Effect = 9 },
+            new WledSegment { Id = 1, Start = 20, Stop = 310, On = true, Effect = 74 });
+
+        SceneEntry garage = PresetAdoption.Plan(House(), half).Scene.Segments["garage"];
+
+        Assert.Null(garage.Effect);
+        Assert.Null(garage.Primary);
+        Assert.False(garage.On);
+    }
+
+    [Fact]
+    public void A_preset_that_switches_everything_off_is_a_scene_that_does_too()
+    {
+        // The whole controller accounted for, so nothing is left running by omission.
+        HousePreset dark = Preset(
+            "Dark",
+            new WledSegment { Id = 0, Start = 0, Stop = 20, On = false, Effect = 9 },
+            new WledSegment { Id = 1, Start = 20, Stop = 25, On = false, Effect = 9 },
+            new WledSegment { Id = 2, Start = 25, Stop = 310, On = false, Effect = 9 });
+
+        Scene scene = PresetAdoption.Plan(House(), dark).Scene;
+
+        Assert.Equal(Scene.SegmentRole.Off, scene.RoleOf("garage"));
+        Assert.Equal(Scene.SegmentRole.Off, scene.RoleOf("porch"));
+        Assert.Equal(Scene.SegmentRole.Off, scene.RoleOf("roof"));
     }
 
     /// <summary>
