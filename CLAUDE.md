@@ -29,6 +29,12 @@ as a fixture:
 dotnet run tools/wled.cs -- capture 192.168.0.131 seg=2 from=25 to=309 fx=73 sx=0 ix=128 pal=11 ms=12000
 ```
 
+**Capture switches every other segment off**, deliberately, so that what is measured is the one
+segment asked for and nothing else. That makes it the wrong tool for any question about what a
+second segment is doing while the first one changes - it will read black and the black is the
+tool's doing, not the controller's. For those, query `/json/state` and look at whether the segment
+is still in the table and still on: a segment that exists and is on is being rendered.
+
 It turns the lights off when it finishes. So does `off`:
 
 ```bash
