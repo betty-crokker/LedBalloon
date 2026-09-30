@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:LedBalloon.App.ViewModels"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
         x:Class="LedBalloon.App.Views.ColorPickerDialog"
         x:DataType="vm:SegmentColorSlot"
         Title="LedBalloon"
-        Width="420" SizeToContent="Height"
+        Width="372" SizeToContent="Height"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False">
@@ -58,20 +59,38 @@
       </Grid>
 
       <Grid ColumnDefinitions="*,Auto,*">
-        <TextBlock Grid.Column="0" Classes="hint" Text="Now" />
-        <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Hex}" />
+        <TextBlock Grid.Column="0" Classes="hint" Text="Old color" />
+        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+          <TextBlock Classes="hint" Text="New color" />
+          <TextBlock Classes="hint" Text="{Binding Hex}" FontFamily="Consolas,monospace" />
+        </StackPanel>
       </Grid>
 
-      <!-- Alpha off twice over: an LED has no transparency, and a colour picked at half alpha would
-           be sent to the controller as its opaque self anyway - a control whose only possible effect
-           is to mislead. IsAlphaEnabled alone leaves the slider on screen. -->
-      <ColorView Color="{Binding Picked, Mode=TwoWay}"
-                 AutomationProperties.AutomationId="ColorWheel"
-                 IsAlphaEnabled="False"
-                 IsAlphaVisible="False"
-                 IsColorPaletteVisible="True"
-                 IsColorComponentsVisible="True"
-                 HorizontalAlignment="Stretch" />
+      <!-- Built from the two controls rather than dropped in as one ColorView, so each of them can
+           say what it is. As a ColorView this was a square of every color with an unlabelled bar
+           down either side, and the one on the left - brightness - is the one that decides whether
+           anything you click in the square is visible at all. On a dark segment it sits near the
+           bottom, so every hue comes out a near-black version of itself and the picker looks broken.
+           Underneath and named, it reads in the order you use it.
+
+           The bar that was down the right was alpha. An LED has no transparency and the alpha was
+           dropped on the way to the controller regardless, so it could only mislead; it is gone
+           rather than relabelled. -->
+      <TextBlock Classes="hint" Text="Color" Margin="0,6,0,2" />
+      <primitives:ColorSpectrum Height="308" Width="308" HorizontalAlignment="Left"
+                                AutomationProperties.AutomationId="ColorWheel"
+                                Components="HueSaturation"
+                                HsvColor="{Binding Hsv, Mode=TwoWay}" />
+
+      <TextBlock Classes="hint" Text="Brightness" Margin="0,10,0,2" />
+      <primitives:ColorSlider Height="26" HorizontalAlignment="Stretch"
+                              AutomationProperties.AutomationId="ColorBrightness"
+                              Orientation="Horizontal"
+                              ColorModel="Hsva"
+                              ColorComponent="Component3"
+                              IsAlphaVisible="False"
+                              IsPerceptive="True"
+                              HsvColor="{Binding Hsv, Mode=TwoWay}" />
 
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
         <Button Content="Cancel" Click="OnCancel" IsCancel="True"
