@@ -3458,6 +3458,13 @@ public sealed partial class MainViewModel : ViewModelBase
             // After NoteSceneEdit rather than before, because the scene should record what was
             // asked for whether or not the lights are in a position to show it.
             Hold(_darkPatches, key, patch);
+
+            // Laid over what the controller reported, the same as a patch held because sync is off.
+            // Not so the photo draws it - the merged state is still switched off, so it does not -
+            // but so the panel can read it back. Everything in the editor is drawn from there, and
+            // without this, clicking away from a segment edited in the dark and clicking back showed
+            // the controller's old settings.
+            RebuildPendingStates();
             return;
         }
         else if (patch.On is true && _darkPatches.Remove(key, out WledState? waiting))
@@ -3625,6 +3632,10 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SegmentUsesIntensity));
 
         RebuildColorSlots();
+
+        // Called at the end of RefreshSegmentPickers as well as when a picker moves, so this covers
+        // both picking a different segment and changing what the current one is showing.
+        RefreshPreview();
     }
 
     /// <summary>The color slots the chosen effect reads, named the way the effect names them.</summary>
@@ -3722,6 +3733,65 @@ public sealed partial class MainViewModel : ViewModelBase
         _ => label,
     };
 
+    /// <summary>
+    /// What the preview strip draws: the selected segment, exactly as the rest of the panel has it.
+    /// </summary>
+    /// <remarks>
+    /// The same source as the swatches and the pickers, rather than a second copy assembled from
+    /// them. Two descriptions of one segment drift, and the one that drifts is always the one being
+    /// looked at.
+    /// </remarks>
+    public WledSegment? PreviewSegment =>
+        SelectedSegment is { } segment ? LiveSegmentFor(segment) : null;
+
+    /// <summary>
+    /// How long the run is, from the layout rather than from the controller.
+    /// </summary>
+    /// <remarks>
+    /// Length is part of the effect and not just the width it is drawn at: Chase fits a fixed number
+    /// of groups into whatever it is given, and a comet's tail is a proportion of the run. The
+    /// controller's own idea of it can also be stale - recalling a preset saved with other bounds
+    /// resizes its segment table - and the layout is the thing that gets corrected.
+    /// </remarks>
+    public int PreviewLedCount => SelectedSegment?.Count ?? 0;
+
+    /// <summary>The effect list of the controller that drives it, since effects resolve by name.</summary>
+    public IReadOnlyList<string>? PreviewEffectNames =>
+        SelectedSegment?.ControllerKey is { } key ? EffectNames.GetValueOrDefault(key) : null;
+
+    /// <summary>The gradient the segment's palette resolves to on its own controller.</summary>
+    public WledPalette? PreviewPalette =>
+        SelectedSegment?.ControllerKey is { } key && PreviewSegment?.Palette is { } id && id > 0
+            ? Palettes?.GetValueOrDefault(key)?.GetValueOrDefault(id)
+            : null;
+
+    /// <summary>Its controller's frame rate, which decides how long a trail looks.</summary>
+    public ControllerTiming? PreviewTiming =>
+        SelectedSegment?.ControllerKey is { } key ? FrameTimes?.GetValueOrDefault(key) : null;
+
+    /// <summary>
+    /// Said only when the strip is not the effect itself, which is the case for 69 of the 187.
+    /// </summary>
+    /// <remarks>
+    /// An unported effect still has known colors and unknown movement, so the strip slides its
+    /// palette along - a family resemblance to most WLED effects and an impersonation of none of
+    /// them. Worth one line, because a preview that is lying is worse than no preview, and the
+    /// difference is not visible from the picture.
+    /// </remarks>
+    public string SegmentPreviewNote => PortedUse is null
+        ? "The app cannot run this effect, so this shows its colors rather than what it does."
+        : string.Empty;
+
+    private void RefreshPreview()
+    {
+        OnPropertyChanged(nameof(PreviewSegment));
+        OnPropertyChanged(nameof(PreviewLedCount));
+        OnPropertyChanged(nameof(PreviewEffectNames));
+        OnPropertyChanged(nameof(PreviewPalette));
+        OnPropertyChanged(nameof(PreviewTiming));
+        OnPropertyChanged(nameof(SegmentPreviewNote));
+    }
+
     /// <summary>What the photo shows this segment doing, which with a scene open is the scene.</summary>
     private WledSegment? LiveSegmentFor(Segment segment)
     {
@@ -3778,8 +3848,17 @@ public sealed partial class MainViewModel : ViewModelBase
             WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Palette = value.Id));
     }
 
-    /// <summary>Whether the panel has anything the lights have not been told about.</summary>
-    public bool HasPendingChanges => _pendingStates is not null;
+    /// <summary>
+    /// Whether the panel is holding something behind a button.
+    /// </summary>
+    /// <remarks>
+    /// Only the changes held because Sync is off. The ones waiting for the house to be switched on
+    /// are not pending in this sense - nothing has to be pressed for them - so a banner offering to
+    /// send them would be offering to do something that is going to happen anyway.
+    /// </remarks>
+    public bool HasPendingChanges => _hasPendingChanges;
+
+    private bool _hasPendingChanges;
 
     /// <summary>
     /// True when the app is showing something the house is not.
@@ -5197,12 +5276,18 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private void RebuildPendingStates()
     {
-        if (LiveSync || (!_presetIsPending && _heldPatches.Count == 0))
+        // Two kinds of held-back change, and only one of them is anybody's business. Sync being off
+        // is something the reader chose and undoes with a button, so it gets the banner; the house
+        // being switched off is already on the switch beside it, so it gets nothing.
+        _hasPendingChanges = !LiveSync && (_presetIsPending || _heldPatches.Count > 0);
+
+        if (!_hasPendingChanges && _darkPatches.Count == 0)
         {
             _pendingStates = null;
             OnPropertyChanged(nameof(DisplayStates));
             OnPropertyChanged(nameof(HasPendingChanges));
             RefreshAppOnly();
+            RefreshPreview();
             ReadSceneFromHouse();
             return;
         }
@@ -5229,8 +5314,17 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
 
-        foreach (KeyValuePair<string, WledState> held in _heldPatches)
+        foreach (KeyValuePair<string, WledState> held in _heldPatches.Concat(_darkPatches))
         {
+            // Including the ones waiting for the house to come on, which the panel has to be able
+            // to read back or it forgets what was just chosen. Everything in the editor - the
+            // swatches, the pickers, the sliders, the preview - is drawn from here, and leaving
+            // these out meant clicking away from a segment edited in the dark and clicking back
+            // showed the controller's old settings instead.
+            //
+            // It does not light the photo. Darkness is carried by On, which these never touch, so
+            // the merged state is still a switched-off controller that happens to know what it will
+            // be showing.
             if (states.TryGetValue(held.Key, out WledState? state))
             {
                 state.MergeFrom(held.Value);
@@ -5245,6 +5339,7 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(DisplayStates));
         OnPropertyChanged(nameof(HasPendingChanges));
         RefreshAppOnly();
+        RefreshPreview();
         ReadSceneFromHouse();
     }
 
