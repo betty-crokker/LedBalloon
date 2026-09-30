@@ -19,6 +19,9 @@ namespace LedBalloon.Core.Effects;
 /// </summary>
 public static class EffectLibrary
 {
+    /// <summary>How many effects are drawn here, for the audit that has to cover all of them.</summary>
+    public static int PortedCount => Ported.Length;
+
     private static readonly IWledEffect[] Ported =
     [
         new SolidEffect(),

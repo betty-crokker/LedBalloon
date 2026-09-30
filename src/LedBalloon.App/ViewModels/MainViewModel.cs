@@ -3452,11 +3452,31 @@ public sealed partial class MainViewModel : ViewModelBase
             ? device.MetadataFor(chosen.Id)
             : EffectMetadata.Unknown;
 
+    /// <summary>
+    /// What the ported effect reads, when there is a port of it to read.
+    /// </summary>
+    /// <remarks>
+    /// Preferred over the firmware's own metadata because that is hand-maintained and over-declares:
+    /// it says Twinklecat reads two color slots, and the code reads one - the background - taking
+    /// the twinkles from the palette. A box that does nothing is worse than no box.
+    /// </remarks>
+    private EffectUse? PortedUse =>
+        SegmentEffectChoice is { } chosen && SegmentController is { } device
+            ? PortedEffectUse.For(device.Device.EffectName(chosen.Id))
+            : null;
+
+    /// <summary>The palette the chosen segment is on, which decides whether a slot is read at all.</summary>
+    private int? ChosenPalette => SegmentPaletteChoice?.Id;
+
     /// <summary>True when the chosen effect draws from the color slots at all.</summary>
-    public bool SegmentUsesColor => !ChosenEffect.Declared || ChosenEffect.UsedSlots.Count > 0;
+    public bool SegmentUsesColor => PortedUse is { } ported
+        ? ported.SlotsFor(ChosenPalette).Count > 0
+        : !ChosenEffect.Declared || ChosenEffect.UsedSlots.Count > 0;
 
     /// <summary>True when the chosen effect draws from the palette at all.</summary>
-    public bool SegmentUsesPalette => !ChosenEffect.Declared || ChosenEffect.UsesPalette;
+    public bool SegmentUsesPalette => PortedUse is { } ported
+        ? ported.UsesPalette
+        : !ChosenEffect.Declared || ChosenEffect.UsesPalette;
 
     /// <summary>Why the color is unavailable, for the line under it. Empty when it is.</summary>
     public string SegmentColorNote =>
@@ -3498,9 +3518,31 @@ public sealed partial class MainViewModel : ViewModelBase
         EffectMetadata effect = ChosenEffect;
         WledSegment? live = LiveSegmentFor(segment);
 
-        IReadOnlyList<string?> slots = effect.Declared
-            ? effect.ColorSlots
-            : ["Color", null, null];
+        // The port first. Its answer depends on the palette, because an effect that draws
+        // everything through the palette still reads a color slot while the palette is Default -
+        // and reads none of them the rest of the time.
+        IReadOnlyList<string?> slots;
+
+        if (PortedUse is { } ported)
+        {
+            IReadOnlyList<int> reads = ported.SlotsFor(ChosenPalette);
+            var named = new string?[3];
+
+            foreach (int i in reads)
+            {
+                // The firmware's label where it has one, since an effect that troubled to name a
+                // slot has said it better than a number could.
+                named[i] = effect.Declared && effect.ColorSlots.Count > i && effect.ColorSlots[i] is { } label
+                    ? label
+                    : DefaultSlotName(i);
+            }
+
+            slots = named;
+        }
+        else
+        {
+            slots = effect.Declared ? effect.ColorSlots : ["Color", null, null];
+        }
 
         for (int i = 0; i < slots.Count; i++)
         {
@@ -3529,6 +3571,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Anything not in this list is passed through, because an effect that troubled to write a real
     /// word - "Glitter color", "Peaks" - has said it better than this could.
     /// </remarks>
+    /// <summary>WLED's own name for a slot nobody has named.</summary>
+    private static string DefaultSlotName(int slot) => slot switch
+    {
+        0 => "Color",
+        1 => "Background",
+        _ => "Custom",
+    };
+
     private static string Spell(string label) => label switch
     {
         "Bg" => "Background",
@@ -3583,6 +3633,10 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnSegmentPaletteChoiceChanged(PaletteOption? value)
     {
+        // Which color slots are read depends on it: on Default the palette IS the slots, and on
+        // anything else those slots go quiet.
+        RefreshEffectCapabilities();
+
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
             return;
@@ -3730,12 +3784,26 @@ public sealed partial class MainViewModel : ViewModelBase
             OnPropertyChanged(nameof(SelectedRow));
         }
 
+        // Before the pickers are filled, not after. Which color boxes an effect gets is asked of
+        // the controller - its effect list, its metadata, and the port that matches the name it
+        // reports - so filling them while this still pointed at the previous segment's controller,
+        // or at nothing, meant every effect looked like one nothing was known about: one box called
+        // "Color", whatever the effect actually reads.
+        _suppressPush = true;
+        try
+        {
+            SegmentController = value is null ? null : DeviceFor(value);
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+
         RefreshSegmentPickers(value);
 
         _suppressPush = true;
         try
         {
-            SegmentController = value is null ? null : DeviceFor(value);
             FixtureChoice = value is null
                 ? null
                 : FixtureStyles.FirstOrDefault(f => f.Style == value.Fixture.Style);
