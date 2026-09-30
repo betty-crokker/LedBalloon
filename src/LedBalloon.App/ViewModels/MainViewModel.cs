@@ -210,6 +210,12 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </remarks>
     public Func<Task<bool>>? ShowSegmentEditor { get; set; }
 
+    /// <summary>
+    /// How this opens the color picker. Set by the segment editor while it is open, because the
+    /// picker is a window over that window and has to be owned by it.
+    /// </summary>
+    public Func<SegmentColorSlot, Task>? ShowColorPicker { get; set; }
+
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
@@ -3726,7 +3732,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 i,
                 Spell(label),
                 Color.FromRgb(current.R, current.G, current.B),
-                SetSegmentColor));
+                SetSegmentColor,
+                slot => ShowColorPicker?.Invoke(slot) ?? Task.CompletedTask));
         }
     }
 
