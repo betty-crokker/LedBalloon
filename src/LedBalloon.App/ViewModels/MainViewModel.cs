@@ -63,6 +63,11 @@ public sealed record PresetDetail(
     string? LookName = null,
 
     /// <summary>
+    /// False for an effect that reads no color slots, so there is no color to show for it.
+    /// </summary>
+    bool HasPrimary = true,
+
+    /// <summary>
     /// Why there is nothing to describe, or null when there is something.
     /// </summary>
     /// <remarks>
@@ -2128,7 +2133,12 @@ public sealed partial class MainViewModel : ViewModelBase
         var wled = new WledSegment { Id = 0 };
         SceneResolver.Apply(wled, appearance);
 
-        PresetDetail drawn = Describe(run, wled, device);
+        // Drawn at the brightness this controller will actually be at, so the row and the photo
+        // agree. A look is the same look on a dim controller and a bright one; what it looks like
+        // is not.
+        byte? dimming = DisplayStates.GetValueOrDefault(run.ControllerKey ?? string.Empty)?.Brightness;
+
+        PresetDetail drawn = Describe(run, wled, device, controllerBrightness: dimming);
 
         return new SegmentChoice
         {
@@ -2136,7 +2146,7 @@ public sealed partial class MainViewModel : ViewModelBase
             LookId = lookId,
             Name = name,
             Description = drawn.IsOff ? "off" : $"{drawn.Effect} · {drawn.Motion}",
-            HasAppearance = !drawn.IsOff,
+            HasAppearance = !drawn.IsOff && drawn.HasPrimary,
             Primary = drawn.PrimarySwatch,
             Secondary = drawn.SecondarySwatch,
             HasSecondary = drawn.HasSecondary,
@@ -4988,7 +4998,7 @@ public sealed partial class MainViewModel : ViewModelBase
             || controllerBrightness == 0
             || wled.Brightness == 0;
 
-        string effect = wled.Effect is { } fx
+        string effectName = wled.Effect is { } fx
             ? device is not null && fx < device.Effects.Count ? device.Effects[fx] : $"Effect {fx}"
             : "unchanged";
 
@@ -4999,8 +5009,27 @@ public sealed partial class MainViewModel : ViewModelBase
             ? device?.Device.PaletteName(pal) ?? $"Palette {pal}"
             : string.Empty;
 
-        RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
-        RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
+        // The swatches have to be the colors the photo will draw, or the two disagree in front of
+        // the reader. Two things made them differ.
+        //
+        // The effect may read no color slots at all: Flow declares its colors section empty and
+        // draws entirely from the palette, so the green and magenta stored on the segment were
+        // shown beside a photo that used neither.
+        EffectMetadata effect = device is not null && wled.Effect is { } id
+            ? device.Device.MetadataFor(id)
+            : EffectMetadata.Unknown;
+
+        int slots = effect.Declared
+            ? effect.UsedSlots.Count
+            : wled.Colors is { Length: > 1 } ? 2 : 1;
+
+        // And brightness: the photo folds both levels into the color it draws and stops calling a
+        // run lit once nothing is left, so a magenta on a controller turned down to 38 of 255 is
+        // near black there and was full magenta here.
+        double dim = ((controllerBrightness ?? 255) / 255d) * ((wled.Brightness ?? 255) / 255d);
+
+        RgbColor primary = Dim(wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black, dim);
+        RgbColor secondary = Dim(wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black, dim);
 
         // Only when the photo is standing in for the effect rather than running it. The other half
         // of this used to be printed too - "drawn from the effect itself" - on the great majority of
@@ -5014,15 +5043,20 @@ public sealed partial class MainViewModel : ViewModelBase
 
         return new PresetDetail(
             run.Name,
-            effect,
+            effectName,
             palette,
             DescribeMotion(wled),
             new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
             new SolidColorBrush(Color.FromRgb(secondary.R, secondary.G, secondary.B)),
-            wled.Colors is { Length: > 1 } && secondary is not { R: 0, G: 0, B: 0 },
+            slots > 1,
             fidelity,
-            isOff);
+            isOff,
+            HasPrimary: slots > 0);
     }
+
+    /// <summary>A color as the photo will draw it once both brightnesses are folded in.</summary>
+    private static RgbColor Dim(RgbColor color, double scale) => new(
+        (byte)(color.R * scale), (byte)(color.G * scale), (byte)(color.B * scale));
 
     /// <summary>Turns WLED's speed and intensity numbers into something you can picture.</summary>
     private static string DescribeMotion(WledSegment wled)
