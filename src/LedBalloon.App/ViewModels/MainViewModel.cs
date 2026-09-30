@@ -147,6 +147,20 @@ public sealed record PickerOption(int Id, string Name)
     public override string ToString() => Name;
 }
 
+/// <summary>
+/// A palette to choose from, with what it looks like.
+/// </summary>
+/// <remarks>
+/// A list of names asks the reader to remember what "Icefire" came out like. The gradient is the
+/// same one the photo draws the house with, so picking one is looking at it.
+/// </remarks>
+public sealed record PaletteOption(int Id, string Name, IBrush? Gradient)
+{
+    public bool HasGradient => Gradient is not null;
+
+    public override string ToString() => Name;
+}
+
 /// <summary>A fixture style with wording that means something to whoever hung the lights.</summary>
 public sealed record FixtureChoice(FixtureStyle Style, string Name, string Description)
 {
@@ -197,7 +211,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private int _activeTab = SetupTab;
     [ObservableProperty] private bool _masterOn;
     [ObservableProperty] private PickerOption? _segmentEffectChoice;
-    [ObservableProperty] private PickerOption? _segmentPaletteChoice;
+    [ObservableProperty] private PaletteOption? _segmentPaletteChoice;
     [ObservableProperty] private DeviceViewModel? _segmentController;
     [ObservableProperty] private FixtureChoice? _fixtureChoice;
 
@@ -318,7 +332,7 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<PickerOption> SegmentEffects { get; } = [];
 
     /// <summary>Palettes the selected segment's controller holds.</summary>
-    public ObservableCollection<PickerOption> SegmentPalettes { get; } = [];
+    public ObservableCollection<PaletteOption> SegmentPalettes { get; } = [];
 
     public ObservableCollection<PresetGap> PresetGaps { get; } = [];
 
@@ -3567,7 +3581,7 @@ public sealed partial class MainViewModel : ViewModelBase
             WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Effect = value.Id));
     }
 
-    partial void OnSegmentPaletteChoiceChanged(PickerOption? value)
+    partial void OnSegmentPaletteChoiceChanged(PaletteOption? value)
     {
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
@@ -3803,18 +3817,35 @@ public sealed partial class MainViewModel : ViewModelBase
                 SegmentEffects.Add(new PickerOption(i, device.Effects[i]));
             }
 
+            // The gradients the photo draws with, so a palette is picked by looking at it rather
+            // than by remembering what "Icefire" came out like last time. The ones defined in terms
+            // of the segment's own colors need those to mean anything, so they are resolved against
+            // whatever the segment is set to at the moment.
+            IReadOnlyDictionary<int, WledPalette>? gradients = PalettesOn(segment.ControllerKey);
+            WledSegment? shown = LiveSegmentFor(segment);
+
+            RgbColor slot(int i) => shown?.Colors is { } c && i < c.Length
+                ? RgbColor.FromWledArray(c[i])
+                : RgbColor.Black;
+
+            IBrush? SwatchFor(int id) => gradients is not null &&
+                gradients.TryGetValue(id, out WledPalette? found)
+                    ? GradientOf(found, slot(0), slot(1), slot(2))
+                    : null;
+
             for (int i = 0; i < device.Palettes.Count; i++)
             {
-                SegmentPalettes.Add(new PickerOption(i, device.Palettes[i]));
+                SegmentPalettes.Add(new PaletteOption(i, device.Palettes[i], SwatchFor(i)));
             }
 
             // The controller's own uploaded palettes, which its name list leaves out. They are
             // known only because the gradients were read separately, so that is what names them.
-            if (PalettesOn(segment.ControllerKey) is { } gradients)
+            if (gradients is not null)
             {
                 foreach (int id in gradients.Keys.Where(id => id >= device.Palettes.Count).Order())
                 {
-                    SegmentPalettes.Add(new PickerOption(id, device.Device.PaletteName(id)));
+                    SegmentPalettes.Add(
+                        new PaletteOption(id, device.Device.PaletteName(id), SwatchFor(id)));
                 }
             }
 
@@ -5180,13 +5211,20 @@ public sealed partial class MainViewModel : ViewModelBase
             return null;
         }
 
+        return GradientOf(palette, primary, secondary, RgbColor.Black);
+    }
+
+    /// <summary>One palette as a left-to-right gradient, sampled through its own ColorAt.</summary>
+    private static IBrush GradientOf(
+        WledPalette palette, RgbColor primary, RgbColor secondary, RgbColor tertiary)
+    {
         const int Steps = 12;
         var stops = new GradientStops();
 
         for (int i = 0; i < Steps; i++)
         {
             double t = (double)i / (Steps - 1);
-            RgbColor at = palette.ColorAt(t, primary, secondary, RgbColor.Black);
+            RgbColor at = palette.ColorAt(t, primary, secondary, tertiary);
 
             stops.Add(new GradientStop(Color.FromRgb(at.R, at.G, at.B), t));
         }
