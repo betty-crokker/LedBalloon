@@ -25,6 +25,10 @@ public sealed class EffectMetadata
         Declared = false,
         ColorSlots = DefaultSlotNames,
         PaletteLabel = "Palette",
+
+        // An effect that says nothing gets every control, the same as its color slots do.
+        SpeedLabel = "Speed",
+        IntensityLabel = "Intensity",
     };
 
     /// <summary>
@@ -45,6 +49,25 @@ public sealed class EffectMetadata
 
     /// <summary>The effect's own names for its sliders, which are rarely "speed" and "intensity".</summary>
     public IReadOnlyList<string> Sliders { get; private init; } = [];
+
+    /// <summary>
+    /// What the effect calls its speed slider, or null when it has no use for one.
+    /// </summary>
+    /// <remarks>
+    /// The slider section is positional - speed, intensity, then three custom sliders and three
+    /// checkboxes - and an empty entry means the effect ignores that control. Reading it as a list
+    /// with the blanks dropped, which is what <see cref="Sliders"/> does, loses which is which:
+    /// Fire 2012 declares "Cooling,Spark rate,,2D Blur,Boost", and the blank in the middle is the
+    /// difference between its last two sliders being custom 2 and 3 or custom 1 and 2.
+    /// </remarks>
+    public string? SpeedLabel { get; private init; }
+
+    /// <inheritdoc cref="SpeedLabel"/>
+    public string? IntensityLabel { get; private init; }
+
+    public bool UsesSpeed => SpeedLabel is not null;
+
+    public bool UsesIntensity => IntensityLabel is not null;
 
     /// <summary>
     /// The dimension and audio flags, verbatim. "1" and "2" are the dimensions the effect supports,
@@ -125,8 +148,22 @@ public sealed class EffectMetadata
                 : head,
 
             Sliders = [.. Section(sections, 0).Select(s => s.Trim()).Where(s => s.Length > 0)],
+            SpeedLabel = SliderLabel(sections, 0, "Speed"),
+            IntensityLabel = SliderLabel(sections, 1, "Intensity"),
             Flags = sections.Length > 3 ? sections[3].Trim() : string.Empty,
         };
+    }
+
+    /// <summary>
+    /// One positional slider label: null when the effect ignores it, the default when it asks for
+    /// one without naming it, and otherwise the name it gave.
+    /// </summary>
+    private static string? SliderLabel(string[] sections, int at, string fallback)
+    {
+        string[] slots = Section(sections, 0);
+        string entry = at < slots.Length ? slots[at].Trim() : string.Empty;
+
+        return entry.Length == 0 ? null : entry == "!" ? fallback : entry;
     }
 
     /// <summary>Reads every effect's metadata, lined up with the effect list by index.</summary>
