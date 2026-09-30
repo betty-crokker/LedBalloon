@@ -88,6 +88,61 @@ public class PortedEffectUseTests
         Assert.Equal([0, 1, 2], use.SlotsFor(paletteId: 0));
     }
 
+    /// <summary>
+    /// The case the slider half of this exists for.
+    /// </summary>
+    /// <remarks>
+    /// Solid's fxdata entry is the empty string on both controllers here. WLED's own UI reads an
+    /// empty entry as "no opinion" - <c>!t &amp;&amp; n &lt; 2</c> in setEffectParameters - and
+    /// answers by showing the first two sliders, so Solid is offered a speed and an intensity that
+    /// its four lines never look at. Its code is the better witness.
+    /// </remarks>
+    [Fact]
+    public void Solid_reads_neither_slider()
+    {
+        EffectUse use = PortedEffectUse.For("Solid")!;
+
+        Assert.False(use.UsesSpeed);
+        Assert.False(use.UsesIntensity);
+    }
+
+    [Fact]
+    public void An_effect_with_one_slider_says_which()
+    {
+        // Both corroborated by the firmware, which declares exactly the same thing: Breathe is
+        // "!;!,!;!;01" - a speed and no intensity - and Fireworks is ",Frequency;!,!;!;12", an
+        // intensity named Frequency and no speed.
+        Assert.True(PortedEffectUse.For("Breathe")!.UsesSpeed);
+        Assert.False(PortedEffectUse.For("Breathe")!.UsesIntensity);
+
+        Assert.False(PortedEffectUse.For("Fireworks")!.UsesSpeed);
+        Assert.True(PortedEffectUse.For("Fireworks")!.UsesIntensity);
+    }
+
+    [Fact]
+    public void A_slider_the_firmware_forgot_to_declare_is_still_offered()
+    {
+        // Wipe Random's fxdata is "!;;!" - no intensity slider - but the wipe it shares with Sweep
+        // divides its remainder by exactly that, for every one of its callers. fxdata is wrong in
+        // both directions, and this is the direction that costs somebody a control that works.
+        Assert.True(PortedEffectUse.For("Wipe Random")!.UsesIntensity);
+        Assert.True(PortedEffectUse.For("Sweep Random")!.UsesIntensity);
+    }
+
+    [Fact]
+    public void Nearly_everything_reads_both()
+    {
+        // A guard on the extractor rather than on the effects. It follows calls into the shared
+        // helper classes a dozen effects delegate to, and an earlier version keyed them by bare
+        // method name - so every effect that called Render() was handed every other effect's body
+        // and all 118 came back reading everything.
+        Assert.Equal(114, Counted(u => u.UsesSpeed));
+        Assert.Equal(101, Counted(u => u.UsesIntensity));
+    }
+
+    private static int Counted(Func<EffectUse, bool> match) =>
+        EffectLibrary.All.Count(e => PortedEffectUse.For(e.Name) is { } use && match(use));
+
     [Fact]
     public void An_effect_that_never_asks_the_palette_says_so()
     {

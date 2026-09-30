@@ -3601,9 +3601,24 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public string SegmentIntensityLabel => ChosenEffect.IntensityLabel ?? "Intensity";
 
-    public bool SegmentUsesSpeed => ChosenEffect.UsesSpeed;
+    /// <summary>
+    /// True when the chosen effect reads its speed slider at all.
+    /// </summary>
+    /// <remarks>
+    /// The port first, for the same reason the color boxes ask it first: fxdata is hand-maintained
+    /// and wrong both ways. Solid's entry is the empty string, which WLED's own UI reads as "no
+    /// opinion" and answers by offering everything - so Solid was given a speed and an intensity
+    /// that its four lines of code never look at. The label still comes from fxdata, because naming
+    /// a slider is the one thing the firmware does better than the code does.
+    /// </remarks>
+    public bool SegmentUsesSpeed => PortedUse is { } ported
+        ? ported.UsesSpeed
+        : ChosenEffect.UsesSpeed;
 
-    public bool SegmentUsesIntensity => ChosenEffect.UsesIntensity;
+    /// <inheritdoc cref="SegmentUsesSpeed"/>
+    public bool SegmentUsesIntensity => PortedUse is { } ported
+        ? ported.UsesIntensity
+        : ChosenEffect.UsesIntensity;
 
     partial void OnSegmentSpeedChanged(double value) => SendSlider(seg => seg.Speed = Clamped(value));
 
