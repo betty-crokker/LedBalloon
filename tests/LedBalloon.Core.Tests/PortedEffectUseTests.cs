@@ -143,6 +143,29 @@ public class PortedEffectUseTests
     private static int Counted(Func<EffectUse, bool> match) =>
         EffectLibrary.All.Count(e => PortedEffectUse.For(e.Name) is { } use && match(use));
 
+    /// <summary>
+    /// The hand-read entry that was read wrong, and how it showed.
+    /// </summary>
+    /// <remarks>
+    /// Both Meteors pass 255 as the color slot in one of their two branches. 255 is out of range, and
+    /// color_from_palette only substitutes the slot for the gradient when the slot is a real one - so
+    /// neither of them ever reads a color on a real palette. The table said they read slot 0 outright,
+    /// which put a red color box over a meteor drawn entirely in Ocean.
+    /// </remarks>
+    [Fact]
+    public void A_meteor_reads_its_color_only_while_the_palette_is_default()
+    {
+        foreach (string name in new[] { "Meteor", "Meteor Smooth" })
+        {
+            EffectUse use = PortedEffectUse.For(name)!;
+
+            Assert.Empty(use.Direct);
+            Assert.Empty(use.SlotsFor(paletteId: 18));
+            Assert.Equal([0], use.SlotsFor(paletteId: 0));
+            Assert.True(use.UsesPalette);
+        }
+    }
+
     [Fact]
     public void An_effect_that_never_asks_the_palette_says_so()
     {
