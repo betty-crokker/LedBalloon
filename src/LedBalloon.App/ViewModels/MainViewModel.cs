@@ -4357,19 +4357,23 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private async Task<bool> KeepTheSceneAsync()
     {
-        if (!SceneUnsaved || SyncTargets().Count == 0 || Ask is not { } ask)
+        // Only when this app is what made the house look like that. Opening it, finding the house
+        // showing something with no name - which is the ordinary state of a house whose timers run
+        // it - and closing again is not leaving work behind, and being asked to name something you
+        // did not do reads as the app having done something you did not notice.
+        //
+        // Naming it is still available while the app is open, on the button above: seeing what a
+        // timer put on and deciding to keep it is a real thing to want, it is just not a question
+        // to be stopped by on the way out.
+        if (!SceneUnsaved || !_touchedTheHouse || SyncTargets().Count == 0 || Ask is not { } ask)
         {
             return true;
         }
 
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: "Save this scene before closing?",
-            Message: _touchedTheHouse
-                ? "What the house is showing has not been written down. Name it and it joins your " +
-                  "list of scenes, ready to put back any time."
-                : "What the house is showing is not one of your scenes - it was already like this " +
-                  "when the app opened, so nothing you did here caused this. Name it to keep it, " +
-                  "or discard it and nothing is lost but the arrangement on screen.",
+            Message: "What the house is showing has not been written down. Name it and it joins " +
+                     "your list of scenes, ready to put back any time.",
             AcceptText: "Name it",
             CancelText: "Cancel",
             AlternateText: "Discard",
