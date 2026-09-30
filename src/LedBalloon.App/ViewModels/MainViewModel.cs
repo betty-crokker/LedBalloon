@@ -197,6 +197,19 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     public Func<Task>? ShowHelp { get; set; }
 
+    /// <summary>
+    /// How this opens one segment for editing. Returns true for Save and false for Cancel.
+    /// </summary>
+    /// <remarks>
+    /// A dialog rather than the panel taking itself over. As a block in the panel it pushed the
+    /// segment list out of the way and needed a "Back to the whole house" button to get it back -
+    /// a button whose whole job was undoing the click that opened the editor. A window closes.
+    /// <para>
+    /// Null means there is nowhere to open it, and picking a segment then just picks it.
+    /// </para>
+    /// </remarks>
+    public Func<Task<bool>>? ShowSegmentEditor { get; set; }
+
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
@@ -811,9 +824,6 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>Points the color controls back at the whole house.</summary>
-    [RelayCommand]
-    private void SelectWholeHouse() => SelectedSegment = null;
-
     /// <summary>
     /// Renames the open scene.
     /// <para>
@@ -3778,6 +3788,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// them. Worth one line, because a preview that is lying is worse than no preview, and the
     /// difference is not visible from the picture.
     /// </remarks>
+    /// <summary>What the two directions of the preview mean, said once beside it.</summary>
+    /// <remarks>
+    /// A strip that is also a chart needs its axes given, and the length is worth saying because it
+    /// is what the effect was drawn at - Halloween Eyes over 308 LEDs is two small eyes, and over
+    /// 20 it is most of the run.
+    /// </remarks>
+    public string SegmentPreviewCaption => SelectedSegment is { Count: > 0 } segment
+        ? $"The {segment.Count} LEDs across, the last few seconds downwards. " +
+          "Brightness and the house switch are left out."
+        : string.Empty;
+
     public string SegmentPreviewNote => PortedUse is null
         ? "The app cannot run this effect, so this shows its colors rather than what it does."
         : string.Empty;
@@ -3790,6 +3811,52 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(PreviewPalette));
         OnPropertyChanged(nameof(PreviewTiming));
         OnPropertyChanged(nameof(SegmentPreviewNote));
+        OnPropertyChanged(nameof(SegmentPreviewCaption));
+    }
+
+    /// <summary>
+    /// Whether the five things the segment editor can change have changed.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not a comparison of the whole segment. The reported one carries bounds, a
+    /// length and a power state that the editor never touches and that a controller can revise
+    /// under it, and any of those moving would read as an edit that nobody made.
+    /// </remarks>
+    private static bool Differs(WledSegment before, WledSegment? after)
+    {
+        if (after is null)
+        {
+            return false;
+        }
+
+        return before.Effect != after.Effect
+            || before.Palette != after.Palette
+            || before.Speed != after.Speed
+            || before.Intensity != after.Intensity
+            || !SameColors(before.Colors, after.Colors);
+    }
+
+    private static bool SameColors(int[][]? before, int[][]? after)
+    {
+        if (before is null || after is null)
+        {
+            return ReferenceEquals(before, after);
+        }
+
+        if (before.Length != after.Length)
+        {
+            return false;
+        }
+
+        for (int i = 0; i < before.Length; i++)
+        {
+            if (!before[i].SequenceEqual(after[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>What the photo shows this segment doing, which with a scene open is the scene.</summary>
@@ -3987,10 +4054,60 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>Called when a run is clicked on the photo.</summary>
-    public void PickSegment(Segment segment)
+    public void PickSegment(Segment segment) => _ = PickSegmentAsync(segment);
+
+    /// <summary>
+    /// Opens one segment for editing and puts it back if the editing is cancelled.
+    /// </summary>
+    /// <remarks>
+    /// The editing itself is live, exactly as it was: Sync means the same thing in here as
+    /// everywhere else, so what is being changed can be seen on the house while it is changed. That
+    /// is the whole point of the panel and a dialog is no reason to give it up. Cancel therefore
+    /// undoes rather than declines - it sends the segment back to what it was when the dialog
+    /// opened.
+    /// <para>
+    /// Only the five things the editor can change are put back. Sending the whole reported segment
+    /// would also send its bounds, and bounds that came from a controller mid-preset are not
+    /// something to write back on the way out of a color picker.
+    /// </para>
+    /// </remarks>
+    public async Task PickSegmentAsync(Segment segment)
     {
+        ArgumentNullException.ThrowIfNull(segment);
+
         SelectedSegment = segment;
-        Status = $"Changing '{segment.Name}' in this scene. Click the photo again for another segment.";
+
+        if (ShowSegmentEditor is not { } show)
+        {
+            return;
+        }
+
+        WledSegment? before = LiveSegmentFor(segment)?.Clone();
+
+        bool saved = await show();
+
+        // Nothing to put back when nothing was touched, which is most of the time: the dialog gets
+        // opened to look at a segment as often as to change one, and a Cancel that writes the
+        // segment's own settings back over themselves is a patch to a controller for no reason.
+        if (!saved && before is not null && Differs(before, LiveSegmentFor(segment)))
+        {
+            Send(
+                DeviceFor(segment),
+                WledState.ForSegment(Project.WledSegmentIdFor(segment), seg =>
+                {
+                    seg.Effect = before.Effect;
+                    seg.Palette = before.Palette;
+                    seg.Speed = before.Speed;
+                    seg.Intensity = before.Intensity;
+                    seg.Colors = before.Colors;
+                }));
+
+            Status = $"'{segment.Name}' left as it was.";
+        }
+
+        // Closed either way, so the panel goes back to the list. This is what the "Back to the whole
+        // house" button used to be for.
+        SelectedSegment = null;
     }
 
     partial void OnIsDrawingSegmentChanged(bool value) => OnPropertyChanged(nameof(PhotoHint));
