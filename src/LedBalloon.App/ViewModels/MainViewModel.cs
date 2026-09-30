@@ -3398,6 +3398,99 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SegmentUsesPalette));
         OnPropertyChanged(nameof(SegmentColorNote));
         OnPropertyChanged(nameof(SegmentPaletteNote));
+
+        RebuildColorSlots();
+    }
+
+    /// <summary>The color slots the chosen effect reads, named the way the effect names them.</summary>
+    public ObservableCollection<SegmentColorSlot> SegmentColors { get; } = [];
+
+    /// <summary>
+    /// Fills <see cref="SegmentColors"/> for whatever is selected and whatever effect it is on.
+    /// </summary>
+    /// <remarks>
+    /// An effect that declares nothing gets the one slot WLED's own UI would show it, because
+    /// "we do not know" and "it reads nothing" are different and only the first is true there.
+    /// </remarks>
+    private void RebuildColorSlots()
+    {
+        SegmentColors.Clear();
+
+        if (SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        EffectMetadata effect = ChosenEffect;
+        WledSegment? live = LiveSegmentFor(segment);
+
+        IReadOnlyList<string?> slots = effect.Declared
+            ? effect.ColorSlots
+            : ["Color", null, null];
+
+        for (int i = 0; i < slots.Count; i++)
+        {
+            if (slots[i] is not { } label)
+            {
+                continue;
+            }
+
+            RgbColor current = live?.Colors is { } colors && i < colors.Length
+                ? RgbColor.FromWledArray(colors[i])
+                : RgbColor.Black;
+
+            SegmentColors.Add(new SegmentColorSlot(
+                i,
+                Spell(label),
+                Color.FromRgb(current.R, current.G, current.B),
+                SetSegmentColor));
+        }
+    }
+
+    /// <summary>
+    /// WLED's shorthand for a color slot, in words.
+    /// </summary>
+    /// <remarks>
+    /// The firmware's labels are notes to whoever wrote the effect: Bg, Fx, L, R, or a bare digit.
+    /// Anything not in this list is passed through, because an effect that troubled to write a real
+    /// word - "Glitter color", "Peaks" - has said it better than this could.
+    /// </remarks>
+    private static string Spell(string label) => label switch
+    {
+        "Bg" => "Background",
+        "Fx" => "Effect",
+        "L" => "Left",
+        "R" => "Right",
+        "1" => "Color 1",
+        "2" => "Color 2",
+        "3" => "Color 3",
+        _ => label,
+    };
+
+    /// <summary>What the photo shows this segment doing, which with a scene open is the scene.</summary>
+    private WledSegment? LiveSegmentFor(Segment segment)
+    {
+        int segmentId = Project.WledSegmentIdFor(segment);
+
+        return segment.ControllerKey is { } key
+            ? DisplayStates.GetValueOrDefault(key)?.Segments?.FirstOrDefault(x => x.Id == segmentId)
+            : DeviceFor(segment)?.State?.Segments?.FirstOrDefault(x => x.Id == segmentId);
+    }
+
+    /// <summary>Sends one color slot, which is the only thing a swatch changes.</summary>
+    private void SetSegmentColor(int slot, Color color)
+    {
+        if (_suppressPush || SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        var rgb = new RgbColor(color.R, color.G, color.B);
+
+        Send(
+            DeviceFor(segment),
+            WledState.ForSegment(
+                Project.WledSegmentIdFor(segment), seg => seg.SetColorSlot(slot, rgb)));
     }
 
     partial void OnSegmentEffectChoiceChanged(PickerOption? value)
