@@ -1,6 +1,9 @@
 using System;
+using System.Globalization;
+using System.Threading.Tasks;
 using Avalonia.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 
 namespace LedBalloon.App.ViewModels;
 
@@ -16,16 +19,24 @@ namespace LedBalloon.App.ViewModels;
 public sealed partial class SegmentColorSlot : ObservableObject
 {
     private readonly Action<int, Color>? _changed;
+    private readonly Func<SegmentColorSlot, Task>? _pick;
     private readonly bool _settling;
 
-    public SegmentColorSlot(int index, string label, Color color, Action<int, Color>? changed)
+    public SegmentColorSlot(
+        int index,
+        string label,
+        Color color,
+        Action<int, Color>? changed,
+        Func<SegmentColorSlot, Task>? pick = null)
     {
         Index = index;
         Label = label;
         _changed = changed;
+        _pick = pick;
 
         _settling = true;
         Picked = color;
+        Opened = color;
         _settling = false;
     }
 
@@ -46,9 +57,44 @@ public sealed partial class SegmentColorSlot : ObservableObject
 
     public IBrush Brush => new SolidColorBrush(Picked);
 
+    /// <summary>
+    /// What the color was when the picker opened, so it can be put back and shown beside the new one.
+    /// </summary>
+    /// <remarks>
+    /// Picking is live - that is the point of picking it here rather than in the WLED app - so
+    /// Cancel has to undo rather than decline, and undoing needs somewhere to undo to.
+    /// </remarks>
+    public Color Opened { get; private set; }
+
+    public IBrush OpenedBrush => new SolidColorBrush(Opened);
+
+    /// <summary>The color as it would be written down, because a patch of dark green is not a value.</summary>
+    public string Hex => string.Create(
+        CultureInfo.InvariantCulture, $"#{Picked.R:X2}{Picked.G:X2}{Picked.B:X2}");
+
+    /// <summary>Notes where the color started. Called as the picker opens.</summary>
+    public void Begin()
+    {
+        Opened = Picked;
+        OnPropertyChanged(nameof(OpenedBrush));
+    }
+
+    /// <summary>Puts it back where <see cref="Begin"/> found it.</summary>
+    public void Revert() => Picked = Opened;
+
+    [RelayCommand]
+    private async Task PickAsync()
+    {
+        if (_pick is { } pick)
+        {
+            await pick(this);
+        }
+    }
+
     partial void OnPickedChanged(Color value)
     {
         OnPropertyChanged(nameof(Brush));
+        OnPropertyChanged(nameof(Hex));
 
         if (!_settling)
         {

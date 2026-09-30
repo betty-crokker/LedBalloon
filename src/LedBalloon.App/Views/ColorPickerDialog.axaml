@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LedBalloon.App.ViewModels"
+        x:Class="LedBalloon.App.Views.ColorPickerDialog"
+        x:DataType="vm:SegmentColorSlot"
+        Title="LedBalloon"
+        Width="420" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackground" Color="#F4F5F7" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#DFE1E5" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackground" Color="#16181C" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#2A2E35" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="TextBlock.panelTitle">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.7" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+  </Window.Styles>
+
+  <Border Padding="18" Background="{DynamicResource PanelBackground}">
+    <StackPanel Spacing="10">
+
+      <TextBlock Classes="panelTitle" Text="{Binding Label}" />
+
+      <!-- What it was beside what it is becoming, big enough to actually read. The picker alone
+           does not answer "did that do anything": the spectrum shows every hue at full brightness
+           while the bar down its left side decides how bright the result is, so with that bar near
+           the bottom every hue you click comes out as a near-black version of itself and the small
+           swatch on the button barely moves. Two large patches side by side say it plainly. -->
+      <Grid ColumnDefinitions="*,Auto,*" Margin="0,2,0,0">
+        <Border Grid.Column="0" Height="46" CornerRadius="4"
+                Background="{Binding OpenedBrush}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+        <TextBlock Grid.Column="1" Text="&#x2192;" FontSize="18" Margin="10,0"
+                   VerticalAlignment="Center" Opacity="0.6" />
+        <Border Grid.Column="2" Height="46" CornerRadius="4"
+                Background="{Binding Brush}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+      </Grid>
+
+      <Grid ColumnDefinitions="*,Auto,*">
+        <TextBlock Grid.Column="0" Classes="hint" Text="Now" />
+        <TextBlock Grid.Column="2" Classes="hint" Text="{Binding Hex}" />
+      </Grid>
+
+      <!-- Alpha off twice over: an LED has no transparency, and a colour picked at half alpha would
+           be sent to the controller as its opaque self anyway - a control whose only possible effect
+           is to mislead. IsAlphaEnabled alone leaves the slider on screen. -->
+      <ColorView Color="{Binding Picked, Mode=TwoWay}"
+                 AutomationProperties.AutomationId="ColorWheel"
+                 IsAlphaEnabled="False"
+                 IsAlphaVisible="False"
+                 IsColorPaletteVisible="True"
+                 IsColorComponentsVisible="True"
+                 HorizontalAlignment="Stretch" />
+
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
+        <Button Content="Cancel" Click="OnCancel" IsCancel="True"
+                AutomationProperties.AutomationId="ColorCancel" />
+        <Button Content="OK" Click="OnAccept" IsDefault="True"
+                AutomationProperties.AutomationId="ColorOk" />
+      </StackPanel>
+
+    </StackPanel>
+  </Border>
+</Window>

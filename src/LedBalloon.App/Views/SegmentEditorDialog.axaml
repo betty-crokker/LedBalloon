@@ -57,7 +57,7 @@
            the way out and must not be the thing that scrolls off the bottom. -->
       <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"
                   HorizontalAlignment="Right" Margin="0,14,0,0">
-        <Button Name="CancelButton" Content="Cancel" Click="OnCancel"
+        <Button Name="CancelButton" Content="Cancel" Click="OnCancel" IsCancel="True"
                 AutomationProperties.AutomationId="SegmentCancel"
                 ToolTip.Tip="Put this segment back the way it was when this opened" />
         <Button Name="SaveButton" Content="Save" Click="OnSave" IsDefault="True"
@@ -105,22 +105,18 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:SegmentColorSlot">
+                <!-- A window rather than a flyout hanging off the swatch. A flyout has no OK and
+                     no Cancel: it applies as you drag and closes when you click elsewhere, so there
+                     was no way to try a color and decide against it. -->
                 <Button Padding="6,4" VerticalAlignment="Center" Margin="0,0,8,6"
-                        AutomationProperties.AutomationId="SegmentColor">
+                        AutomationProperties.AutomationId="SegmentColor"
+                        Command="{Binding PickCommand}">
                   <StackPanel Orientation="Horizontal" Spacing="8">
                     <Border Width="22" Height="22" CornerRadius="4"
                             Background="{Binding Brush}"
                             BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
                     <TextBlock Text="{Binding Label}" VerticalAlignment="Center" />
                   </StackPanel>
-                  <Button.Flyout>
-                    <Flyout Placement="Bottom">
-                      <ColorView Color="{Binding Picked, Mode=TwoWay}"
-                                 IsAlphaEnabled="False"
-                                 IsColorPaletteVisible="True"
-                                 IsColorComponentsVisible="False" />
-                    </Flyout>
-                  </Button.Flyout>
                 </Button>
               </DataTemplate>
             </ItemsControl.ItemTemplate>

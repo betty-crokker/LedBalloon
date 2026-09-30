@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -35,9 +36,23 @@ public partial class SegmentEditorDialog : Window
     /// <returns>True for Save, false for Cancel — and for the close button, which is a Cancel.</returns>
     public static async Task<bool> ShowAsync(Window owner, MainViewModel viewModel)
     {
+        ArgumentNullException.ThrowIfNull(viewModel);
+
         var dialog = new SegmentEditorDialog { DataContext = viewModel };
 
-        await dialog.ShowDialog(owner);
+        // Owned by this window rather than by the main one, so the picker sits over the editor it
+        // belongs to instead of behind it. Taken back afterwards: a swatch cannot be clicked once
+        // this has closed, and a stale owner would be a window parented to something that is gone.
+        viewModel.ShowColorPicker = slot => ColorPickerDialog.ShowAsync(dialog, slot);
+
+        try
+        {
+            await dialog.ShowDialog(owner);
+        }
+        finally
+        {
+            viewModel.ShowColorPicker = null;
+        }
 
         return dialog._saved;
     }
