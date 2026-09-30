@@ -3429,10 +3429,19 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Whether the panel has anything the lights have not been told about.</summary>
     public bool HasPendingChanges => _pendingStates is not null;
 
-    /// <summary>Says out loud which way the switch is pointing, so no control is a guess.</summary>
+    /// <summary>
+    /// What Sync is doing, said about changes rather than about the house.
+    /// </summary>
+    /// <remarks>
+    /// "The lights are following along" claimed the house matched what was on screen, and it does
+    /// not: opening a scene shows it on the photo without applying it, so the strip over the photo
+    /// said the house was still showing something else while this said it was keeping up. The two
+    /// were about different things and only one of them said which. Sync governs edits - whether
+    /// changing a color reaches the hardware now or waits to be sent - and nothing else.
+    /// </remarks>
     public string SyncHint => LiveSync
-        ? "The lights are following along."
-        : "The lights are holding \u2014 nothing reaches them until you send it.";
+        ? "Changes go straight to the lights."
+        : "Changes wait here until you send them.";
 
     partial void OnLiveSyncChanged(bool value)
     {
@@ -3447,8 +3456,9 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        // Switching it on means the house should catch up with whatever is on the photo, which is
-        // the only reading of "the lights do what the preview is showing" that is not a surprise.
+        // Whatever was held back while it was off goes now, and only that. A scene being previewed
+        // is not a held edit and is not applied by this, because opening one has never meant asking
+        // for it.
         Dispatcher.UIThread.Post(async void () => await SendPendingAsync());
     }
 
