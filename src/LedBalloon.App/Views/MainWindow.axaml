@@ -436,7 +436,8 @@
                             <Border Width="14" Height="14" CornerRadius="3"
                                     VerticalAlignment="Center"
                                     Background="{Binding Detail.PrimarySwatch}"
-                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                    IsVisible="{Binding Detail.HasPrimary}" />
                             <Border Width="14" Height="14" CornerRadius="3"
                                     VerticalAlignment="Center"
                                     Background="{Binding Detail.SecondarySwatch}"
