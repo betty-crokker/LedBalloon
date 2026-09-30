@@ -487,6 +487,28 @@
                 <Button Classes="block" Content="Back to the whole house" Margin="0,4,0,4"
                         Command="{Binding SelectWholeHouseCommand}" />
 
+                <!-- This run, straightened out and given the width of the panel. The photo answers
+                     "what will the house look like" and is bad at "what is this segment doing": a
+                     run is drawn where it actually is, foreshortened or diffused into scallops that
+                     deliberately hide the LEDs, with a dozen others competing for the same few
+                     hundred pixels. Here you can see that Chase has a gap in it and how fast the
+                     slider you are holding is making it go.
+
+                     Above the controls rather than below, because it is the thing being watched
+                     while they are moved. -->
+                <ctrl:StripPreview Height="26" Margin="0,2,0,6"
+                                   AutomationProperties.AutomationId="SegmentPreview"
+                                   Segment="{Binding PreviewSegment}"
+                                   LedCount="{Binding PreviewLedCount}"
+                                   EffectNames="{Binding PreviewEffectNames}"
+                                   Palette="{Binding PreviewPalette}"
+                                   Timing="{Binding PreviewTiming}"
+                                   ToolTip.Tip="This segment's LEDs, laid out straight. Brightness and the house switch are not included, so it shows the look even with the lights off." />
+
+                <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap" Margin="0,-2,0,6"
+                           Text="{Binding SegmentPreviewNote}"
+                           IsVisible="{Binding SegmentPreviewNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                 <!-- A swatch that opens the picker, rather than a picker that is always open:
                      most of the time an effect is what is wanted and the wheel is just bulk. -->
                 <!-- One box per color slot the effect actually reads, named the way the effect
