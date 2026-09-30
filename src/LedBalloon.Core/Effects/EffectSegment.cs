@@ -582,6 +582,24 @@ public sealed class EffectSegment
     public void Fill(RgbColor color) => Array.Fill(Pixels, color);
 
     /// <summary>
+    /// One LED as it is actually wired, which on a reversed segment is the run back to front.
+    /// </summary>
+    /// <remarks>
+    /// WLED reverses inside setPixelColor, so every effect on a reversed segment comes out mirrored
+    /// on the strip and not one of them has to know. Done here for the same reason: an effect that
+    /// trails reads its own previous frame, and it has to keep reading it in its own coordinates or
+    /// the trail would flip end for end every frame. So the effects write forwards, and this is the
+    /// only place that knows which way round the run is.
+    /// <para>
+    /// Measured before it was believed. Fire 2012 on South's roofline - 285 LEDs, reversed - burns
+    /// at the far end on the house and at the near end in here, and the two matched exactly once
+    /// this was applied.
+    /// </para>
+    /// </remarks>
+    public RgbColor AsWired(int index) =>
+        Pixels[Reverse ? Pixels.Length - 1 - index : index];
+
+    /// <summary>
     /// Pulls every LED a fraction of the way toward the secondary color, which is what leaves a
     /// trail behind anything that moves.
     /// <para>

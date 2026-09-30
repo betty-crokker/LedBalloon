@@ -859,9 +859,13 @@ public sealed class HouseCanvas : Control
                 int r = 0, g = 0, b = 0;
                 for (int i = from; i <= to; i++)
                 {
-                    r += pixels[i].R;
-                    g += pixels[i].G;
-                    b += pixels[i].B;
+                    // Read the way the run is wired, so a reversed segment is drawn the way
+                    // round the house shows it rather than mirrored.
+                    RgbColor pixel = running.Segment.AsWired(i);
+                
+                    r += pixel.R;
+                    g += pixel.G;
+                    b += pixel.B;
                 }
 
                 int count = to - from + 1;

@@ -105,6 +105,66 @@ public class ADarkHouseWaitsForTheSwitchTests(UiThreadFixture ui) : IDisposable
         Assert.Equal("Changes show on the house as you make them", app.SyncOnLabel);
     });
 
+    /// <summary>
+    /// The same wait, reached through the segment editor rather than through the top bar.
+    /// </summary>
+    /// <remarks>
+    /// The editor is a separate window now, and a separate window is somewhere a rule can quietly
+    /// fail to apply. It edits through the same Send as everything else, and this says so.
+    /// </remarks>
+    [Fact]
+    public void Editing_in_the_dialog_waits_for_the_switch_too() => ui.Run(async () =>
+    {
+        using FakeController controller = FakeController.Start("Solid", "Blink");
+        MainViewModel app = await HouseAsync(controller);
+
+        Assert.False(app.MasterOn);
+
+        app.ShowSegmentEditor = () =>
+        {
+            app.SegmentSpeed = 90;
+            return Task.FromResult(true);
+        };
+
+        await app.PickSegmentAsync(app.Project.Segments[0]);
+
+        Assert.False(
+            await controller.WaitForPostAsync(TimeSpan.FromMilliseconds(400)),
+            $"a dark controller should have been left alone: [{Posted(controller)}]");
+
+        app.MasterOn = true;
+
+        Assert.True(await controller.WaitForPostAsync(LongEnough));
+        Assert.Contains("\"sx\":90", controller.Posts[0]);
+        Assert.Contains("\"on\":true", controller.Posts[0]);
+    });
+
+    /// <summary>And with sync off it is held for the other reason, behind the button.</summary>
+    [Fact]
+    public void Editing_in_the_dialog_honours_sync_being_off() => ui.Run(async () =>
+    {
+        using FakeController controller = FakeController.Start("Solid", "Blink");
+        MainViewModel app = await HouseAsync(controller);
+
+        app.MasterOn = true;
+        Assert.True(await controller.WaitForPostAsync(LongEnough));
+
+        app.LiveSync = false;
+        int before = controller.Posts.Count;
+
+        app.ShowSegmentEditor = () =>
+        {
+            app.SegmentSpeed = 90;
+            return Task.FromResult(true);
+        };
+
+        await app.PickSegmentAsync(app.Project.Segments[0]);
+        await Task.Delay(300);
+
+        Assert.Equal(before, controller.Posts.Count);
+        Assert.True(app.HasPendingChanges, "and it should be offering to send it");
+    });
+
     /// <summary>One controller with one run on it, connected, sync on, and its lights off.</summary>
     private async Task<MainViewModel> HouseAsync(FakeController controller)
     {
