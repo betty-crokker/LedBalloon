@@ -3428,6 +3428,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
     partial void OnMasterOnChanged(bool value)
     {
+        OnPropertyChanged(nameof(SyncOnLabel));
+
         if (_suppressPush)
         {
             return;
@@ -3478,6 +3480,43 @@ public sealed partial class MainViewModel : ViewModelBase
         ? ported.UsesPalette
         : !ChosenEffect.Declared || ChosenEffect.UsesPalette;
 
+    /// <summary>
+    /// How fast the effect runs, under whatever the effect calls it.
+    /// </summary>
+    /// <remarks>
+    /// Almost every effect has one and the panel had none, so the only way to change the pace of
+    /// anything was the WLED app. The names come from the effect: Fire 2012 calls its two "Cooling"
+    /// and "Spark rate", which say what moving them does in a way "Speed" and "Intensity" do not.
+    /// </remarks>
+    [ObservableProperty] private double _segmentSpeed = 128;
+
+    [ObservableProperty] private double _segmentIntensity = 128;
+
+    public string SegmentSpeedLabel => ChosenEffect.SpeedLabel ?? "Speed";
+
+    public string SegmentIntensityLabel => ChosenEffect.IntensityLabel ?? "Intensity";
+
+    public bool SegmentUsesSpeed => ChosenEffect.UsesSpeed;
+
+    public bool SegmentUsesIntensity => ChosenEffect.UsesIntensity;
+
+    partial void OnSegmentSpeedChanged(double value) => SendSlider(seg => seg.Speed = Clamped(value));
+
+    partial void OnSegmentIntensityChanged(double value) =>
+        SendSlider(seg => seg.Intensity = Clamped(value));
+
+    private static byte Clamped(double value) => (byte)Math.Clamp(value, 0, 255);
+
+    private void SendSlider(Action<WledSegment> set)
+    {
+        if (_suppressPush || SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        Send(DeviceFor(segment), WledState.ForSegment(Project.WledSegmentIdFor(segment), set));
+    }
+
     /// <summary>Why the color is unavailable, for the line under it. Empty when it is.</summary>
     public string SegmentColorNote =>
         SegmentUsesColor ? string.Empty : "This effect picks its own colors from the palette.";
@@ -3492,6 +3531,10 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SegmentUsesPalette));
         OnPropertyChanged(nameof(SegmentColorNote));
         OnPropertyChanged(nameof(SegmentPaletteNote));
+        OnPropertyChanged(nameof(SegmentSpeedLabel));
+        OnPropertyChanged(nameof(SegmentIntensityLabel));
+        OnPropertyChanged(nameof(SegmentUsesSpeed));
+        OnPropertyChanged(nameof(SegmentUsesIntensity));
 
         RebuildColorSlots();
     }
@@ -3686,13 +3729,22 @@ public sealed partial class MainViewModel : ViewModelBase
     /// were about different things and only one of them said which. Sync governs edits - whether
     /// changing a color reaches the hardware now or waits to be sent - and nothing else.
     /// </remarks>
-    public string SyncHint => LiveSync
-        ? "Changes go straight to the lights."
-        : "Changes wait here until you send them.";
+    /// <summary>
+    /// What the sync switch says while it is on, which depends on whether the house can show
+    /// anything at all.
+    /// </summary>
+    /// <remarks>
+    /// "Changes show on the house as you make them" is a promise the house cannot keep while it is
+    /// switched off, and the switch saying so sat a few centimetres from another switch saying the
+    /// lights were off. Two true sentences that read as a contradiction are worse than one.
+    /// </remarks>
+    public string SyncOnLabel => MasterOn
+        ? "Changes show on the house as you make them"
+        : "Changes reach the house, but it is switched off";
 
     partial void OnLiveSyncChanged(bool value)
     {
-        OnPropertyChanged(nameof(SyncHint));
+        OnPropertyChanged(nameof(SyncOnLabel));
 
         _preferences.LiveSync = value;
         _preferences.Save();
@@ -3941,6 +3993,9 @@ public sealed partial class MainViewModel : ViewModelBase
                 RgbColor current = live.PrimaryColor;
                 PickedColor = Color.FromRgb(current.R, current.G, current.B);
             }
+
+            SegmentSpeed = live?.Speed ?? 128;
+            SegmentIntensity = live?.Intensity ?? 128;
         }
         finally
         {
