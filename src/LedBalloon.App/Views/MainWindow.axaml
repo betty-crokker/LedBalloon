@@ -544,7 +544,21 @@
                           SelectedItem="{Binding SegmentPaletteChoice}"
                           IsEnabled="{Binding SegmentUsesPalette}"
                           PlaceholderText="Not reported yet"
-                          HorizontalAlignment="Stretch" />
+                          HorizontalAlignment="Stretch">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PaletteOption">
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Border Width="48" Height="14" CornerRadius="3"
+                                VerticalAlignment="Center"
+                                Background="{Binding Gradient}"
+                                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                IsVisible="{Binding HasGradient}" />
+                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
+                      </StackPanel>
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
 
                 <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap" Margin="0,2,0,0"
                            Text="{Binding SegmentPaletteNote}"
