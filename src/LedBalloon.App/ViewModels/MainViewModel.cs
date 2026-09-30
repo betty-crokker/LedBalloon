@@ -4481,6 +4481,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 break;
             case nameof(DeviceViewModel.State):
                 RebuildControllerStates();
+
+                // And the switch that says whether the house is lit, which is read from the
+                // controllers and was being read only when the list of them changed - so it was
+                // right once, at startup, and stale from then on. Applying a scene that lights the
+                // house left it still saying the lights were off.
+                ReadMasterFromDevices();
                 break;
         }
     }
