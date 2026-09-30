@@ -77,17 +77,6 @@
       <Setter Property="Background" Value="Transparent" />
     </Style>
 
-    <!-- A segment name that is also the way in to editing it: a name first and a control second,
-         so the card does not turn into a row of buttons. -->
-    <Style Selector="Button.segmentName">
-      <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="FontSize" Value="12" />
-      <Setter Property="Cursor" Value="Hand" />
-    </Style>
-    <Style Selector="Button.segmentName:pointerover">
-      <Setter Property="TextBlock.TextDecorations" Value="Underline" />
-    </Style>
-
     <Style Selector="Border.card">
       <Setter Property="BorderBrush" Value="{DynamicResource PanelBorder}" />
       <Setter Property="BorderThickness" Value="1" />
@@ -360,16 +349,30 @@
                     <ItemsControl ItemsSource="{Binding Segments}">
                      <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:SceneSegmentRow">
-                    <Border Classes="card" Margin="0,0,0,6" Padding="10">
+                    <!-- No box. The controller already draws one round its own segments, and a box
+                         inside a box for every segment turned the panel into a stack of frames with
+                         two lines in each. What separates one segment from the next is its name and
+                         the space above it. -->
+                    <StackPanel Margin="0,0,0,10">
                       <StackPanel Spacing="4">
 
-                        <!-- The name is the way in to editing the segment. Finding the right few
-                             pixels of a traced line on a photograph is a poor way to ask for
-                             something, and worse for the short segments - Porch is five LEDs. -->
-                        <Button Classes="row segmentName" Content="{Binding Detail.SegmentName}"
-                         AutomationProperties.AutomationId="EditSegment"
-                                Command="{Binding EditCommand}"
-                                Padding="0" HorizontalAlignment="Left" />
+                        <DockPanel>
+                          <!-- The pencil is the thing that edits, rather than the name being
+                               secretly a button. Finding the right few pixels of a traced line on
+                               the photograph is the other way to ask and a poor one - Porch is five
+                               LEDs - so this is the reliable one. -->
+                          <Button Classes="icon" DockPanel.Dock="Right"
+                           AutomationProperties.AutomationId="EditSegment"
+                                  Command="{Binding EditCommand}"
+                                  ToolTip.Tip="Change what this segment is showing"
+                                  VerticalAlignment="Center" Margin="6,0,0,0">
+                            <TextBlock Text="&#x270E;" />
+                          </Button>
+
+                          <TextBlock Text="{Binding Detail.SegmentName}" FontWeight="SemiBold"
+                                     FontSize="12" VerticalAlignment="Center"
+                                     TextTrimming="CharacterEllipsis" />
+                        </DockPanel>
 
                         <!-- The three things a scene can do about a segment, in one control, because
                              they are one decision. Off and "not included" look the same on a dark
@@ -451,7 +454,7 @@
                                    Text="{Binding Detail.Fidelity}"
                                    IsVisible="{Binding Detail.Fidelity, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                       </StackPanel>
-                    </Border>
+                    </StackPanel>
                       </DataTemplate>
                      </ItemsControl.ItemTemplate>
                     </ItemsControl>
