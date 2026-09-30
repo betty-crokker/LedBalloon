@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
+using Avalonia.Platform;
 using Avalonia.Threading;
 using LedBalloon.Core;
 using LedBalloon.Core.Effects;
@@ -12,34 +15,48 @@ using LedBalloon.Core.Models;
 namespace LedBalloon.App.Controls;
 
 /// <summary>
-/// One segment's run of LEDs, laid out straight and lit the way the effect lights it.
+/// One segment's run of LEDs across, and the last couple of seconds of it downwards.
 /// <para>
-/// The photo answers "what will the house look like"; this answers "what is this segment doing",
-/// which the photo is bad at. A run is drawn on the photo where it actually is - short, foreshortened,
-/// behind a downpipe, or diffused into scallops that deliberately hide the individual LEDs - and a
-/// dozen of them are competing for the same few hundred pixels. Straightened out and given the width
-/// of the panel, the same effect is legible: you can see that Chase has a gap in it, that Twinklecat
-/// twinkles rather than chases, and how fast the slider you are holding is making it go.
+/// The photo answers "what will the house look like" and is bad at "what is this segment doing". A
+/// run is drawn on the photo where it actually is — foreshortened, behind a downpipe, or diffused
+/// into scallops that deliberately hide the individual LEDs — with a dozen others competing for the
+/// same few hundred pixels.
 /// </para>
 /// <para>
-/// Deliberately ignores both brightnesses and the power switch. Those are answered elsewhere - by the
+/// The first version of this was one row: the run as it is this instant. That is faithful and, for a
+/// good half of the effects, unreadable. Halloween Eyes on Porchline lights 8 LEDs out of 308 on 12%
+/// of frames, so the honest single row is black nearly all the time and reads as a control that is
+/// broken. Stacking the recent frames fixes it without inventing anything: a blink that lasted a
+/// second becomes a mark you can see, instead of one you had to be looking at the right moment to
+/// catch.
+/// </para>
+/// <para>
+/// It also shows the one thing a single row cannot, which is movement. Chase comes out as diagonal
+/// bands and their slope is its speed, so the slider being dragged has something to answer to. An
+/// effect that does not move is rows that all match, which is the plain strip back again.
+/// </para>
+/// <para>
+/// Deliberately ignores both brightnesses and the power switch. Those are answered by the
 /// controller's slider with its percentage, by the switch in the top bar, and by the photo, which
-/// goes dark when the house does. Folding them in here would mean the one control showing what you
-/// are building goes blank exactly when you have no other way to see it, which is the whole reason
-/// this exists.
+/// goes dark when the house does. Folding them in would blank the one control showing what is being
+/// built at exactly the moment there is no other way to see it.
 /// </para>
 /// </summary>
 public sealed class StripPreview : Control
 {
     /// <summary>
-    /// Cap on LEDs drawn, since past this they are thinner than a pixel anyway.
+    /// Cap on LEDs sampled, since past this they are thinner than a pixel anyway.
     /// </summary>
     /// <remarks>
-    /// A run longer than this is sampled rather than truncated, so the preview still covers the
-    /// whole run - South's roofline is 300 and showing the first 400 of it would be showing all of
-    /// it, but the house has had longer runs than that on it.
+    /// A longer run is sampled rather than truncated, so the preview still covers all of it.
     /// </remarks>
     private const int MaxLeds = 400;
+
+    /// <summary>Cap on rows of history, which is also the cap on work done per frame.</summary>
+    private const int MaxRows = 160;
+
+    /// <summary>The unlit strip, which is also what shows between the lit LEDs.</summary>
+    private const uint Unlit = 0xFF101116;
 
     /// <summary>What the segment is set to: effect, palette, colors and the sliders.</summary>
     public static readonly StyledProperty<WledSegment?> SegmentProperty =
@@ -51,7 +68,7 @@ public sealed class StripPreview : Control
     /// <remarks>
     /// The length changes what an effect looks like and not just how wide it is drawn: Chase fits a
     /// fixed number of groups into whatever it is given, and a comet's tail is a proportion of the
-    /// run. Previewing a 300-LED roofline at some convenient round number would be previewing a
+    /// run. Previewing a 308-LED porch line at some convenient round number would be previewing a
     /// different effect.
     /// </remarks>
     public static readonly StyledProperty<int> LedCountProperty =
@@ -95,15 +112,28 @@ public sealed class StripPreview : Control
     /// </summary>
     private EffectSimulation? _running;
 
+    private WriteableBitmap? _image;
+
+    /// <summary>The history, newest row first, one entry per LED sampled.</summary>
+    private int[] _rows = [];
+
+    private int _columns;
+    private int _depth;
     private string _signature = string.Empty;
     private TimeSpan _lastTick;
 
-    public StripPreview() =>
-        // Faster than the photo's 50ms, because this is a few hundred rectangles rather than a
-        // photograph with every fixture drawn over it, and because the thing being watched here is
-        // usually the speed slider.
+    public StripPreview()
+    {
+        // Faster than the photo's 50ms: this is a bitmap blit rather than a photograph with every
+        // fixture drawn over it, and one row of history per tick means the tick rate decides how
+        // much time the panel covers.
         _clock = new DispatcherTimer(
             TimeSpan.FromMilliseconds(33), DispatcherPriority.Background, OnTick);
+
+        // The bitmap is built at exactly the size it is drawn, so smoothing would only blur rows
+        // that are meant to be one pixel each.
+        RenderOptions.SetBitmapInterpolationMode(this, BitmapInterpolationMode.None);
+    }
 
     public WledSegment? Segment
     {
@@ -146,10 +176,17 @@ public sealed class StripPreview : Control
         base.OnDetachedFromVisualTree(e);
         _clock.Stop();
 
-        // Nothing is watching it, so let the buffer go rather than stepping a strip nobody can see
-        // for the rest of the session.
+        // Nothing is watching, so let it all go rather than stepping a strip nobody can see for the
+        // rest of the session. The history is stale by the time anyone looks again anyway.
         _running = null;
         _signature = string.Empty;
+
+        _image?.Dispose();
+        _image = null;
+
+        _rows = [];
+        _columns = 0;
+        _depth = 0;
     }
 
     private void OnTick(object? sender, EventArgs e)
@@ -174,61 +211,95 @@ public sealed class StripPreview : Control
             return;
         }
 
-        // The unlit strip: what is behind the LEDs, and what shows through between them on a run
-        // sparse enough to have gaps.
         context.DrawRectangle(
             new SolidColorBrush(Color.FromRgb(0x10, 0x11, 0x16)),
             new Pen(new SolidColorBrush(Color.FromRgb(0x2A, 0x2E, 0x35))),
             new RoundedRect(bounds, 4));
 
-        int leds = LedCount;
-
-        if (leds < 1 || Segment is not { } wled)
+        if (LedCount < 1 || Segment is not { } wled)
         {
             return;
         }
 
-        Refresh(wled, leds);
+        Restart(wled, LedCount);
 
-        // Inside the frame, so the drawn LEDs read as sitting in the strip rather than as a bar
-        // with a line round it.
+        // Inside the frame, so it reads as sitting in the strip rather than as a bar with a line
+        // round it. One bitmap pixel per screen pixel, so nothing is scaled.
         Rect inside = bounds.Deflate(new Thickness(2));
-        int cells = Math.Min(leds, MaxLeds);
-        double width = inside.Width / cells;
+        int columns = Math.Clamp(Math.Min(LedCount, (int)inside.Width), 1, MaxLeds);
+        int depth = Math.Clamp((int)inside.Height, 1, MaxRows);
 
-        // A gap only where there is room for one. Below this the gap is most of the LED, which makes
-        // a fully lit run look like a dotted one - so instead the LEDs overlap by half a pixel and
-        // meet. Drawn exactly edge to edge they do not: the boundaries fall between pixels and get
-        // antialiased, and a run of one color comes out finely striped with banding that is not
-        // there.
-        double gap = width >= 5 ? 1 : 0;
-        double drawn = Math.Max(gap > 0 ? width - gap : width + 0.5, 0.5);
-        double span = 1d / cells;
+        Resize(columns, depth);
+        Scroll(wled);
+        Draw(context, inside);
+    }
 
-        for (int i = 0; i < cells; i++)
+    /// <summary>Throws the history away when it would no longer line up with what is drawn.</summary>
+    private void Resize(int columns, int depth)
+    {
+        if (_columns == columns && _depth == depth && _image is not null)
+        {
+            return;
+        }
+
+        _columns = columns;
+        _depth = depth;
+        _rows = new int[columns * depth];
+
+        Array.Fill(_rows, unchecked((int)Unlit));
+
+        _image?.Dispose();
+        _image = new WriteableBitmap(
+            new PixelSize(columns, depth),
+            new Vector(96, 96),
+            PixelFormat.Bgra8888,
+            AlphaFormat.Opaque);
+    }
+
+    /// <summary>Pushes the history down a row and reads the run into the top of it.</summary>
+    private void Scroll(WledSegment wled)
+    {
+        Array.Copy(_rows, 0, _rows, _columns, (_depth - 1) * _columns);
+
+        double span = 1d / _columns;
+
+        for (int i = 0; i < _columns; i++)
         {
             RgbColor color = ColorAt((i + 0.5) * span, span, wled);
 
-            if (color.R + color.G + color.B == 0)
-            {
-                // Left as the unlit strip rather than painted black over it, which is the same
-                // picture and one rectangle cheaper per dark LED - and most effects are mostly dark.
-                continue;
-            }
-
-            context.FillRectangle(
-                new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)),
-                new Rect(inside.X + (i * width), inside.Y, drawn, inside.Height));
+            _rows[i] = color.R + color.G + color.B == 0
+                // The unlit strip rather than black, so a dark LED matches the frame around it.
+                ? unchecked((int)Unlit)
+                : unchecked((int)(0xFF000000u | ((uint)color.R << 16) | ((uint)color.G << 8) | color.B));
         }
+    }
+
+    private void Draw(DrawingContext context, Rect inside)
+    {
+        if (_image is not { } image)
+        {
+            return;
+        }
+
+        using (ILockedFramebuffer buffer = image.Lock())
+        {
+            // Row by row rather than in one copy, because a locked framebuffer may pad its rows.
+            for (int row = 0; row < _depth; row++)
+            {
+                Marshal.Copy(_rows, row * _columns, buffer.Address + (row * buffer.RowBytes), _columns);
+            }
+        }
+
+        context.DrawImage(image, new Rect(0, 0, _columns, _depth), inside);
     }
 
     /// <summary>
     /// What one LED is showing, averaged over the stretch of the run it stands for.
     /// </summary>
     /// <param name="span">
-    /// How much of the run this cell covers. Only wider than one LED on a run longer than
-    /// <see cref="MaxLeds"/>, and averaging then matters: reading one LED in three would lose an
-    /// effect that lights a few at a time, because most of its dots would land between the samples.
+    /// How much of the run this sample covers. Wider than one LED whenever the run is longer than
+    /// the strip is wide, and averaging then matters: reading one LED in three would lose an effect
+    /// that lights a few at a time, because most of its dots would fall between the samples.
     /// </param>
     private RgbColor ColorAt(double t, double span, WledSegment wled)
     {
@@ -256,8 +327,8 @@ public sealed class StripPreview : Control
         }
 
         // An effect nobody has ported. Its colors are known and its movement is not, so the palette
-        // is slid along the run at the pace the speed slider asks for - the same family resemblance
-        // the photo draws, and the panel says in words that this is not the effect itself.
+        // slides along the run at the pace the speed slider asks for - a family resemblance to most
+        // WLED effects and an impersonation of none of them. The panel says so in words.
         if (Palette is { } palette && wled.Palette is > 0)
         {
             double along = t + PhaseFor(wled);
@@ -288,10 +359,8 @@ public sealed class StripPreview : Control
         return wled.Reverse == true ? -phase : phase;
     }
 
-    /// <summary>
-    /// Starts the effect, or restarts it when anything it reads has changed.
-    /// </summary>
-    private void Refresh(WledSegment wled, int leds)
+    /// <summary>Starts the effect, or restarts it when anything it reads has changed.</summary>
+    private void Restart(WledSegment wled, int leds)
     {
         string signature = string.Join(
             '/',

@@ -27,6 +27,7 @@ public partial class MainWindow : Window
             {
                 viewModel.Ask = request => ConfirmDialog.AskAsync(this, request);
                 viewModel.ShowHelp = () => HelpDialog.ShowAsync(this);
+                viewModel.ShowSegmentEditor = () => SegmentEditorDialog.ShowAsync(this, viewModel);
             }
         };
     }

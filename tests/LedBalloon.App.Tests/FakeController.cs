@@ -13,6 +13,13 @@ namespace LedBalloon.App.Tests;
 /// answers; that fails in the background and is reported rather than thrown, which is the same thing
 /// that happens when a real controller drops off the network.
 /// </para>
+/// <para>
+/// The segment it reports carries an effect, a palette, both sliders and its colors, because a real
+/// one always does. It used to be bounds and nothing else, which is a state no controller is ever
+/// in, and the difference showed: putting a segment back the way it was is a patch, and a patch
+/// cannot set a field back to "not mentioned" - so an undo that should have been ordinary looked
+/// broken against a fake that had left the fields out in the first place.
+/// </para>
 /// </summary>
 internal sealed class FakeController : IDisposable
 {
@@ -91,7 +98,7 @@ internal sealed class FakeController : IDisposable
         string document =
             $$"""
             {
-              "state": { "on": false, "bri": 128, "seg": [ { "id": 0, "start": 0, "stop": 10, "len": 10 } ] },
+              "state": { "on": false, "bri": 128, "seg": [ { "id": 0, "start": 0, "stop": 10, "len": 10, "on": true, "bri": 255, "fx": 0, "sx": 128, "ix": 128, "pal": 0, "col": [[255,160,0],[0,0,0],[0,0,0]] } ] },
               "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{Key}}", "leds": { "count": 10, "fps": 0 } },
               "effects": [ {{names}} ],
               "palettes": [ "Default", "Random Cycle" ]
