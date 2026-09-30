@@ -170,24 +170,11 @@
                  which; now one control decides it for all of them. -->
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="8"
                         Margin="12,0" VerticalAlignment="Center">
-              <Button Content="Send to the lights"
-                      Command="{Binding SendPendingCommand}"
-                      IsVisible="{Binding HasPendingChanges}"
-                      IsEnabled="{Binding !IsBusy}" />
-              <Button Content="Discard"
-                      Command="{Binding DiscardPendingCommand}"
-                      IsVisible="{Binding HasPendingChanges}" />
-
-              <!-- Beside the checkbox it belongs to. It used to sit next to the on/off switch,
-                   where the only thing telling you which control it described was that it was
-                   nearer the wrong one - it says what the lights are doing, and so does the
-                   switch. Nothing in the sentence names sync, so the adjacency is the whole
-                   explanation and it has to be right. -->
-              <TextBlock Classes="hint" VerticalAlignment="Center" MaxWidth="440"
-                         Margin="0,0,4,0" TextWrapping="NoWrap"
-                         Text="{Binding SyncHint}" TextTrimming="CharacterEllipsis" />
-
-              <CheckBox Content="Sync" IsChecked="{Binding LiveSync}" VerticalAlignment="Center" />
+              <!-- Always here, even with nothing to resolve, because it is the only way back from
+                   having it on: with it on nothing ever differs, so a checkbox that appeared only
+                   when something did could never be unticked. -->
+              <CheckBox Content="Sync" IsChecked="{Binding LiveSync}" VerticalAlignment="Center"
+                        ToolTip.Tip="Keep the house showing whatever the app is showing" />
             </StackPanel>
 
             <!-- The switch, and no brightness beside it. Brightness belongs to a controller, and
@@ -200,15 +187,20 @@
           </DockPanel>
         </Border>
 
-        <!-- A preview is a picture of somewhere the house is not, and the photo is the thing that
-             looks most like the truth - so the warning goes on it rather than only in the panel. -->
+        <!-- One banner for one fact: the app is showing something the house is not. It used to be
+             two - a preview strip for an unapplied scene and a pair of buttons in the top bar for
+             held edits - which are the same thing to whoever is reading them. Tick Sync and both
+             go. The photo carries it because the photo is the thing that looks like the truth. -->
         <Border DockPanel.Dock="Top" Padding="12,8" Background="#2F7BD6"
-                IsVisible="{Binding Previewing}">
+                IsVisible="{Binding AppOnly}">
           <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Put it on the house"
-                    Command="{Binding ApplySceneCommand}" />
+            <Button DockPanel.Dock="Right" Content="Discard"
+                    Command="{Binding DiscardPendingCommand}"
+                    IsVisible="{Binding HasPendingChanges}" />
             <TextBlock Foreground="White" VerticalAlignment="Center" TextWrapping="Wrap"
-                       Margin="0,0,12,0" Text="{Binding PreviewNotice}" />
+                       Margin="0,0,12,0">
+              <Run Text="{Binding AppOnlyNotice}" /><Run Text="  Tick Sync to put it there." />
+            </TextBlock>
           </DockPanel>
         </Border>
 

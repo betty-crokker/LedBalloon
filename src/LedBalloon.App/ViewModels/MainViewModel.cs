@@ -2331,12 +2331,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>Everything the heading does not say: whether it is saved, or on the house.</summary>
     public string SceneState => !LookingAtTheHouse
-        // Compared against what the house is showing rather than asked of the open row, because a
-        // row can be a preset made in the WLED app and there is no scene behind one of those to
-        // compare. What the house is showing is known either way.
-        ? SelectedScene?.Scene is { } opened && ReferenceEquals(opened, SceneOnTheHouse)
-            ? "On the house now."
-            : "A preview — not on the house."
+        // The same one fact the banner reads, rather than a second opinion about it. Comparing the
+        // open row against what the house is showing looked equivalent and is not: a row can be a
+        // preset from the WLED app, which has no scene behind it to compare, so applying one left
+        // this saying "a preview" over a house that was showing exactly that.
+        ? AppOnly
+            ? "A preview — not on the house."
+            : "On the house now."
         : SceneOnTheHouse is { } saved
             ? $"This is your scene '{saved.Name}'."
             : _touchedTheHouse
@@ -2419,6 +2420,7 @@ public sealed partial class MainViewModel : ViewModelBase
         Previewing = states is not null;
 
         OnPropertyChanged(nameof(DisplayStates));
+        RefreshAppOnly();
 
         // The per-segment controls read whatever the photo is reading, so they move with it.
         RefreshSegmentPickers(SelectedSegment);
@@ -2634,6 +2636,16 @@ public sealed partial class MainViewModel : ViewModelBase
             // Through the preset machinery rather than straight to the lights, so that Sync means
             // the same thing here as everywhere else on this panel.
             SelectedPreset = row.Preset;
+
+            // And then the same tidying a scene gets. Without it the banner stayed up after the
+            // preset had gone to the house, still offering to put it there.
+            if (LiveSync)
+            {
+                _touchedTheHouse = true;
+                ShowPreview(null);
+                RefreshSceneHeading();
+            }
+
             return;
         }
 
@@ -3282,10 +3294,16 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        // On the photo but not on the house. Opening a scene is reading it, not applying it - "Put
-        // it on the house" is how it gets applied, and it is right there under this.
+        // On the photo. Whether it reaches the house is what Sync decides, the same as every other
+        // change: with it on the house follows what is on screen, and opening a scene is a change to
+        // what is on screen. With it off this is a preview and the banner says so.
         ShowPreview(SceneResolver.Resolve(Project, scene));
         RefreshSceneHeading();
+
+        if (LiveSync)
+        {
+            ApplyScene();
+        }
 
         foreach (string key in Project.ActiveControllerKeys())
         {
@@ -3565,6 +3583,32 @@ public sealed partial class MainViewModel : ViewModelBase
     public bool HasPendingChanges => _pendingStates is not null;
 
     /// <summary>
+    /// True when the app is showing something the house is not.
+    /// </summary>
+    /// <remarks>
+    /// The one fact worth a banner, and it has two sources that used to be explained separately:
+    /// edits held back because Sync is off, and a scene opened but not applied. To the reader they
+    /// are the same thing - what is on screen is not what is outside - so they get one sentence,
+    /// and Sync is the one control that resolves either.
+    /// </remarks>
+    public bool AppOnly => Previewing || HasPendingChanges;
+
+    /// <summary>What the banner says, naming the scene when there is one to name.</summary>
+    public string AppOnlyNotice => SelectedScene is { IsTheHouse: false, Name: { } named }
+        ? $"You are working on {named} in the app. The house is still showing something else."
+        : "You are working in the app. The house is still showing something else.";
+
+    private void RefreshAppOnly()
+    {
+        OnPropertyChanged(nameof(AppOnly));
+        OnPropertyChanged(nameof(AppOnlyNotice));
+
+        // The line in the panel reads the same fact, so it moves with it rather than being worked
+        // out again somewhere else and disagreeing.
+        OnPropertyChanged(nameof(SceneState));
+    }
+
+    /// <summary>
     /// What Sync is doing, said about changes rather than about the house.
     /// </summary>
     /// <remarks>
@@ -3591,10 +3635,18 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        // Whatever was held back while it was off goes now, and only that. A scene being previewed
-        // is not a held edit and is not applied by this, because opening one has never meant asking
-        // for it.
-        Dispatcher.UIThread.Post(async void () => await SendPendingAsync());
+        // Ticking it is how the house is made to match, so it has to reconcile both halves of the
+        // difference: the edits held back while it was off, and a scene opened but not applied.
+        // Those were two mechanisms with two buttons and one question between them.
+        Dispatcher.UIThread.Post(async void () =>
+        {
+            await SendPendingAsync();
+
+            if (Previewing)
+            {
+                ApplyScene();
+            }
+        });
     }
 
     /// <summary>
@@ -4893,6 +4945,7 @@ public sealed partial class MainViewModel : ViewModelBase
             _pendingStates = null;
             OnPropertyChanged(nameof(DisplayStates));
             OnPropertyChanged(nameof(HasPendingChanges));
+            RefreshAppOnly();
             ReadSceneFromHouse();
             return;
         }
@@ -4934,6 +4987,7 @@ public sealed partial class MainViewModel : ViewModelBase
         _pendingStates = states;
         OnPropertyChanged(nameof(DisplayStates));
         OnPropertyChanged(nameof(HasPendingChanges));
+        RefreshAppOnly();
         ReadSceneFromHouse();
     }
 
