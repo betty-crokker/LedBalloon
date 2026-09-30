@@ -79,13 +79,25 @@
                about an eighth of frames, so the honest single row is black nearly all the time and
                reads as a control that is broken. Stacked frames catch the blink, and show movement
                besides: Chase comes out as diagonal bands whose slope is its speed. -->
-          <ctrl:StripPreview Height="92" Margin="0,0,0,4"
-                             AutomationProperties.AutomationId="SegmentPreview"
-                             Segment="{Binding PreviewSegment}"
-                             LedCount="{Binding PreviewLedCount}"
-                             EffectNames="{Binding PreviewEffectNames}"
-                             Palette="{Binding PreviewPalette}"
-                             Timing="{Binding PreviewTiming}" />
+          <!-- The scale down the side, because "the last few seconds downwards" in the caption
+               says there is a time axis without saying which end of it is which - and a panel that
+               is read the wrong way round is read as an effect running backwards. -->
+          <Grid ColumnDefinitions="*,8,Auto">
+            <ctrl:StripPreview Grid.Column="0" Height="92" Margin="0,0,0,4"
+                               AutomationProperties.AutomationId="SegmentPreview"
+                               Segment="{Binding PreviewSegment}"
+                               LedCount="{Binding PreviewLedCount}"
+                               EffectNames="{Binding PreviewEffectNames}"
+                               Palette="{Binding PreviewPalette}"
+                               Timing="{Binding PreviewTiming}" />
+
+            <DockPanel Grid.Column="2" Height="92" Width="46">
+              <TextBlock DockPanel.Dock="Top" Classes="hint" Text="now" FontSize="11" />
+              <TextBlock DockPanel.Dock="Bottom" Classes="hint" Text="older" FontSize="11" />
+              <TextBlock Text="&#x2193;" Classes="hint" FontSize="13"
+                         HorizontalAlignment="Left" VerticalAlignment="Center" />
+            </DockPanel>
+          </Grid>
 
           <TextBlock Classes="hint" Text="{Binding SegmentPreviewCaption}" />
 

@@ -51,8 +51,12 @@ public sealed record EffectUse(
 /// the shared helper classes a dozen effects delegate to. Checked against one controller's own
 /// fxdata for all 118: 228 of the 232 declared answers agree, the 4 that do not are the ones fxdata
 /// under-declares, and 4 more are effects fxdata says nothing about at all. Four effects compute
-/// their color slot rather than naming it - Scan, Scan Dual, Aurora and Meteor - and those were read
-/// by hand.
+/// their color slot rather than naming it - Scan, Scan Dual, Aurora and the two Meteors - and those
+/// were read by hand. The Meteors were read by hand and read wrong the first time: both pass 255 as
+/// the slot in one of their two branches, and 255 is out of range, so <c>color_from_palette</c> never
+/// substitutes the slot for the gradient. They reach a color slot only while the palette is Default,
+/// which is what WhenPaletteIsDefault is for - and it took somebody noticing a red color box over a
+/// blue meteor to catch it.
 /// </para>
 /// </remarks>
 public static class PortedEffectUse
@@ -108,8 +112,8 @@ public static class PortedEffectUse
         ["Lighthouse"] = new([0], [0], true, true, true),
         ["Lightning"] = new([0, 1], [0], true, true, true),
         ["Loading"] = new([0], [1], true, true, true),
-        ["Meteor"] = new([0], [0], true, true, true),
-        ["Meteor Smooth"] = new([0], [0], true, true, true),
+        ["Meteor"] = new([], [0], true, true, true),
+        ["Meteor Smooth"] = new([], [0], true, true, true),
         ["Multi Comet"] = new([2], [0], true, true, true),
         ["Noise 1"] = new([], [0], true, true, false),
         ["Noise 2"] = new([], [0], true, true, false),

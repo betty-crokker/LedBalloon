@@ -119,7 +119,22 @@ public sealed class StripPreview : Control
 
     private int _columns;
     private int _depth;
-    private string _signature = string.Empty;
+
+    /// <summary>
+    /// What the run is showing: the effect, the palette and the colors.
+    /// </summary>
+    /// <remarks>
+    /// Kept apart from <see cref="_run"/> because only this one makes the history wrong. Change the
+    /// palette and the rows above are a picture of a segment that no longer exists, sitting under a
+    /// heading that says they are this one's recent past - so they go. Change the speed and they are
+    /// still this segment, running slower a moment ago, which is worth keeping: the slope changing
+    /// down the panel is the clearest thing the slider does.
+    /// </remarks>
+    private string _look = string.Empty;
+
+    /// <summary>Everything the effect reads, so a change of any of it starts the effect again.</summary>
+    private string _run = string.Empty;
+
     private TimeSpan _lastTick;
 
     public StripPreview()
@@ -179,7 +194,8 @@ public sealed class StripPreview : Control
         // Nothing is watching, so let it all go rather than stepping a strip nobody can see for the
         // rest of the session. The history is stale by the time anyone looks again anyway.
         _running = null;
-        _signature = string.Empty;
+        _look = string.Empty;
+        _run = string.Empty;
 
         _image?.Dispose();
         _image = null;
@@ -366,20 +382,30 @@ public sealed class StripPreview : Control
     /// <summary>Starts the effect, or restarts it when anything it reads has changed.</summary>
     private void Restart(WledSegment wled, int leds)
     {
-        string signature = string.Join(
+        string look = string.Join(
             '/',
-            wled.Effect, wled.Palette, wled.Speed, wled.Intensity, wled.Reverse, leds,
-            Palette?.Stops.Count ?? -1,
+            wled.Effect, wled.Palette, Palette?.Stops.Count ?? -1,
             wled.Colors is { Length: > 0 } ? wled.PrimaryColor.ToHex() : "-",
             wled.Colors is { Length: > 1 } ? wled.SecondaryColor.ToHex() : "-",
             wled.Colors is { Length: > 2 } ? RgbColor.FromWledArray(wled.Colors[2]).ToHex() : "-");
 
-        if (_signature == signature)
+        if (_look != look)
+        {
+            _look = look;
+
+            // The rows above are a picture of a segment that no longer exists, under a heading
+            // saying they are this one's recent past. Better blank than wrong.
+            Array.Fill(_rows, unchecked((int)Unlit));
+        }
+
+        string run = string.Join('/', look, wled.Speed, wled.Intensity, wled.Reverse, leds);
+
+        if (_run == run)
         {
             return;
         }
 
-        _signature = signature;
+        _run = run;
 
         ControllerTiming timing = Timing is { IntervalMilliseconds: > 0 } known
             ? known
