@@ -49,7 +49,11 @@ public static class SceneResolver
 
         var state = new WledState
         {
-            On = scene.On,
+            // Power goes the same way as brightness, and for the same reason. Both are one setting
+            // for the whole box, so sending either to a controller this scene says nothing about
+            // reaches every segment it has just promised to leave alone. The "Off" preset on South
+            // carries on:true with the brightness at zero, and applying it switched North on.
+            On = mentioned ? scene.On : null,
             Brightness = mentioned ? scene.BrightnessOn(controllerKey) : null,
             TransitionOnce = scene.Transition,
             Segments = [],

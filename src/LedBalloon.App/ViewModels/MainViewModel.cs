@@ -2652,9 +2652,23 @@ public sealed partial class MainViewModel : ViewModelBase
             _applyingScene = false;
         }
 
-        Status = LiveSync
-            ? $"Applied '{scene.Name}'."
-            : $"'{scene.Name}' is on the photo. The lights have not changed — press Send when you want it.";
+        if (LiveSync)
+        {
+            // The house is showing it now, so there is nothing left to preview and nothing left to
+            // warn about. Said here rather than waited for: the controllers will confirm it on their
+            // next report, and a banner that lingers until they do reads as the button not working.
+            SceneOnTheHouse = scene;
+            _touchedTheHouse = true;
+
+            ShowPreview(null);
+            RefreshSceneHeading();
+
+            Status = $"Applied '{scene.Name}'.";
+            return;
+        }
+
+        Status = $"'{scene.Name}' is on the photo. The lights have not changed — " +
+                 "press Send when you want it.";
     }
 
     // ---- Looks ----------------------------------------------------------------------------------
@@ -3341,7 +3355,11 @@ public sealed partial class MainViewModel : ViewModelBase
         // A scene that is only being previewed is a document, not the house. Changing it changes the
         // document; the house carries on as it was until "Put it on the house". The photo follows
         // the document, so the change is visible immediately - just not outside.
-        if (Previewing)
+        //
+        // Unless this IS "Put it on the house". Applying a scene goes through here too, and for a
+        // while it was caught by this guard and did nothing at all - the button changed neither the
+        // lights nor the words, because a scene is always being previewed while it is open.
+        if (Previewing && !_applyingScene)
         {
             return;
         }

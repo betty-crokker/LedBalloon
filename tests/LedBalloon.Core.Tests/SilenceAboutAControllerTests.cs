@@ -54,6 +54,24 @@ public class SilenceAboutAControllerTests
     }
 
     [Fact]
+    public void And_is_not_switched_on_either()
+    {
+        // Found by pressing the button. The real "Off" scene carries on:true with the brightness at
+        // zero - which is how WLED writes an off preset - and names only South's segments. Applying
+        // it switched North on, because power was sent to every controller whatever the scene said.
+        var scene = new Scene
+        {
+            UnlistedSegmentsOff = false,
+            On = true,
+            Brightness = { [South] = 0, [North] = 0 },
+            Segments = { ["porch"] = new SceneEntry { On = true, Effect = 1 } },
+        };
+
+        Assert.True(SceneResolver.ResolveFor(House(), scene, South).On);
+        Assert.Null(SceneResolver.ResolveFor(House(), scene, North).On);
+    }
+
+    [Fact]
     public void A_controller_it_does_speak_about_still_gets_one()
     {
         var scene = new Scene
