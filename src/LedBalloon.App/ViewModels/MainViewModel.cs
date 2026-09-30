@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
 using Avalonia.Media;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -66,6 +67,16 @@ public sealed record PresetDetail(
     /// False for an effect that reads no color slots, so there is no color to show for it.
     /// </summary>
     bool HasPrimary = true,
+
+    /// <summary>
+    /// The palette this effect will draw from, as a gradient, or null when it draws from none.
+    /// </summary>
+    /// <remarks>
+    /// The majority of effects take their colors from the palette and ignore the slots - 42 of the
+    /// 187 on this house read only the palette and 22 read neither - so without this most rows had
+    /// no color on them at all, next to a photo drawing a specific set of colors.
+    /// </remarks>
+    IBrush? PaletteSwatch = null,
 
     /// <summary>
     /// Why there is nothing to describe, or null when there is something.
@@ -2136,9 +2147,8 @@ public sealed partial class MainViewModel : ViewModelBase
         // Drawn at the brightness this controller will actually be at, so the row and the photo
         // agree. A look is the same look on a dim controller and a bright one; what it looks like
         // is not.
-        byte? dimming = DisplayStates.GetValueOrDefault(run.ControllerKey ?? string.Empty)?.Brightness;
-
-        PresetDetail drawn = Describe(run, wled, device, controllerBrightness: dimming);
+        PresetDetail drawn = Describe(
+            run, wled, device, palettes: PalettesOn(run.ControllerKey));
 
         return new SegmentChoice
         {
@@ -2150,6 +2160,7 @@ public sealed partial class MainViewModel : ViewModelBase
             Primary = drawn.PrimarySwatch,
             Secondary = drawn.SecondarySwatch,
             HasSecondary = drawn.HasSecondary,
+            Gradient = drawn.PaletteSwatch,
         };
     }
 
@@ -2531,7 +2542,9 @@ public sealed partial class MainViewModel : ViewModelBase
                 // recalling a WLED preset saved with different bounds shrinks the segment table,
                 // and two thirds of South quietly vanished from the panel.
                 PresetDetail detail = state.Segments?.FirstOrDefault(x => x.Id == id) is { } wled
-                    ? Describe(segment, wled, device, state.On != false, state.Brightness)
+                    ? Describe(
+                        segment, wled, device, state.On != false, state.Brightness,
+                        PalettesOn(key))
                     : NotCut(segment);
 
                 // No picker: the house is not a scene, so there is no document to change. The name
@@ -3294,7 +3307,8 @@ public sealed partial class MainViewModel : ViewModelBase
                     group.Segments.Add(Choosable(
                         scene,
                         run,
-                        Describe(run, wled, device, state.On != false, state.Brightness)
+                        Describe(
+                            run, wled, device, state.On != false, state.Brightness, PalettesOn(key))
                             with { LookName = wearing },
                         device));
                 }
@@ -4984,7 +4998,8 @@ public sealed partial class MainViewModel : ViewModelBase
         WledSegment wled,
         DeviceViewModel? device,
         bool controllerOn = true,
-        byte? controllerBrightness = null)
+        byte? controllerBrightness = null,
+        IReadOnlyDictionary<int, WledPalette>? palettes = null)
     {
         // A preset can turn a segment off, and several here do - that is what "Stairs white" is for.
         // Its stored effect, palette and color are all still in the preset, so describing them
@@ -5023,13 +5038,19 @@ public sealed partial class MainViewModel : ViewModelBase
             ? effect.UsedSlots.Count
             : wled.Colors is { Length: > 1 } ? 2 : 1;
 
-        // And brightness: the photo folds both levels into the color it draws and stops calling a
-        // run lit once nothing is left, so a magenta on a controller turned down to 38 of 255 is
-        // near black there and was full magenta here.
-        double dim = ((controllerBrightness ?? 255) / 255d) * ((wled.Brightness ?? 255) / 255d);
+        // Not dimmed by the controller's brightness, though the photo is. That was tried and it is
+        // wrong here: this list is a picker, and North sitting at 38 of 255 turned every row in it
+        // the same near-black, so no two could be told apart. How dim the house is belongs to the
+        // slider above, which says it once for all of them, and to the photo, which shows it.
+        RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
+        RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
 
-        RgbColor primary = Dim(wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black, dim);
-        RgbColor secondary = Dim(wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black, dim);
+        // Only for an effect that said it reads the palette. An effect that declared nothing gets
+        // every color control, but a gradient it may well ignore is a picture rather than a
+        // control, and a wrong picture is worse than none.
+        IBrush? gradient = effect.Declared && effect.UsesPalette
+            ? Gradient(wled, palettes, primary, secondary)
+            : null;
 
         // Only when the photo is standing in for the effect rather than running it. The other half
         // of this used to be printed too - "drawn from the effect itself" - on the great majority of
@@ -5051,12 +5072,50 @@ public sealed partial class MainViewModel : ViewModelBase
             slots > 1,
             fidelity,
             isOff,
-            HasPrimary: slots > 0);
+            HasPrimary: slots > 0,
+            PaletteSwatch: gradient);
     }
 
-    /// <summary>A color as the photo will draw it once both brightnesses are folded in.</summary>
-    private static RgbColor Dim(RgbColor color, double scale) => new(
-        (byte)(color.R * scale), (byte)(color.G * scale), (byte)(color.B * scale));
+    /// <summary>
+    /// The palette a segment is on, as a left-to-right gradient, or null when there is none to draw.
+    /// </summary>
+    /// <remarks>
+    /// Sampled through the palette's own <see cref="WledPalette.ColorAt"/>, which is what the photo
+    /// draws through, so the strip of color on a row is the same strip of color on the house. Some
+    /// palettes are defined in terms of the segment's own slots - "Color 1", "Colors 1&amp;2" - and
+    /// those need the segment's colors to mean anything, which is why they are passed in.
+    /// </remarks>
+    private static IBrush? Gradient(
+        WledSegment wled,
+        IReadOnlyDictionary<int, WledPalette>? palettes,
+        RgbColor primary,
+        RgbColor secondary)
+    {
+        if (wled.Palette is not { } id ||
+            palettes is null ||
+            !palettes.TryGetValue(id, out WledPalette? palette))
+        {
+            return null;
+        }
+
+        const int Steps = 12;
+        var stops = new GradientStops();
+
+        for (int i = 0; i < Steps; i++)
+        {
+            double t = (double)i / (Steps - 1);
+            RgbColor at = palette.ColorAt(t, primary, secondary, RgbColor.Black);
+
+            stops.Add(new GradientStop(Color.FromRgb(at.R, at.G, at.B), t));
+        }
+
+        return new LinearGradientBrush
+        {
+            StartPoint = new RelativePoint(0, 0.5, RelativeUnit.Relative),
+            EndPoint = new RelativePoint(1, 0.5, RelativeUnit.Relative),
+            GradientStops = stops,
+        };
+    }
 
     /// <summary>Turns WLED's speed and intensity numbers into something you can picture.</summary>
     private static string DescribeMotion(WledSegment wled)

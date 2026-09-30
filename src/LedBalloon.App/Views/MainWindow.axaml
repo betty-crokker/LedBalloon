@@ -326,10 +326,12 @@
                     <DockPanel Margin="0,0,0,6">
                       <TextBlock Classes="hint" DockPanel.Dock="Left" Text="brightness"
                                  VerticalAlignment="Center" Margin="0,0,8,0" />
-                      <TextBlock Classes="hint" DockPanel.Dock="Right" Width="32"
+                      <!-- As a proportion. "38" beside a slider says nothing about how dark that
+                           is; 15% says why the photo looks the way it does. -->
+                      <TextBlock Classes="hint" DockPanel.Dock="Right" Width="36"
                                  TextAlignment="Right" VerticalAlignment="Center"
                                  Margin="6,0,10,0"
-                                 Text="{Binding Brightness, StringFormat={}{0:0}}" />
+                                 Text="{Binding Percent}" />
                       <!-- Disabled rather than explained when the scene does not set it. A
                            control that cannot do anything should look like one; a sentence saying
                            so is a second thing to read to learn what the grey already says. -->
@@ -395,6 +397,14 @@
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:SegmentChoice">
                               <StackPanel Orientation="Horizontal" Spacing="6">
+                                <!-- The palette the effect draws from, sampled the way the photo
+                                     samples it. Most effects take their color from here and ignore
+                                     the slots, so without it most rows carried no color at all. -->
+                                <Border Width="34" Height="14" CornerRadius="3"
+                                        VerticalAlignment="Center"
+                                        Background="{Binding Gradient}"
+                                        BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                        IsVisible="{Binding HasGradient}" />
                                 <Border Width="14" Height="14" CornerRadius="3"
                                         VerticalAlignment="Center"
                                         Background="{Binding Primary}"

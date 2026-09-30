@@ -1,4 +1,6 @@
+using Avalonia.Media;
 using LedBalloon.App.ViewModels;
+using LedBalloon.Core;
 using LedBalloon.Core.Layout;
 using LedBalloon.Core.Models;
 using Xunit;
@@ -6,14 +8,17 @@ using Xunit;
 namespace LedBalloon.App.Tests;
 
 /// <summary>
-/// A swatch beside a segment's name is a claim about what the photo will draw, and the two sat side
-/// by side disagreeing. Porchline offered a green and a magenta for an effect that reads neither,
-/// and Under stairs offered a full magenta on a controller turned down to 38 of 255, where the
-/// photo drew something near black.
+/// What colour to put beside a segment's name, for a list that is both a description of what the
+/// segment is showing and a picker for what it should show.
 /// <para>
-/// Both come of the swatch being the color the segment has stored rather than the color anybody
-/// will see. The photo has always folded the two brightnesses in and always known which slots an
-/// effect reads; this is the card catching up.
+/// The first attempt at this dimmed the swatch by the controller's brightness, so that it matched
+/// the photo. It is a picker: North sits at 38 of 255, which turned every row in the list the same
+/// near-black and left no two of them distinguishable. How dim the house is belongs to the slider
+/// above, which says it once for all of them, and to the photo, which shows it.
+/// </para>
+/// <para>
+/// What the swatch does have to get right is which colours the effect reads at all, and the palette
+/// it draws from when it draws from one — which is most of them.
 /// </para>
 /// </summary>
 public class SwatchesMatchThePhotoTests
@@ -32,52 +37,46 @@ public class SwatchesMatchThePhotoTests
         Id = 0,
         On = true,
         Effect = effect,
+        Palette = 1,
         Brightness = segmentBrightness,
         Colors = [[0, 255, 0], [255, 0, 255]],
     };
 
-    private static byte Red(PresetDetail d) => ((Avalonia.Media.SolidColorBrush)d.PrimarySwatch).Color.R;
+    private static byte Green(PresetDetail d) => ((SolidColorBrush)d.PrimarySwatch).Color.G;
 
-    private static byte Green(PresetDetail d) => ((Avalonia.Media.SolidColorBrush)d.PrimarySwatch).Color.G;
+    /// <summary>A palette of its own, so the gradient does not depend on a controller answering.</summary>
+    private static IReadOnlyDictionary<int, WledPalette> Palettes() =>
+        new Dictionary<int, WledPalette>
+        {
+            [1] = new()
+            {
+                Stops =
+                [
+                    new PaletteStop(0, new RgbColor(255, 0, 0)),
+                    new PaletteStop(255, new RgbColor(0, 0, 255)),
+                ],
+            },
+        };
 
     [Fact]
-    public void A_controller_turned_down_dims_the_swatch_the_way_it_dims_the_photo()
+    public void A_controller_turned_right_down_does_not_darken_the_swatch()
     {
-        // 38 of 255 is what North sits at. The photo multiplies by that; so does this now.
+        // The reversal, pinned. Dimming these made every row on North the same near-black, and a
+        // list you cannot tell apart is not a picker.
         PresetDetail full = MainViewModel.Describe(Porch, Lit(0), null, controllerBrightness: 255);
         PresetDetail dim = MainViewModel.Describe(Porch, Lit(0), null, controllerBrightness: 38);
 
         Assert.Equal(255, Green(full));
-        Assert.Equal((byte)(255 * 38 / 255), Green(dim));
+        Assert.Equal(255, Green(dim));
     }
 
     [Fact]
-    public void A_segment_turned_down_dims_it_too()
+    public void Nor_does_a_segment_turned_right_down()
     {
         PresetDetail dim = MainViewModel.Describe(
-            Porch, Lit(0, segmentBrightness: 64), null, controllerBrightness: 255);
+            Porch, Lit(0, segmentBrightness: 8), null, controllerBrightness: 255);
 
-        Assert.Equal((byte)(255 * 64 / 255), Green(dim));
-    }
-
-    [Fact]
-    public void And_the_two_multiply_the_way_the_photo_multiplies_them()
-    {
-        PresetDetail dim = MainViewModel.Describe(
-            Porch, Lit(0, segmentBrightness: 128), null, controllerBrightness: 128);
-
-        Assert.Equal((byte)(255 * (128 / 255d) * (128 / 255d)), Green(dim));
-    }
-
-    [Fact]
-    public void A_brightness_nobody_stated_leaves_the_color_alone()
-    {
-        // Null is "no opinion", not zero. Reading it as zero would black out every swatch a scene
-        // says nothing about.
-        PresetDetail plain = MainViewModel.Describe(Porch, Lit(0), null);
-
-        Assert.Equal(255, Green(plain));
-        Assert.Equal(0, Red(plain));
+        Assert.Equal(255, Green(dim));
     }
 
     [Fact]
@@ -89,5 +88,23 @@ public class SwatchesMatchThePhotoTests
 
         Assert.True(plain.HasPrimary);
         Assert.True(plain.HasSecondary);
+    }
+
+    [Fact]
+    public void And_gets_no_gradient_either()
+    {
+        // It may well ignore the palette - Solid does - and a gradient it ignores is a picture
+        // rather than a control. A wrong picture is worse than none.
+        PresetDetail plain = MainViewModel.Describe(Porch, Lit(0), null, palettes: Palettes());
+
+        Assert.Null(plain.PaletteSwatch);
+    }
+
+    [Fact]
+    public void A_palette_nobody_has_the_gradient_for_draws_none()
+    {
+        PresetDetail plain = MainViewModel.Describe(Porch, Lit(0), null, palettes: null);
+
+        Assert.Null(plain.PaletteSwatch);
     }
 }

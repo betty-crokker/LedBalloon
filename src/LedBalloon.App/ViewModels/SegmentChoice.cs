@@ -49,6 +49,11 @@ public sealed class SegmentChoice
 
     public bool HasSecondary { get; init; }
 
+    /// <summary>The palette this row would draw from, or null when it draws from none.</summary>
+    public IBrush? Gradient { get; init; }
+
+    public bool HasGradient => Gradient is not null;
+
     public bool HasName => Name is { Length: > 0 };
 
     public override string ToString() => HasName ? $"{Name} — {Description}" : Description;

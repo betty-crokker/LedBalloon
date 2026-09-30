@@ -83,6 +83,11 @@ public sealed partial class ControllerSegments : ObservableObject
 
     public bool HasBrightnessWarning => BrightnessReaches.Length > 0;
 
+    /// <summary>
+    /// The brightness as a proportion, because 38 beside a slider says nothing about how dark it is.
+    /// </summary>
+    public string Percent => $"{Math.Round(Brightness / 255d * 100)}%";
+
     [ObservableProperty] private double _brightness;
 
     partial void OnBrightnessChanged(double value)
@@ -92,6 +97,7 @@ public sealed partial class ControllerSegments : ObservableObject
             return;
         }
 
+        OnPropertyChanged(nameof(Percent));
         _brightnessChanged?.Invoke(Key, (byte)Math.Clamp(value, 0, 255));
     }
 }
