@@ -37,6 +37,7 @@ public sealed partial class SegmentColorSlot : ObservableObject
         _settling = true;
         Picked = color;
         Opened = color;
+        _hsv = color.ToHsv();
         _settling = false;
     }
 
@@ -54,6 +55,43 @@ public sealed partial class SegmentColorSlot : ObservableObject
     public string Label { get; }
 
     [ObservableProperty] private Color _picked;
+
+    private HsvColor _hsv;
+    private bool _fromHsv;
+
+    /// <summary>
+    /// The same color as hue, saturation and brightness, which is what the picker moves.
+    /// </summary>
+    /// <remarks>
+    /// Kept rather than converted on demand, because red and blue turned all the way down are the
+    /// same three bytes. Round-tripping through <see cref="Picked"/> would lose the hue the moment
+    /// the brightness reached zero, and moving the brightness back up would come back grey instead
+    /// of the color that was there a second ago.
+    /// </remarks>
+    public HsvColor Hsv
+    {
+        get => _hsv;
+        set
+        {
+            if (_hsv.Equals(value))
+            {
+                return;
+            }
+
+            _hsv = value;
+            OnPropertyChanged();
+
+            _fromHsv = true;
+            try
+            {
+                Picked = value.ToRgb();
+            }
+            finally
+            {
+                _fromHsv = false;
+            }
+        }
+    }
 
     public IBrush Brush => new SolidColorBrush(Picked);
 
@@ -93,6 +131,15 @@ public sealed partial class SegmentColorSlot : ObservableObject
 
     partial void OnPickedChanged(Color value)
     {
+        // A color set from anywhere but the picker - the segment being reread, or Cancel putting it
+        // back - has to drag the HSV with it, or the next thing the picker does would apply the old
+        // hue over the new color.
+        if (!_fromHsv)
+        {
+            _hsv = value.ToHsv();
+            OnPropertyChanged(nameof(Hsv));
+        }
+
         OnPropertyChanged(nameof(Brush));
         OnPropertyChanged(nameof(Hex));
 
