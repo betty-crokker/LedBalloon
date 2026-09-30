@@ -169,9 +169,15 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
         _applyingRemoteState = true;
         try
         {
-            State = state;
+            // The derived values first and State last. State is the announcement that everything
+            // has moved, and anyone acting on it reads the rest - so raising it before the rest had
+            // been written handed them the previous answer. The switch that says whether the house
+            // is lit was reading IsOn one report behind, which on a house that had just been lit
+            // meant it never caught up at all.
             IsOn = state.On ?? IsOn;
             Brightness = state.Brightness ?? Brightness;
+
+            State = state;
         }
         finally
         {
