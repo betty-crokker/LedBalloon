@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Media;
+using LedBalloon.App.Controls;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -144,6 +145,15 @@ public sealed record PresetDetail(
 /// </summary>
 public sealed record PickerOption(int Id, string Name)
 {
+    /// <summary>
+    /// A postage stamp of the effect, drawn as this segment would run it.
+    /// </summary>
+    /// <remarks>
+    /// Null for an effect the app cannot run, which is the honest answer: the row then carries its
+    /// name and nothing else rather than a picture of something the app guessed at.
+    /// </remarks>
+    public IImage? Preview { get; init; }
+
     public override string ToString() => Name;
 }
 
@@ -3673,6 +3683,38 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<SegmentColorSlot> SegmentColors { get; } = [];
 
     /// <summary>
+    /// Every effect this controller reports, each with a stamp of what it would do on this segment.
+    /// </summary>
+    /// <remarks>
+    /// Drawn against the segment's own palette and colors, so the list answers "what would this look
+    /// like here" rather than "what does this look like in the abstract". An effect nobody has
+    /// ported gets no stamp rather than a guessed one.
+    /// </remarks>
+    private IEnumerable<PickerOption> EffectOptions(
+        DeviceViewModel device, Segment segment, WledSegment? shown)
+    {
+        WledSegment like = shown ?? new WledSegment { Id = 0 };
+
+        WledPalette? palette = like.Palette is { } id && id > 0
+            ? PalettesOn(segment.ControllerKey)?.GetValueOrDefault(id)
+            : null;
+
+        ControllerTiming timing = segment.ControllerKey is { } key &&
+            FrameTimes?.GetValueOrDefault(key) is { IntervalMilliseconds: > 0 } known
+                ? known
+                : new ControllerTiming(
+                    EffectSimulation.DefaultFrameMilliseconds, FrameTime.MinimumFrameDelay);
+
+        for (int i = 0; i < device.Effects.Count; i++)
+        {
+            yield return new PickerOption(i, device.Effects[i])
+            {
+                Preview = EffectThumbnail.For(i, device.Effects, like, palette, timing),
+            };
+        }
+    }
+
+    /// <summary>
     /// Fills <see cref="SegmentColors"/> for whatever is selected and whatever effect it is on.
     /// </summary>
     /// <remarks>
@@ -4243,17 +4285,20 @@ public sealed partial class MainViewModel : ViewModelBase
                 return;
             }
 
-            for (int i = 0; i < device.Effects.Count; i++)
-            {
-                SegmentEffects.Add(new PickerOption(i, device.Effects[i]));
-            }
-
             // The gradients the photo draws with, so a palette is picked by looking at it rather
             // than by remembering what "Icefire" came out like last time. The ones defined in terms
             // of the segment's own colors need those to mean anything, so they are resolved against
             // whatever the segment is set to at the moment.
             IReadOnlyDictionary<int, WledPalette>? gradients = PalettesOn(segment.ControllerKey);
             WledSegment? shown = LiveSegmentFor(segment);
+
+            // Alphabetical, because 187 names in firmware order is a list you search rather than
+            // read. The id stays whatever the controller calls it; only the order on screen moves.
+            foreach (PickerOption option in EffectOptions(device, segment, shown)
+                .OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                SegmentEffects.Add(option);
+            }
 
             RgbColor slot(int i) => shown?.Colors is { } c && i < c.Length
                 ? RgbColor.FromWledArray(c[i])
@@ -4264,20 +4309,32 @@ public sealed partial class MainViewModel : ViewModelBase
                     ? GradientOf(found, slot(0), slot(1), slot(2))
                     : null;
 
+            List<PaletteOption> choices = [];
+
             for (int i = 0; i < device.Palettes.Count; i++)
             {
-                SegmentPalettes.Add(new PaletteOption(i, device.Palettes[i], SwatchFor(i)));
+                choices.Add(new PaletteOption(i, device.Palettes[i], SwatchFor(i)));
             }
 
             // The controller's own uploaded palettes, which its name list leaves out. They are
             // known only because the gradients were read separately, so that is what names them.
+            // WLED numbers them down from 255, so they are nowhere near the end of the named ones.
             if (gradients is not null)
             {
                 foreach (int id in gradients.Keys.Where(id => id >= device.Palettes.Count).Order())
                 {
-                    SegmentPalettes.Add(
-                        new PaletteOption(id, device.Device.PaletteName(id), SwatchFor(id)));
+                    choices.Add(new PaletteOption(id, device.Device.PaletteName(id), SwatchFor(id)));
                 }
+            }
+
+            // Alphabetical here too. The five WLED marks with an asterisk sort to the top of their
+            // own accord, which is where they belong: they are not gradients at all but recipes made
+            // from the segment's own color slots, so they are the ones that answer to the boxes
+            // above rather than to this list.
+            foreach (PaletteOption option in choices
+                .OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                SegmentPalettes.Add(option);
             }
 
             int segmentId = Project.WledSegmentIdFor(segment);

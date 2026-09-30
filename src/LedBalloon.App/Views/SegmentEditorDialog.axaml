@@ -139,11 +139,28 @@
                      IsVisible="{Binding SegmentColorNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
           <TextBlock Classes="hint" Margin="0,8,0,2" Text="Effect" />
+          <!-- Each row carries a stamp of what that effect does on this segment, drawn the same
+               way the preview above is: the run across, a few recent frames down. "Chunchun" is not
+               a description and neither is "Phased Noise", and the list is 187 of them. -->
           <ComboBox ItemsSource="{Binding SegmentEffects}"
                     AutomationProperties.AutomationId="SegmentEffect"
                     SelectedItem="{Binding SegmentEffectChoice}"
                     PlaceholderText="Not reported yet"
-                    HorizontalAlignment="Stretch" />
+                    HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PickerOption">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Width="72" Height="18" CornerRadius="2" VerticalAlignment="Center"
+                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
+                    <Image Source="{Binding Preview}" Stretch="Fill"
+                           RenderOptions.BitmapInterpolationMode="None" />
+                  </Border>
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
 
           <!-- Off when the effect ignores it. Which is which comes from the port where there is one
                and from the controller's own fxdata otherwise, so a control that would do nothing is
