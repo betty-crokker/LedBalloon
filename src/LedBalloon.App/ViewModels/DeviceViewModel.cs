@@ -163,6 +163,29 @@ public sealed partial class DeviceViewModel : ObservableObject, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Records power the app has just asked for, without posting it back.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IsOn"/> is otherwise only ever written by a report from the controller, which is
+    /// right for a reading and wrong for a decision the app has already made and sent. Anything
+    /// deciding what to do next - whether an edit can be seen, and so whether it is worth sending -
+    /// would be acting on the state before the switch until the controller got round to confirming
+    /// it, and on a controller whose socket has dropped, for as long as it stayed dropped.
+    /// </remarks>
+    public void NotePowerSent(bool on)
+    {
+        _applyingRemoteState = true;
+        try
+        {
+            IsOn = on;
+        }
+        finally
+        {
+            _applyingRemoteState = false;
+        }
+    }
+
     /// <summary>Pushes state that came from the device into the UI without echoing it straight back.</summary>
     private void ApplyRemoteState(WledState state)
     {

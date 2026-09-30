@@ -256,6 +256,19 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly Dictionary<string, WledState> _heldPatches =
         new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Edits for a controller that is switched off, waiting for it to come on.
+    /// <para>
+    /// A separate bag from <see cref="_heldPatches"/> because these are held for a different reason
+    /// and end in a different way. Those are held because sync is off, and the person has to press a
+    /// button to release them; these are held because there is nothing to see either way, and they
+    /// go out by themselves with the power. Nothing is said about them on screen: the switch beside
+    /// the sync switch already says the house is off, which is the whole of the explanation.
+    /// </para>
+    /// </summary>
+    private readonly Dictionary<string, WledState> _darkPatches =
+        new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>True when the chosen preset is on the photo but has not been sent.</summary>
     private bool _presetIsPending;
 
@@ -1942,12 +1955,31 @@ public sealed partial class MainViewModel : ViewModelBase
             var held = new Dictionary<string, WledState>(_heldPatches, StringComparer.OrdinalIgnoreCase);
             _heldPatches.Clear();
 
+            bool anyWaitedForTheDark = false;
+
             foreach (KeyValuePair<string, WledState> patch in held)
             {
-                DeviceFor(patch.Key)?.Device.Post(patch.Value);
+                if (DeviceFor(patch.Key) is not { } device)
+                {
+                    continue;
+                }
+
+                // The same wait a live edit gets, since this button and the sync switch are meant to
+                // mean the same thing. A controller that is switched off has nothing to show either
+                // way, so what was held for one reason is now held for the other.
+                if (patch.Value.On is null && !device.IsOn)
+                {
+                    Hold(_darkPatches, patch.Key, patch.Value);
+                    anyWaitedForTheDark = true;
+                    continue;
+                }
+
+                PostAndNote(device, patch.Value);
             }
 
-            Status = "Sent.";
+            Status = anyWaitedForTheDark
+                ? "Ready \u2014 it will show when you switch the house on."
+                : "Sent.";
         }
 
         RebuildPendingStates();
@@ -1958,6 +1990,11 @@ public sealed partial class MainViewModel : ViewModelBase
     private void DiscardPending()
     {
         _heldPatches.Clear();
+
+        // Including the ones waiting for the house to come on. "Showing what the lights are actually
+        // doing" has to mean all of it, or switching the house on later would spring edits that were
+        // thrown away.
+        _darkPatches.Clear();
         _presetIsPending = false;
 
         _applyingPreset = true;
@@ -2001,9 +2038,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
             }
 
-            // Reality is what was asked for now, so there is nothing left held back.
+            // Reality is what was asked for now, so there is nothing left held back - including
+            // anything that was waiting for the dark, which this preset has just described over.
             _presetIsPending = false;
             _heldPatches.Clear();
+            _darkPatches.Clear();
             RebuildPendingStates();
 
             // Deliberately only the controllers that store it. Making the rest of the house match
@@ -3398,32 +3437,81 @@ public sealed partial class MainViewModel : ViewModelBase
 
         _touchedTheHouse = true;
 
-        // WLED reads a brightness as a request to light up: a controller that is off and is sent a
-        // bri switches on. Dragging a brightness slider says how bright, not whether, so a patch
-        // that would only have changed the brightness of a dark controller says to stay dark.
-        // After NoteSceneEdit rather than before, because the scene should record what was asked
-        // for - a brightness, and nothing about power - and this is only about the wire.
-        if (patch.Brightness is not null && patch.On is null && !device.IsOn)
+        // Applying a scene is the explicit "put this on the house", so it goes out whole - and it
+        // supersedes anything that was waiting for the dark, because a scene describes the whole
+        // controller and replaying older edits over it would half-undo it.
+        if (_applyingScene)
         {
-            patch.On = false;
+            _darkPatches.Remove(key);
+        }
+        else if (patch.On is null && !device.IsOn)
+        {
+            // Nothing to look at, so nothing to send. Posting a change to a controller that is
+            // switched off cannot show anything on the house; all it achieves is a controller whose
+            // state has drifted from what the panel says - or, for a brightness, a house that lights
+            // itself up, because WLED reads a bri as a request to come on. The patch waits here and
+            // goes out with the power instead, so switching the house on brings up what was asked
+            // for rather than what it was showing before.
+            //
+            // A patch that carries power itself is never held: that is the one that ends the wait.
+            //
+            // After NoteSceneEdit rather than before, because the scene should record what was
+            // asked for whether or not the lights are in a position to show it.
+            Hold(_darkPatches, key, patch);
+            return;
+        }
+        else if (patch.On is true && _darkPatches.Remove(key, out WledState? waiting))
+        {
+            // In the same request as the power, so the house comes up already showing what was
+            // asked for instead of flickering through what it was doing before. The newer patch
+            // wins where they overlap, which is what MergeFrom does in this direction.
+            waiting.MergeFrom(patch);
+            patch = waiting;
         }
 
         if (LiveSync)
         {
-            device.Device.Post(patch);
+            PostAndNote(device, patch);
             return;
         }
 
-        if (_heldPatches.TryGetValue(key, out WledState? held))
+        Hold(_heldPatches, key, patch);
+
+        RebuildPendingStates();
+    }
+
+    /// <summary>Posts a patch, and remembers any power it carried before the controller says so.</summary>
+    /// <remarks>
+    /// Whether the next edit is worth sending turns on whether that controller is lit, and the only
+    /// reading of that comes back over the socket. Waiting for it meant the edit made straight after
+    /// switching the house on was held as though the house were still dark.
+    /// </remarks>
+    private static void PostAndNote(DeviceViewModel device, WledState patch)
+    {
+        if (patch.On is { } power)
         {
-            held.MergeFrom(patch);
+            device.NotePowerSent(power);
+        }
+
+        device.Device.Post(patch);
+    }
+
+    /// <summary>Merges a patch into whatever is already waiting for that controller.</summary>
+    /// <remarks>
+    /// Merged rather than queued for the same reason the coalescer merges: what is waiting is one
+    /// description of where that controller should end up, not a list of the steps taken to get
+    /// there. Two turns of the same slider are one patch when they arrive.
+    /// </remarks>
+    private static void Hold(Dictionary<string, WledState> waiting, string key, WledState patch)
+    {
+        if (waiting.TryGetValue(key, out WledState? already))
+        {
+            already.MergeFrom(patch);
         }
         else
         {
-            _heldPatches[key] = patch;
+            waiting[key] = patch;
         }
-
-        RebuildPendingStates();
     }
 
     partial void OnMasterOnChanged(bool value)
@@ -3737,10 +3825,15 @@ public sealed partial class MainViewModel : ViewModelBase
     /// "Changes show on the house as you make them" is a promise the house cannot keep while it is
     /// switched off, and the switch saying so sat a few centimetres from another switch saying the
     /// lights were off. Two true sentences that read as a contradiction are worse than one.
+    /// <para>
+    /// This one is a promise the app does keep, because the edits wait in <see cref="_darkPatches"/>
+    /// and go out with the power. It says "show" rather than anything about reaching the controller:
+    /// where the bytes are sitting is not a fact anybody needs.
+    /// </para>
     /// </remarks>
     public string SyncOnLabel => MasterOn
         ? "Changes show on the house as you make them"
-        : "Changes reach the house, but it is switched off";
+        : "Changes show when you switch the house on";
 
     partial void OnLiveSyncChanged(bool value)
     {

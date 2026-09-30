@@ -19,6 +19,7 @@ internal sealed class FakeController : IDisposable
     /// <summary>What the controller calls itself, and so what anything keyed by controller uses.</summary>
     public const string Key = "aa:bb:cc:dd:ee:ff";
 
+    private readonly List<string> _posted = [];
     private readonly HttpListener _listener;
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task _serving;
@@ -32,6 +33,48 @@ internal sealed class FakeController : IDisposable
 
     /// <summary>Where to point a device at, as the app would be given it.</summary>
     public string Host { get; }
+
+    /// <summary>
+    /// Every state patch the app has posted, in order, as the JSON that went over the wire.
+    /// <para>
+    /// Kept so a test can say what did not happen as well as what did. Locked because the listener
+    /// answers on its own thread and the test reads from the UI one.
+    /// </para>
+    /// </summary>
+    public IReadOnlyList<string> Posts
+    {
+        get
+        {
+            lock (_posted)
+            {
+                return [.. _posted];
+            }
+        }
+    }
+
+    /// <summary>
+    /// Waits for the app to post something, up to <paramref name="within"/>.
+    /// </summary>
+    /// <remarks>
+    /// Posts are paced by the coalescer rather than sent as they are made, so there is always a
+    /// wait; asserting straight after the edit would pass whatever the code did.
+    /// </remarks>
+    public async Task<bool> WaitForPostAsync(TimeSpan within)
+    {
+        DateTime until = DateTime.UtcNow + within;
+
+        while (DateTime.UtcNow < until)
+        {
+            if (Posts.Count > 0)
+            {
+                return true;
+            }
+
+            await Task.Delay(20);
+        }
+
+        return false;
+    }
 
     public static FakeController Start(params string[] effects)
     {
@@ -85,6 +128,21 @@ internal sealed class FakeController : IDisposable
             }
 
             string path = context.Request.Url?.AbsolutePath ?? "/";
+
+            if (context.Request.HttpMethod == "POST")
+            {
+                using var body = new StreamReader(context.Request.InputStream, Encoding.UTF8);
+                string sent = await body.ReadToEndAsync();
+
+                lock (_posted)
+                {
+                    _posted.Add(sent);
+                }
+
+                context.Response.ContentType = "application/json";
+                context.Response.Close();
+                continue;
+            }
 
             if (path.TrimEnd('/') is "/json")
             {
