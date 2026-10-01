@@ -88,11 +88,12 @@ public sealed class WledFileSystemClient : IDisposable
         var file = new ByteArrayContent(content);
         file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
 
-        // The editor handler takes the destination from the part's filename.
+        // The handler takes the destination from the part's filename.
         form.Add(file, "data", "/" + normalized);
 
         HttpStatusCode status;
-        using (HttpResponseMessage response = await _http.PostAsync("edit", form, cancellationToken)
+        using (HttpResponseMessage response = await _http
+                   .PostAsync(Endpoint(normalized), form, cancellationToken)
                    .ConfigureAwait(false))
         {
             status = response.StatusCode;
@@ -118,6 +119,30 @@ public sealed class WledFileSystemClient : IDisposable
                 "did not come back). The build may omit the file editor, or the filesystem may be full.");
         }
     }
+
+    /// <summary>
+    /// Where to post a file so the controller does something about it.
+    /// </summary>
+    /// <remarks>
+    /// Two handlers take an upload and they are not interchangeable. <c>/edit</c> writes the file
+    /// and stops there; <c>/upload</c> writes it and then tells the firmware to look at it again.
+    /// For a custom palette that difference is the whole thing: posted to <c>/edit</c> the file sits
+    /// on the filesystem, <c>cpalcount</c> never moves, and the palette does not exist as far as any
+    /// segment is concerned - and WLED does not complain, it silently falls back to palette 0.
+    /// Which is exactly the failure <see cref="Layout.CustomPaletteCopier"/> was written to prevent,
+    /// arriving through the door it uses to prevent it.
+    /// <para>
+    /// Measured on 0.15.3: the same bytes to <c>/edit</c> left <c>cpalcount</c> at 1 and the palette
+    /// absent from <c>/json/palx</c> half a minute later; to <c>/upload</c> it was 2 and the gradient
+    /// was there. WLED's own palette editor posts to <c>/upload</c>.
+    /// </para>
+    /// <para>
+    /// Only palettes are routed that way. The rest keep <c>/edit</c>, which is what they have always
+    /// used and what the preset and photo paths were tested against.
+    /// </para>
+    /// </remarks>
+    private static string Endpoint(string normalized) =>
+        normalized.StartsWith("palette", StringComparison.OrdinalIgnoreCase) ? "upload" : "edit";
 
     /// <summary>Reads the file back and checks it is the size we just sent.</summary>
     private async Task<bool> WroteSuccessfullyAsync(
