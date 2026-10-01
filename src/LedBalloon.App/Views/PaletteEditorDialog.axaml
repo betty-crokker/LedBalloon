@@ -1,0 +1,159 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="using:Avalonia.Data.Converters"
+        xmlns:vm="using:LedBalloon.App.ViewModels"
+        x:Class="LedBalloon.App.Views.PaletteEditorDialog"
+        x:DataType="vm:PaletteEditorViewModel"
+        Title="LedBalloon"
+        Width="620" Height="700"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackground" Color="#F4F5F7" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#DFE1E5" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackground" Color="#16181C" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#2A2E35" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="TextBlock.panelTitle">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="FontSize" Value="15" />
+    </Style>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.7" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="Button.block">
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+  </Window.Styles>
+
+  <Border Padding="18" Background="{DynamicResource PanelBackground}">
+    <DockPanel>
+
+      <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"
+                  HorizontalAlignment="Right" Margin="0,14,0,0">
+        <Button Content="Cancel" Click="OnCancel" IsCancel="True"
+                AutomationProperties.AutomationId="PaletteCancel" />
+        <Button Content="Save" Click="OnSave" IsDefault="True"
+                IsEnabled="{Binding HasChosen}"
+                AutomationProperties.AutomationId="PaletteSave" />
+      </StackPanel>
+
+      <StackPanel DockPanel.Dock="Top" Spacing="2" Margin="0,0,0,10">
+        <TextBlock Classes="panelTitle" Text="{Binding ControllerName, StringFormat='Palettes on {0}'}" />
+        <TextBlock Classes="hint"
+                   Text="Palettes this controller holds of its own. The built-in ones are part of its firmware and cannot be changed." />
+      </StackPanel>
+
+      <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="0,8,0,0"
+                 Text="{Binding Status}"
+                 IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+      <Grid ColumnDefinitions="200,14,*">
+
+        <!-- The list down the side rather than a dropdown, because this window is about the set of
+             them: which exist, what each is for, and which one is being changed. -->
+        <DockPanel Grid.Column="0">
+          <!-- Only the last one can go. WLED reads palette0 upward and stops at the first file
+               missing, so removing one from the middle would orphan everything above it; its own
+               UI offers "remove last" and nothing else for the same reason. -->
+          <Button DockPanel.Dock="Bottom" Classes="block" Content="Remove the last one" Margin="0,6,0,0"
+                  Click="OnRemoveLast"
+                  IsEnabled="{Binding CanRemoveChosen}"
+                  AutomationProperties.AutomationId="PaletteRemove" />
+
+          <Button DockPanel.Dock="Bottom" Classes="block" Content="New palette" Margin="0,8,0,0"
+                  Command="{Binding AddPaletteCommand}"
+                  IsEnabled="{Binding CanAdd}"
+                  AutomationProperties.AutomationId="PaletteAdd" />
+
+          <ListBox ItemsSource="{Binding Palettes}" SelectedItem="{Binding Chosen}"
+                   AutomationProperties.AutomationId="PaletteList"
+                   BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PaletteChoice">
+                <StackPanel Spacing="3" Margin="0,3">
+                  <TextBlock Text="{Binding Shown}" TextTrimming="CharacterEllipsis" />
+                  <Border Height="14" CornerRadius="3" Background="{Binding Gradient}"
+                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+
+        <ScrollViewer Grid.Column="2" HorizontalScrollBarVisibility="Disabled"
+                      IsVisible="{Binding HasChosen}">
+          <StackPanel Spacing="6">
+
+            <!-- The reach, before anything is changed rather than after. A palette is a file several
+                 scenes may quietly be built on, with no name and no list to say so. -->
+            <Border Background="#C9821B" CornerRadius="4" Padding="10,8"
+                    IsVisible="{Binding HasWarning}">
+              <TextBlock Foreground="White" TextWrapping="Wrap" FontSize="12"
+                         Text="{Binding Warning}" />
+            </Border>
+
+            <TextBlock Classes="hint" Text="Name" />
+            <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     AutomationProperties.AutomationId="PaletteName"
+                     Watermark="Custom 0" />
+            <TextBlock Classes="hint" FontStyle="Italic"
+                       Text="Kept with your house rather than on the controller, which has nowhere to put it." />
+
+            <TextBlock Classes="hint" Margin="0,10,0,0" Text="The gradient" />
+            <Border Height="40" CornerRadius="4" Background="{Binding Gradient}"
+                    BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+
+            <ItemsControl ItemsSource="{Binding Stops}" Margin="0,8,0,0">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PaletteStopRow">
+                  <Grid ColumnDefinitions="Auto,8,*,8,Auto,6,Auto" Margin="0,0,0,6">
+                    <Button Grid.Column="0" Padding="4" Command="{Binding PickCommand}"
+                            AutomationProperties.AutomationId="StopColor">
+                      <Border Width="26" Height="22" CornerRadius="3" Background="{Binding Brush}"
+                              BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+                    </Button>
+
+                    <Slider Grid.Column="2" Minimum="0" Maximum="255" VerticalAlignment="Center"
+                            AutomationProperties.AutomationId="StopPosition"
+                            Value="{Binding Position, Mode=TwoWay}" />
+
+                    <TextBlock Grid.Column="4" Classes="hint" Width="36" TextAlignment="Right"
+                               VerticalAlignment="Center" Text="{Binding Percent}" />
+
+                    <Button Grid.Column="6" Padding="7,3" Command="{Binding RemoveCommand}"
+                            ToolTip.Tip="Remove this color"
+                            AutomationProperties.AutomationId="StopRemove">
+                      <TextBlock Text="&#x2715;" FontSize="12" />
+                    </Button>
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <Button Classes="block" Content="Add a color" Command="{Binding AddStopCommand}"
+                    AutomationProperties.AutomationId="StopAdd" />
+
+            <TextBlock Classes="hint" FontStyle="Italic" Margin="0,4,0,0"
+                       Text="The controller spreads whatever is here into sixteen steps, so two colors very close together come out as one." />
+          </StackPanel>
+        </ScrollViewer>
+
+      </Grid>
+    </DockPanel>
+  </Border>
+</Window>

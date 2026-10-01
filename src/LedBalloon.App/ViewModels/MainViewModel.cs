@@ -237,6 +237,39 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     public Func<SegmentColorSlot, Task>? ShowColorPicker { get; set; }
 
+    /// <summary>
+    /// How this opens the palette editor for one controller. Set by the segment editor while it is
+    /// open, for the same reason as the color picker: the window belongs over that one.
+    /// </summary>
+    public Func<DeviceViewModel, Task<bool>>? ShowPaletteEditor { get; set; }
+
+    /// <summary>
+    /// Opens the chosen segment's controller's own palettes for editing.
+    /// </summary>
+    /// <remarks>
+    /// Reached from beside the palette picker, because that is where somebody is when they find the
+    /// list has nothing that suits. The palettes belong to the controller rather than the segment,
+    /// which the window says in its heading.
+    /// </remarks>
+    [RelayCommand]
+    private async Task EditPalettesAsync()
+    {
+        if (ShowPaletteEditor is not { } show || SegmentController is not { } device)
+        {
+            return;
+        }
+
+        if (await show(device))
+        {
+            // Read again from the controller, because a palette that was just written is a gradient
+            // every swatch and both previews draw with.
+            await LoadPalettesAsync();
+
+            RefreshSegmentPickers(SelectedSegment);
+            AfterProjectChanged("Palettes changed.");
+        }
+    }
+
     [ObservableProperty] private LedBalloonProject _project = new();
     [ObservableProperty] private Segment? _selectedSegment;
     [ObservableProperty] private HousePreset? _selectedPreset;
