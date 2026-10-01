@@ -82,6 +82,18 @@ public class TheSwatchesOnAcardAreTheOnesItReadsTests(UiThreadFixture ui) : IDis
 
         app.SelectedSegment = run;
 
+        // Said out loud, because without it this test fails by quietly answering the other
+        // question. A controller that has not reported its effects leaves the card with no effect
+        // name to look up, which is the "nothing is known" case - and that one is meant to show two
+        // swatches. The assertion below would then fail as if the rule were wrong rather than as if
+        // the stand-in had been slow, which is what happened once on a loaded machine.
+        for (int tries = 0; tries < 40 && app.SegmentController?.Effects.Count is null or 0; tries++)
+        {
+            await Task.Delay(50);
+        }
+
+        Assert.NotEmpty(app.SegmentController!.Effects);
+
         // Pink in slot 0, a blue in slot 1 so the two can be told apart, and black in slot 2 -
         // which WLED keeps on every segment whether or not anything reads it, and which is the
         // square that started this.
