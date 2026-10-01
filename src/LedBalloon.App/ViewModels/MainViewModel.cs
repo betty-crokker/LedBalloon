@@ -3787,7 +3787,11 @@ public sealed partial class MainViewModel : ViewModelBase
         // effect does with them. Colortwinkles reads none - so on "* Colors 1&2" nothing offered the
         // boxes, and the palette had nothing to be built from. Picking it was a dead end, and the
         // only way out was the WLED app.
-        if (ChosenGradient?.ColorSlots is { Count: > 0 } byPalette)
+        // Only when the effect reads the palette at all. Solid draws Colors[0] and never asks the
+        // palette for anything, so on "My three colors, blended" the two extra colors the palette is
+        // made of reach nothing - and offering boxes for them is the fault this whole table exists
+        // to remove, reintroduced from the other side.
+        if (SegmentUsesPalette && ChosenGradient?.ColorSlots is { Count: > 0 } byPalette)
         {
             string?[] named = [.. slots, .. new string?[3]];
 
