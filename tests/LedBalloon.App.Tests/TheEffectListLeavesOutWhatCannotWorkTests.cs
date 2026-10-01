@@ -99,7 +99,11 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
         // Null by the withholding rule above. It would also be null while the controller had yet to
         // echo the palette back, so the assertion worth reading is the one above it.
         Assert.Null(app.PreviewPalette);
-        Assert.DoesNotContain("palette", app.SegmentPaletteNote, StringComparison.OrdinalIgnoreCase);
+
+        // And the picker is not on screen to disagree with it. It used to be greyed out with a line
+        // beneath saying it was not used, which is the app arguing with itself where the reader can
+        // see; the color boxes for a slot nothing reads are not drawn either.
+        Assert.False(app.SegmentUsesPalette);
     });
 
     [Fact]
@@ -120,7 +124,6 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
         app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Pixelwave");
 
         Assert.True(app.SegmentUsesPalette);
-        Assert.Equal(string.Empty, app.SegmentPaletteNote);
     });
 
     [Fact]

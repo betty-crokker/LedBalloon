@@ -162,9 +162,12 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
 
-          <!-- Off when the effect ignores it. Which is which comes from the port where there is one
-               and from the controller's own fxdata otherwise, so a control that would do nothing is
-               not offered. -->
+          <!-- Gone rather than greyed, when the effect ignores it. A disabled picker showing a
+               palette the effect never reads, under a line saying so, is the app arguing with
+               itself in front of the reader; the color boxes for a slot nothing reads are not
+               drawn either, and this is the same rule. Which is which comes from the port where
+               there is one and from the controller's own fxdata otherwise. -->
+          <StackPanel IsVisible="{Binding SegmentUsesPalette}">
           <TextBlock Classes="hint" Margin="0,8,0,2" Text="Palette" />
           <!-- The pencil sits on the row rather than under it, the way it does beside a segment
                name, and only for a palette somebody here made: the firmware's own are the same on
@@ -173,7 +176,6 @@
           <ComboBox Grid.Column="0" ItemsSource="{Binding SegmentPalettes}"
                     AutomationProperties.AutomationId="SegmentPalette"
                     SelectedItem="{Binding SegmentPaletteChoice}"
-                    IsEnabled="{Binding SegmentUsesPalette}"
                     PlaceholderText="Not reported yet"
                     HorizontalAlignment="Stretch">
             <ComboBox.Styles>
@@ -212,10 +214,7 @@
               <TextBlock Text="&#x270E;" FontSize="13" />
             </Button>
           </Grid>
-
-          <TextBlock Classes="hint" FontStyle="Italic" Margin="0,2,0,0"
-                     Text="{Binding SegmentPaletteNote}"
-                     IsVisible="{Binding SegmentPaletteNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+          </StackPanel>
 
           <!-- Under the effect's own names for them. Fire 2012 calls these "Cooling" and "Spark
                rate", which say what moving them does; an effect that ignores one does not get it. -->

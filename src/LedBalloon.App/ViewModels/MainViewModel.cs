@@ -3754,22 +3754,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // their own hues, and Freqwave builds one out of whatever frequency it is hearing.
         : "This effect works out its own colors, from neither the boxes nor the palette.";
 
-    /// <summary>
-    /// Why the palette picker is greyed out, said beside it.
-    /// </summary>
-    /// <remarks>
-    /// Kept short because the line above it has already said where the colors do come from. The two
-    /// were written apart and both appeared at once, so a segment could carry "This effect chooses
-    /// its own colors" over "This effect does not use a palette" over a preview cheerfully drawing
-    /// the chosen palette.
-    /// </remarks>
-    public string SegmentPaletteNote =>
-        SegmentUsesPalette ? string.Empty : "Not used by this effect.";
-
     private void RefreshEffectCapabilities()
     {
         OnPropertyChanged(nameof(SegmentUsesPalette));
-        OnPropertyChanged(nameof(SegmentPaletteNote));
         OnPropertyChanged(nameof(SegmentSpeedLabel));
         OnPropertyChanged(nameof(SegmentIntensityLabel));
         OnPropertyChanged(nameof(SegmentUsesSpeed));
@@ -4007,28 +3994,25 @@ public sealed partial class MainViewModel : ViewModelBase
         // The port first. Its answer depends on the palette, because an effect that draws
         // everything through the palette still reads a color slot while the palette is Default -
         // and reads none of them the rest of the time.
-        IReadOnlyList<string?> slots;
+        var named = new string?[3];
 
-        if (PortedUse is { } ported)
+        foreach (int i in SlotsRead(
+            SegmentController?.Device.EffectName(SegmentEffectChoice?.Id ?? -1),
+            effect,
+            ChosenPalette,
+
+            // One box when nothing is known, not three. These are controls, and a control that does
+            // nothing is the fault the whole port table exists to remove.
+            [0]))
         {
-            IReadOnlyList<int> reads = ported.SlotsFor(ChosenPalette);
-            var named = new string?[3];
-
-            foreach (int i in reads)
-            {
-                // The firmware's label where it has one, since an effect that troubled to name a
-                // slot has said it better than a number could.
-                named[i] = effect.Declared && effect.ColorSlots.Count > i && effect.ColorSlots[i] is { } label
-                    ? label
-                    : DefaultSlotName(i);
-            }
-
-            slots = named;
+            // The firmware's label where it has one, since an effect that troubled to name a slot
+            // has said it better than a number could.
+            named[i] = effect.Declared && effect.ColorSlots.Count > i && effect.ColorSlots[i] is { } label
+                ? label
+                : DefaultSlotName(i);
         }
-        else
-        {
-            slots = effect.Declared ? effect.ColorSlots : ["Color", null, null];
-        }
+
+        IReadOnlyList<string?> slots = named;
 
         // A palette built out of the segment's own colors reads those slots itself, whatever the
         // effect does with them. Colortwinkles reads none - so on "* Colors 1&2" nothing offered the
@@ -4040,14 +4024,14 @@ public sealed partial class MainViewModel : ViewModelBase
         // to remove, reintroduced from the other side.
         if (SegmentUsesPalette && ChosenGradient?.ColorSlots is { Count: > 0 } byPalette)
         {
-            string?[] named = [.. slots, .. new string?[3]];
+            string?[] widened = [.. slots, .. new string?[3]];
 
             foreach (int i in byPalette)
             {
-                named[i] ??= DefaultSlotName(i);
+                widened[i] ??= DefaultSlotName(i);
             }
 
-            slots = named[..3];
+            slots = widened[..3];
         }
 
         for (int i = 0; i < slots.Count; i++)
@@ -4110,6 +4094,46 @@ public sealed partial class MainViewModel : ViewModelBase
         1 => "Background",
         _ => "Custom",
     };
+
+    /// <summary>
+    /// Which color slots an effect reads, lowest first.
+    /// </summary>
+    /// <remarks>
+    /// One calculation, because there were two and they disagreed. The editor asked the port and
+    /// offered Solid a single box; the scene card asked how many colors the segment was carrying
+    /// and drew two swatches, the second of them the black that WLED stores in slot 2 of every
+    /// segment whether anything reads it or not. So a run showing one pink showed a pink square and
+    /// a black one, and the black one stood for nothing at all.
+    /// <para>
+    /// The port first, for the reason the whole table exists: fxdata over-declares. Its answer
+    /// depends on the palette, because an effect drawing everything through the palette still reads
+    /// a slot while the palette is Default and reads none of them otherwise. Then fxdata, for the
+    /// effects nobody has ported.
+    /// </para>
+    /// <para>
+    /// What is left - an effect nobody has ported that declares nothing, which on an unreachable
+    /// controller is every effect - is the one case the two callers want answered differently, and
+    /// they are right to. The editor shows one box, because a control that does nothing is worse
+    /// than a missing one. The card shows two swatches, because it describes rather than offers,
+    /// and a description that leaves out a color the house is about to draw is worse than one that
+    /// shows a color it will not.
+    /// </para>
+    /// </remarks>
+    private static IReadOnlyList<int> SlotsRead(
+        string? effectName,
+        EffectMetadata declared,
+        int? palette,
+        IReadOnlyList<int> whenNothingIsKnown)
+    {
+        if (PortedEffectUse.For(effectName) is { } ported)
+        {
+            return ported.SlotsFor(palette);
+        }
+
+        return declared.Declared
+            ? [.. declared.UsedSlots.Select(n => n - 1)]
+            : whenNothingIsKnown;
+    }
 
     private static string Spell(string label) => label switch
     {
@@ -6290,16 +6314,30 @@ public sealed partial class MainViewModel : ViewModelBase
             ? device.Device.MetadataFor(id)
             : EffectMetadata.Unknown;
 
-        int slots = effect.Declared
-            ? effect.UsedSlots.Count
-            : wled.Colors is { Length: > 1 } ? 2 : 1;
+        // Which slots it reads, and never "how many colors the segment happens to carry": WLED
+        // reports three on every segment, so that question answered 2 for Solid and put a black
+        // square beside the pink one.
+        IReadOnlyList<int> reads = SlotsRead(
+            device is not null && wled.Effect is { } fx2 && fx2 < device.Effects.Count
+                ? device.Effects[fx2]
+                : null,
+            effect,
+            wled.Palette,
+
+            // Nothing known at all, which is what an unreachable controller gives for every row:
+            // show what the segment is carrying rather than deciding it reads none, because "we do
+            // not know" blanking every swatch is the worse of the two wrong answers here.
+            wled.Colors is { Length: > 1 } ? [0, 1] : [0]);
 
         // Not dimmed by the controller's brightness, though the photo is. That was tried and it is
         // wrong here: this list is a picker, and North sitting at 38 of 255 turned every row in it
         // the same near-black, so no two could be told apart. How dim the house is belongs to the
         // slider above, which says it once for all of them, and to the photo, which shows it.
-        RgbColor primary = wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.Black;
-        RgbColor secondary = wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black;
+        // The first two it reads, in its own order, rather than slots 1 and 2 regardless. An effect
+        // that reads only the background shows the background, not a square of whatever is sitting
+        // unread in slot 1.
+        RgbColor primary = ColorIn(wled, reads.Count > 0 ? reads[0] : -1);
+        RgbColor secondary = ColorIn(wled, reads.Count > 1 ? reads[1] : -1);
 
         // Only for an effect that said it reads the palette. An effect that declared nothing gets
         // every color control, but a gradient it may well ignore is a picture rather than a
@@ -6325,12 +6363,18 @@ public sealed partial class MainViewModel : ViewModelBase
             DescribeMotion(wled),
             new SolidColorBrush(Color.FromRgb(primary.R, primary.G, primary.B)),
             new SolidColorBrush(Color.FromRgb(secondary.R, secondary.G, secondary.B)),
-            slots > 1,
+            reads.Count > 1,
             fidelity,
             isOff,
-            HasPrimary: slots > 0,
+            HasPrimary: reads.Count > 0,
             PaletteSwatch: gradient);
     }
+
+    /// <summary>One of a segment's stored colors, or black for a slot it does not have.</summary>
+    private static RgbColor ColorIn(WledSegment wled, int slot) =>
+        slot >= 0 && wled.Colors is { } colors && slot < colors.Length
+            ? RgbColor.FromWledArray(colors[slot])
+            : RgbColor.Black;
 
     /// <summary>
     /// The palette a segment is on, as a left-to-right gradient, or null when there is none to draw.
