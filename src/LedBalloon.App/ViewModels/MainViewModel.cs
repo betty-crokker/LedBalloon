@@ -3740,6 +3740,43 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<SegmentColorSlot> SegmentColors { get; } = [];
 
     /// <summary>
+    /// Draws the effect list's stamps again, keeping whichever effect is chosen.
+    /// </summary>
+    /// <remarks>
+    /// Narrower than <see cref="RefreshSegmentPickers"/> on purpose. That one refills both pickers
+    /// from what the segment is reported to be showing, which is the wrong thing to do a moment
+    /// after changing something: the report has not caught up, so it would put the picker back where
+    /// it was. This only redraws pictures.
+    /// </remarks>
+    private void RefreshEffectThumbnails()
+    {
+        if (SelectedSegment is not { } segment || SegmentController is not { } device)
+        {
+            return;
+        }
+
+        int? chosen = SegmentEffectChoice?.Id;
+
+        _suppressPush = true;
+        try
+        {
+            SegmentEffects.Clear();
+
+            foreach (PickerOption option in EffectOptions(device, segment, LiveSegmentFor(segment))
+                .OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase))
+            {
+                SegmentEffects.Add(option);
+            }
+
+            SegmentEffectChoice = SegmentEffects.FirstOrDefault(o => o.Id == chosen);
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+    }
+
+    /// <summary>
     /// Every effect this controller reports, each with a stamp of what it would do on this segment.
     /// </summary>
     /// <remarks>
@@ -3750,7 +3787,12 @@ public sealed partial class MainViewModel : ViewModelBase
     private IEnumerable<PickerOption> EffectOptions(
         DeviceViewModel device, Segment segment, WledSegment? shown)
     {
-        WledSegment like = shown ?? new WledSegment { Id = 0 };
+        // The palette the picker is on rather than the one the segment last reported. They differ
+        // for as long as it takes the controller to echo a change back, and the stamps are redrawn
+        // the instant it is picked - so reading the reported one would draw every effect under the
+        // palette that was just replaced.
+        WledSegment like = (shown ?? new WledSegment { Id = 0 }).Clone();
+        like.Palette = ChosenPalette ?? like.Palette;
 
         WledPalette? palette = like.Palette is { } id && id > 0
             ? PalettesOn(segment.ControllerKey)?.GetValueOrDefault(id)
@@ -3852,7 +3894,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 Spell(label),
                 Color.FromRgb(current.R, current.G, current.B),
                 SetSegmentColor,
-                slot => ShowColorPicker?.Invoke(slot) ?? Task.CompletedTask));
+                PickColorAsync));
         }
     }
 
@@ -4035,6 +4077,26 @@ public sealed partial class MainViewModel : ViewModelBase
             : DeviceFor(segment)?.State?.Segments?.FirstOrDefault(x => x.Id == segmentId);
     }
 
+    /// <summary>
+    /// Opens the color picker, and redraws the effect stamps once it has closed.
+    /// </summary>
+    /// <remarks>
+    /// Afterwards rather than while, because the picker applies as it is dragged and 187 stamps per
+    /// drag would be hundreds of them a second. A dialog closing is the one moment the color is
+    /// settled.
+    /// </remarks>
+    private async Task PickColorAsync(SegmentColorSlot slot)
+    {
+        if (ShowColorPicker is not { } show)
+        {
+            return;
+        }
+
+        await show(slot);
+
+        RefreshEffectThumbnails();
+    }
+
     /// <summary>Sends one color slot, which is the only thing a swatch changes.</summary>
     private void SetSegmentColor(int slot, Color color)
     {
@@ -4075,6 +4137,11 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             return;
         }
+
+        // Every stamp in the effect list is drawn against this segment's palette, so until they are
+        // drawn again the whole list is a picture of the palette that was just replaced. All 187 of
+        // them cost about an eighth of a second, which is a fair price once per palette picked.
+        RefreshEffectThumbnails();
 
         Send(
             DeviceFor(segment),
