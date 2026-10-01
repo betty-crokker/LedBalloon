@@ -3751,12 +3751,20 @@ public sealed partial class MainViewModel : ViewModelBase
         // Neither the boxes nor the palette. Saying the colors come from the palette directly under
         // a line saying the effect does not use one is two notes arguing, which is worse than
         // either of them alone - and some effects really do work this way: the rainbow ones pick
-        // their own hues and take nothing from anywhere.
-        : "This effect chooses its own colors.";
+        // their own hues, and Freqwave builds one out of whatever frequency it is hearing.
+        : "This effect works out its own colors, from neither the boxes nor the palette.";
 
-    /// <summary>Why the palette is unavailable. Empty when it is not.</summary>
+    /// <summary>
+    /// Why the palette picker is greyed out, said beside it.
+    /// </summary>
+    /// <remarks>
+    /// Kept short because the line above it has already said where the colors do come from. The two
+    /// were written apart and both appeared at once, so a segment could carry "This effect chooses
+    /// its own colors" over "This effect does not use a palette" over a preview cheerfully drawing
+    /// the chosen palette.
+    /// </remarks>
     public string SegmentPaletteNote =>
-        SegmentUsesPalette ? string.Empty : "This effect does not use a palette.";
+        SegmentUsesPalette ? string.Empty : "Not used by this effect.";
 
     private void RefreshEffectCapabilities()
     {
@@ -3877,6 +3885,11 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
+    /// <summary>True for a reserved slot rather than an effect. See the picker for why.</summary>
+    private static bool IsPlaceholder(string? name) =>
+        string.IsNullOrWhiteSpace(name) ||
+        name.Trim().Equals("RSVD", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>True when the open palette is one somebody here made, so it can be edited.</summary>
     public bool SegmentPaletteIsCustom =>
         ChosenPalette is { } id && CustomPaletteCopier.IsCustom(id);
@@ -3920,6 +3933,16 @@ public sealed partial class MainViewModel : ViewModelBase
             // Drift Rose is the one that made this obvious: offered, unrunnable, and sitting under
             // two notes that contradicted each other about where its colors came from.
             if (device.Device.MetadataFor(i).Is2DOnly)
+            {
+                continue;
+            }
+
+            // Nor the gaps. WLED retires an effect by leaving its number in the list under the name
+            // "RSVD", so that presets saved against the numbers after it still recall the right
+            // thing. Seven of the entries are that, they are not effects, and picking one does
+            // nothing whatsoever. The tests have called them placeholders all along; the picker was
+            // offering them.
+            if (IsPlaceholder(device.Effects[i]))
             {
                 continue;
             }
@@ -4095,11 +4118,31 @@ public sealed partial class MainViewModel : ViewModelBase
     public IReadOnlyList<string>? PreviewEffectNames =>
         SelectedSegment?.ControllerKey is { } key ? EffectNames.GetValueOrDefault(key) : null;
 
-    /// <summary>The gradient the segment's palette resolves to on its own controller.</summary>
-    public WledPalette? PreviewPalette =>
-        SelectedSegment?.ControllerKey is { } key && PreviewSegment?.Palette is { } id && id > 0
-            ? Palettes?.GetValueOrDefault(key)?.GetValueOrDefault(id)
-            : null;
+    /// <summary>
+    /// The gradient the segment's palette resolves to on its own controller.
+    /// </summary>
+    /// <remarks>
+    /// Withheld from the stand-in for an effect that reads no palette. The stand-in has nothing to
+    /// draw but the palette, and drawing it for Freqwave - which builds a hue out of whatever
+    /// frequency it is hearing and reads neither the palette nor the color slots - put the chosen
+    /// gradient on screen directly under a line saying the effect does not use one. A ported effect
+    /// is given it either way, since one that ignores the palette ignores it in the drawing too.
+    /// </remarks>
+    public WledPalette? PreviewPalette
+    {
+        get
+        {
+            if (PortedUse is null && !SegmentUsesPalette)
+            {
+                return null;
+            }
+
+            return SelectedSegment?.ControllerKey is { } key &&
+                   PreviewSegment?.Palette is { } id && id > 0
+                ? Palettes?.GetValueOrDefault(key)?.GetValueOrDefault(id)
+                : null;
+        }
+    }
 
     /// <summary>Its controller's frame rate, which decides how long a trail looks.</summary>
     public ControllerTiming? PreviewTiming =>
@@ -4125,9 +4168,49 @@ public sealed partial class MainViewModel : ViewModelBase
           "Brightness and the house switch are left out."
         : string.Empty;
 
-    public string SegmentPreviewNote => PortedUse is null
-        ? "The app cannot run this effect, so this shows its colors rather than what it does."
-        : string.Empty;
+    public string SegmentPreviewNote
+    {
+        get
+        {
+            // First, because it is the one that decides whether the house does anything at all. An
+            // effect that follows sound on a controller hearing none is not approximated badly, it
+            // is a run that stays exactly as dark as it was.
+            if (SegmentNeedsSoundItHasNot)
+            {
+                return "This effect follows sound, and this controller reports none coming in, " +
+                       "so the house would stay as it is.";
+            }
+
+            if (PortedUse is not null)
+            {
+                return string.Empty;
+            }
+
+            return PreviewPalette is not null
+                ? "The app cannot run this effect. This is the palette it draws from, held still: " +
+                  "its colors, not what it does with them."
+                : "The app cannot run this effect, and its colors come from neither the palette " +
+                  "nor the boxes, so there is nothing here to show.";
+        }
+    }
+
+    /// <summary>
+    /// True for an effect driven by sound on a controller with none reaching it.
+    /// </summary>
+    /// <remarks>
+    /// Two dozen of the effects offered here read a microphone or a UDP audio feed. The Gledopto
+    /// boxes have neither - their I2S pins are the firmware's defaults with nothing wired to them,
+    /// so the usermod reports its source quiet and its gain pinned - and every one of those two
+    /// dozen leaves the run exactly as dark as the moment before it was picked, which reads as the
+    /// app failing to send rather than as the effect having nothing to say.
+    /// <para>
+    /// Said rather than hidden, because sound is a setting and not a fact about the hardware: a box
+    /// with no microphone starts answering the moment another one on the network begins
+    /// broadcasting what it hears.
+    /// </para>
+    /// </remarks>
+    private bool SegmentNeedsSoundItHasNot =>
+        ChosenEffect.IsAudioReactive && SegmentController?.Info?.Sound is { Hearing: false };
 
     private void RefreshPreview()
     {
