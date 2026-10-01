@@ -33,6 +33,25 @@ public sealed class WledPalette
     public bool IsGradient => Stops.Count > 0;
 
     /// <summary>
+    /// The segment color slots this palette is built out of, zero-based and in order.
+    /// </summary>
+    /// <remarks>
+    /// Empty for a real gradient, which carries its own colors. The five WLED marks with an asterisk
+    /// are not gradients but recipes - "* Colors 1&amp;2" is c1, c1, c2, c2 - so on one of those the
+    /// segment's color slots are what the palette is made of, whether or not the effect reads a slot
+    /// itself. That distinction is the whole reason this exists: Colortwinkles reads no slot at all,
+    /// so nothing offered the boxes, so a palette built from them had nothing to be built from.
+    /// </remarks>
+    public IReadOnlyList<int> ColorSlots =>
+    [
+        .. Placeholders
+            .Select(p => p switch { "c1" => 0, "c2" => 1, "c3" => 2, _ => -1 })
+            .Where(slot => slot >= 0)
+            .Distinct()
+            .Order(),
+    ];
+
+    /// <summary>
     /// The color this palette shows at a fraction <paramref name="t"/> along a run, given the
     /// segment's own colors for the palettes that are defined in terms of them.
     /// </summary>
@@ -86,9 +105,29 @@ public sealed class WledPalette
             "c1" => primary,
             "c2" => secondary,
             "c3" => tertiary,
+            "r" => AnyColor(index),
+
+            // Something this does not know about. The primary is a colour the segment actually has,
+            // which is a better guess than black.
             _ => primary,
         };
     }
+
+    /// <summary>
+    /// A stand-in for WLED's "random" entry: hues spread evenly round the wheel.
+    /// </summary>
+    /// <remarks>
+    /// Random Cycle picks hues and keeps changing them, so there is no one colour to draw and the
+    /// honest thing to show is that it could be any of them. It used to fall through to the primary,
+    /// which drew Random Cycle as a flat block of whatever colour the segment happened to be set to
+    /// - a palette called "random" claiming to be red.
+    /// <para>
+    /// Spread by position rather than actually random, so the same palette drawn twice in the same
+    /// frame - the swatch in the picker and the run on the photo - agrees with itself.
+    /// </para>
+    /// </remarks>
+    private RgbColor AnyColor(int index) =>
+        Effects.FastLed.Hsv2Rgb((byte)(index * 256 / Math.Max(1, Placeholders.Count)), 255, 255);
 
     private static RgbColor Lerp(RgbColor from, RgbColor to, double t) => new(
         (byte)(from.R + ((to.R - from.R) * t)),

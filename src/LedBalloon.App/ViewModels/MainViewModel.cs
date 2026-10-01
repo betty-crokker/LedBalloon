@@ -3591,10 +3591,21 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>The palette the chosen segment is on, which decides whether a slot is read at all.</summary>
     private int? ChosenPalette => SegmentPaletteChoice?.Id;
 
-    /// <summary>True when the chosen effect draws from the color slots at all.</summary>
-    public bool SegmentUsesColor => PortedUse is { } ported
-        ? ported.SlotsFor(ChosenPalette).Count > 0
-        : !ChosenEffect.Declared || ChosenEffect.UsedSlots.Count > 0;
+    /// <summary>
+    /// True when anything about this segment's appearance reads a color slot.
+    /// </summary>
+    /// <remarks>
+    /// Read off the boxes rather than worked out a second time beside them. They were two
+    /// calculations of one fact and they disagreed the moment the palette started reading slots the
+    /// effect does not.
+    /// </remarks>
+    public bool SegmentUsesColor => SegmentColors.Count > 0;
+
+    /// <summary>The gradient behind the palette now chosen, which may be a recipe rather than one.</summary>
+    private WledPalette? ChosenGradient =>
+        SelectedSegment?.ControllerKey is { } key && ChosenPalette is { } id && id > 0
+            ? Palettes?.GetValueOrDefault(key)?.GetValueOrDefault(id)
+            : null;
 
     /// <summary>True when the chosen effect draws from the palette at all.</summary>
     public bool SegmentUsesPalette => PortedUse is { } ported
@@ -3663,9 +3674,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
     private void RefreshEffectCapabilities()
     {
-        OnPropertyChanged(nameof(SegmentUsesColor));
         OnPropertyChanged(nameof(SegmentUsesPalette));
-        OnPropertyChanged(nameof(SegmentColorNote));
         OnPropertyChanged(nameof(SegmentPaletteNote));
         OnPropertyChanged(nameof(SegmentSpeedLabel));
         OnPropertyChanged(nameof(SegmentIntensityLabel));
@@ -3673,6 +3682,10 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SegmentUsesIntensity));
 
         RebuildColorSlots();
+
+        // After the boxes, because both of these are now read off them.
+        OnPropertyChanged(nameof(SegmentUsesColor));
+        OnPropertyChanged(nameof(SegmentColorNote));
 
         // Called at the end of RefreshSegmentPickers as well as when a picker moves, so this covers
         // both picking a different segment and changing what the current one is showing.
@@ -3757,6 +3770,22 @@ public sealed partial class MainViewModel : ViewModelBase
         else
         {
             slots = effect.Declared ? effect.ColorSlots : ["Color", null, null];
+        }
+
+        // A palette built out of the segment's own colors reads those slots itself, whatever the
+        // effect does with them. Colortwinkles reads none - so on "* Colors 1&2" nothing offered the
+        // boxes, and the palette had nothing to be built from. Picking it was a dead end, and the
+        // only way out was the WLED app.
+        if (ChosenGradient?.ColorSlots is { Count: > 0 } byPalette)
+        {
+            string?[] named = [.. slots, .. new string?[3]];
+
+            foreach (int i in byPalette)
+            {
+                named[i] ??= DefaultSlotName(i);
+            }
+
+            slots = named[..3];
         }
 
         for (int i = 0; i < slots.Count; i++)
