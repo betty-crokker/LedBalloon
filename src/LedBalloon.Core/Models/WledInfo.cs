@@ -67,6 +67,16 @@ public sealed class WledInfo
     /// </summary>
     [JsonPropertyName("u")] public Dictionary<string, System.Text.Json.JsonElement>? Usermods { get; set; }
 
+    /// <summary>
+    /// What the sound-reactive effects have to work with on this controller.
+    /// </summary>
+    /// <remarks>
+    /// Two dozen of the effects a sound-reactive build lists do nothing at all without a microphone
+    /// or a UDP audio feed, and they sit in the list beside every other effect.
+    /// </remarks>
+    [JsonIgnore]
+    public SoundInput Sound => SoundInput.From(Usermods);
+
     /// <summary>True for an ESP8266, which is the constrained case worth designing around.</summary>
     [JsonIgnore]
     public bool IsEsp8266 =>

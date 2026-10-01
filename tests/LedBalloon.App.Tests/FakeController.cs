@@ -94,7 +94,17 @@ internal sealed class FakeController : IDisposable
     /// all, since the ones that need a matrix cannot run on a strip. A fake that 404s it leaves
     /// every effect looking like one nothing is known about.
     /// </remarks>
-    public static FakeController Start(string[] effects, string[]? fxdata)
+    public static FakeController Start(string[] effects, string[]? fxdata) =>
+        Start(effects, fxdata, null);
+
+    /// <summary>
+    /// A controller that also reports a usermod block, which is where sound lives.
+    /// </summary>
+    /// <param name="usermods">
+    /// The <c>u</c> object of <c>/json/info</c>, verbatim. A sound-reactive build describes what it
+    /// is listening to here, and two dozen of the effects it offers do nothing without it.
+    /// </param>
+    public static FakeController Start(string[] effects, string[]? fxdata, string? usermods)
     {
         // A port the operating system picks, so tests can run beside each other and beside anything
         // else already listening.
@@ -110,7 +120,7 @@ internal sealed class FakeController : IDisposable
             $$"""
             {
               "state": { "on": false, "bri": 128, "seg": [ { "id": 0, "start": 0, "stop": 10, "len": 10, "on": true, "bri": 255, "fx": 0, "sx": 128, "ix": 128, "pal": 0, "col": [[255,160,0],[0,0,0],[0,0,0]] } ] },
-              "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{Key}}", "leds": { "count": 10, "fps": 0 } },
+              "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{Key}}", "leds": { "count": 10, "fps": 0 }{{Heard(usermods)}} },
               "effects": [ {{names}} ],
               "palettes": [ "Default", "* Random Cycle", "* Color 1", "* Colors 1&2",
                             "* Color Gradient", "* Colors Only", "Ocean", "Analogous" ]
@@ -123,6 +133,10 @@ internal sealed class FakeController : IDisposable
 
         return new FakeController(listener, $"127.0.0.1:{port}", document, metadata);
     }
+
+    /// <summary>The usermod block as an <c>info</c> member, or nothing at all when there is none.</summary>
+    private static string Heard(string? usermods) =>
+        usermods is { Length: > 0 } said ? $", \"u\": {said}" : string.Empty;
 
     private static int FreePort()
     {

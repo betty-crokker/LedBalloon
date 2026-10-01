@@ -391,37 +391,29 @@ public sealed class StripPreview : Control
         }
 
         // An effect nobody has ported. Its colors are known and its movement is not, so the palette
-        // slides along the run at the pace the speed slider asks for - a family resemblance to most
-        // WLED effects and an impersonation of none of them. The panel says so in words.
+        // is laid across the run and left there.
+        //
+        // It used to slide, at the pace the speed slider asked for. That was a mistake, and an
+        // instructive one: this strip teaches that a diagonal band means movement and that its slope
+        // is the speed, so an effect the app cannot run came out carrying the exact signature of one
+        // it can - directly beneath a line saying it could not run it. Held still, the rows all
+        // match, which is this control's own way of saying nothing here is moving.
         if (Palette is { } palette && wled.Palette is > 0)
         {
-            double along = t + PhaseFor(wled);
-            along -= Math.Floor(along);
-
             return palette.ColorAt(
-                along,
+                t,
                 wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.White,
                 wled.Colors is { Length: > 1 } ? wled.SecondaryColor : RgbColor.Black,
                 wled.Colors is { Length: > 2 } ? RgbColor.FromWledArray(wled.Colors[2]) : RgbColor.Black);
         }
 
-        return wled.Colors is { Length: > 0 } ? wled.PrimaryColor : RgbColor.White;
+        // Not even the colors: no palette to lay out, and the color slots belong to effects that
+        // read them. Freqwave reads neither - it builds a hue out of whatever frequency it is
+        // hearing - so a run of color 1 would be invented rather than approximated. Dark, and the
+        // panel says why.
+        return RgbColor.Black;
     }
 
-    /// <summary>How far the palette has slid along the run by now, in palette widths.</summary>
-    private double PhaseFor(WledSegment wled)
-    {
-        if (wled.Effect is not > 0)
-        {
-            // Solid does not move, and cycling it would be inventing motion that is not there.
-            return 0;
-        }
-
-        double cyclesPerSecond = 0.06 + ((wled.Speed ?? 128) / 255d * 0.8);
-        double phase = _since.Elapsed.TotalSeconds * cyclesPerSecond;
-
-        return wled.Reverse == true ? -phase : phase;
-    }
 
     /// <summary>Starts the effect, or restarts it when anything it reads has changed.</summary>
     private void Restart(WledSegment wled, int leds)
