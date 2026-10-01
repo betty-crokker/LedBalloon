@@ -204,6 +204,14 @@
                      Text="{Binding SegmentPaletteNote}"
                      IsVisible="{Binding SegmentPaletteNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+          <!-- Here because this is where somebody is when the list has nothing that suits. The
+               palettes belong to the controller rather than to this segment, which the window it
+               opens says in its heading. -->
+          <Button Content="Edit this controller's own palettes..." Margin="0,6,0,0"
+                  HorizontalAlignment="Left" Padding="8,3"
+                  Command="{Binding EditPalettesCommand}"
+                  AutomationProperties.AutomationId="EditPalettes" />
+
           <!-- Under the effect's own names for them. Fire 2012 calls these "Cooling" and "Spark
                rate", which say what moving them does; an effect that ignores one does not get it. -->
           <StackPanel IsVisible="{Binding SegmentUsesSpeed}" Margin="0,8,0,0">

@@ -69,6 +69,19 @@ public sealed class WledState
     /// <summary>Send true to reboot the device. Not part of device state.</summary>
     [JsonPropertyName("rb")] public bool? Reboot { get; set; }
 
+    /// <summary>
+    /// Send true to drop the controller's last custom palette. Not part of device state.
+    /// </summary>
+    /// <remarks>
+    /// The last one and no other, because WLED's loader reads palette0.json upward and stops at the
+    /// first file missing - so a gap in the middle would orphan everything above it. WLED's own UI
+    /// offers exactly this and calls it "Remove last custom palette", for the same reason.
+    /// <para>
+    /// A command rather than a reading, like <see cref="Reboot"/>: the controller never reports it.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("rmcpal")] public bool? RemoveLastCustomPalette { get; set; }
+
     /// <summary>Read-only: true while a realtime source (UDP, E1.31, Art-Net) is driving the strip.</summary>
     [JsonPropertyName("live")] public bool? Live { get; set; }
 
@@ -134,6 +147,7 @@ public sealed class WledState
         UdpSync = newer.UdpSync ?? UdpSync;
         ReturnFullState = newer.ReturnFullState ?? ReturnFullState;
         Reboot = newer.Reboot ?? Reboot;
+        RemoveLastCustomPalette = newer.RemoveLastCustomPalette ?? RemoveLastCustomPalette;
         Live = newer.Live ?? Live;
 
         if (newer.Segments is null)

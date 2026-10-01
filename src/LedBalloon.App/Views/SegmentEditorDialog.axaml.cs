@@ -44,6 +44,8 @@ public partial class SegmentEditorDialog : Window
         // belongs to instead of behind it. Taken back afterwards: a swatch cannot be clicked once
         // this has closed, and a stale owner would be a window parented to something that is gone.
         viewModel.ShowColorPicker = slot => ColorPickerDialog.ShowAsync(dialog, slot);
+        viewModel.ShowPaletteEditor = device =>
+            PaletteEditorDialog.ShowAsync(dialog, viewModel.Project, device);
 
         try
         {
@@ -52,6 +54,7 @@ public partial class SegmentEditorDialog : Window
         finally
         {
             viewModel.ShowColorPicker = null;
+            viewModel.ShowPaletteEditor = null;
         }
 
         return dialog._saved;
