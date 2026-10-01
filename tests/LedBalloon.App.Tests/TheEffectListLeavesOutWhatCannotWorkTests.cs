@@ -63,6 +63,10 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
             Quiet);
 
         MainViewModel app = await HouseAsync(controller);
+
+        // Credited with sound, because an effect that is not in the list cannot be picked - and
+        // this is about what the panel says once one has been.
+        app.Project.FindController(FakeController.Key)!.HasSound = true;
         app.SelectedSegment = app.Project.Segments[0];
         app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Freqwave");
 
@@ -82,6 +86,10 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
             Quiet);
 
         MainViewModel app = await HouseAsync(controller);
+
+        // Credited with sound, because an effect that is not in the list cannot be picked - and
+        // this is about what the panel says once one has been.
+        app.Project.FindController(FakeController.Key)!.HasSound = true;
         app.SelectedSegment = app.Project.Segments[0];
         app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Freqwave");
         app.SegmentPaletteChoice = app.SegmentPalettes.First(o => o.Name == "Ocean");
@@ -106,11 +114,87 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
             Quiet);
 
         MainViewModel app = await HouseAsync(controller);
+
+        app.Project.FindController(FakeController.Key)!.HasSound = true;
         app.SelectedSegment = app.Project.Segments[0];
         app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Pixelwave");
 
         Assert.True(app.SegmentUsesPalette);
         Assert.Equal(string.Empty, app.SegmentPaletteNote);
+    });
+
+    [Fact]
+    public void An_effect_that_follows_sound_is_not_offered_where_there_is_none() => ui.Run(async () =>
+    {
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Blink", "Freqwave"],
+            ["", "!,Duty cycle;!,!;!;01", "Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0"],
+            Quiet);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.DoesNotContain(app.SegmentEffects, o => o.Name == "Freqwave");
+        Assert.Contains(app.SegmentEffects, o => o.Name == "Blink");
+    });
+
+    [Fact]
+    public void And_is_offered_where_somebody_has_said_there_is() => ui.Run(async () =>
+    {
+        // The controller still reports itself quiet - a microphone in a quiet street does too. The
+        // answer is the person's, which is the whole reason it is stored rather than measured.
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Freqwave"],
+            ["", "Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0"],
+            Quiet);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.Project.FindController(FakeController.Key)!.HasSound = true;
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.Contains(app.SegmentEffects, o => o.Name == "Freqwave");
+    });
+
+    [Fact]
+    public void Ticking_the_box_fills_the_list_again_without_reopening_anything() => ui.Run(async () =>
+    {
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Freqwave"],
+            ["", "Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0"],
+            Quiet);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.DoesNotContain(app.SegmentEffects, o => o.Name == "Freqwave");
+
+        app.ControllerHasSound = true;
+
+        Assert.Contains(app.SegmentEffects, o => o.Name == "Freqwave");
+        Assert.True(app.Project.FindController(FakeController.Key)!.HasSound);
+
+        app.ControllerHasSound = false;
+
+        Assert.DoesNotContain(app.SegmentEffects, o => o.Name == "Freqwave");
+        Assert.False(app.Project.FindController(FakeController.Key)!.HasSound);
+    });
+
+    [Fact]
+    public void Whatever_a_segment_is_already_wearing_stays_in_the_list() => ui.Run(async () =>
+    {
+        // The fake reports its segment on effect 0, which here is one that would otherwise be left
+        // out. Leaving it out would open the editor on an empty box with the segment's own setting
+        // nowhere in the list, which reads as the app having lost it.
+        using FakeController controller = FakeController.Start(
+            ["Freqwave", "Blink"],
+            ["Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0", "!,Duty cycle;!,!;!;01"],
+            Quiet);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.Contains(app.SegmentEffects, o => o.Name == "Freqwave");
+        Assert.Equal("Freqwave", app.SegmentEffectChoice?.Name);
     });
 
     /// <summary>The usermod block from 192.168.0.131, which has no microphone wired to its I2S pins.</summary>

@@ -122,6 +122,44 @@ public class ProjectFormatTests
         Assert.Equal(LedBalloonProject.CurrentSchema, new LedBalloonProject().Schema);
     }
 
+    [Fact]
+    public void Whether_a_controller_can_hear_survives_a_save()
+    {
+        var original = new LedBalloonProject
+        {
+            Controllers =
+            [
+                new ControllerRef { Key = "aa11", HasSound = true },
+                new ControllerRef { Key = "bb22", HasSound = false },
+                new ControllerRef { Key = "cc33" },
+            ],
+        };
+
+        LedBalloonProject? restored = Deserialize(Serialize(original));
+
+        Assert.NotNull(restored);
+        Assert.True(restored.FindController("aa11")!.HasSound);
+        Assert.False(restored.FindController("bb22")!.HasSound);
+
+        // Three states, and the third is the one that matters: nobody has answered for this one, so
+        // the app falls back to what it reports hearing rather than deciding it is deaf.
+        Assert.Null(restored.FindController("cc33")!.HasSound);
+    }
+
+    [Fact]
+    public void A_file_saved_before_anybody_was_asked_about_sound_loads_unanswered()
+    {
+        // Adding a field needs no schema bump: a missing one takes its default, and the default
+        // here is "not asked".
+        LedBalloonProject? project = Deserialize(
+            """
+            { "name": "House", "schema": 3, "controllers": [ { "key": "aa11", "name": "South" } ] }
+            """);
+
+        Assert.NotNull(project);
+        Assert.Null(project.FindController("aa11")!.HasSound);
+    }
+
     private static string Serialize(LedBalloonProject project) =>
         JsonSerializer.Serialize(
             project,
