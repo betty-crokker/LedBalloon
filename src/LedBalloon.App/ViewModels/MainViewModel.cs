@@ -4437,9 +4437,27 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Repoints the effect and palette pickers at the selected segment's controller. The lists are
     /// filled before the choices are set, because a picker that cannot satisfy its choice drops it.
     /// </summary>
+    private Segment? _pickersBuiltFor;
+
     private void RefreshSegmentPickers(Segment? segment)
     {
         OnPropertyChanged(nameof(SelectionLabel));
+
+        // Refilling the same segment's pickers is not the same as opening a different one, and the
+        // difference decides where the values come from. Opening one has to read what it is showing.
+        // Refilling - which happens whenever the palettes are read again, on a timer at startup and
+        // every time the palette editor closes - must not, because with the house lit the report
+        // does not agree with a change until the controller echoes it back, and reading it in that
+        // window puts the picker back on the palette that was just replaced. Which is a dropdown
+        // that reverts a beat after it was set, for no reason the person who set it can see.
+        bool refilling = segment is not null && ReferenceEquals(segment, _pickersBuiltFor);
+
+        int? keepEffect = refilling ? SegmentEffectChoice?.Id : null;
+        int? keepPalette = refilling ? SegmentPaletteChoice?.Id : null;
+        double? keepSpeed = refilling ? SegmentSpeed : null;
+        double? keepIntensity = refilling ? SegmentIntensity : null;
+
+        _pickersBuiltFor = segment;
 
         _suppressPush = true;
         try
@@ -4554,24 +4572,24 @@ public sealed partial class MainViewModel : ViewModelBase
                     .FirstOrDefault(x => x.Id == segmentId)
                 : device.State?.Segments?.FirstOrDefault(x => x.Id == segmentId);
 
-            if (live?.Effect is { } effect)
+            if ((keepEffect ?? live?.Effect) is { } effect)
             {
                 SegmentEffectChoice = SegmentEffects.FirstOrDefault(o => o.Id == effect);
             }
 
-            if (live?.Palette is { } palette)
+            if ((keepPalette ?? live?.Palette) is { } palette)
             {
                 SegmentPaletteChoice = SegmentPalettes.FirstOrDefault(o => o.Id == palette);
             }
 
-            if (live?.Colors is { Length: > 0 })
+            if (!refilling && live?.Colors is { Length: > 0 })
             {
                 RgbColor current = live.PrimaryColor;
                 PickedColor = Color.FromRgb(current.R, current.G, current.B);
             }
 
-            SegmentSpeed = live?.Speed ?? 128;
-            SegmentIntensity = live?.Intensity ?? 128;
+            SegmentSpeed = keepSpeed ?? live?.Speed ?? 128;
+            SegmentIntensity = keepIntensity ?? live?.Intensity ?? 128;
         }
         finally
         {
