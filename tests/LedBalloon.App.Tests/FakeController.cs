@@ -1,4 +1,5 @@
 using System.Net;
+using System.Linq;
 using System.Text;
 
 namespace LedBalloon.App.Tests;
@@ -31,11 +32,11 @@ internal sealed class FakeController : IDisposable
     private readonly CancellationTokenSource _stopping = new();
     private readonly Task _serving;
 
-    private FakeController(HttpListener listener, string host, string document)
+    private FakeController(HttpListener listener, string host, string document, string fxdata)
     {
         _listener = listener;
         Host = host;
-        _serving = Task.Run(() => ServeAsync(document));
+        _serving = Task.Run(() => ServeAsync(document, fxdata));
     }
 
     /// <summary>Where to point a device at, as the app would be given it.</summary>
@@ -83,7 +84,17 @@ internal sealed class FakeController : IDisposable
         return false;
     }
 
-    public static FakeController Start(params string[] effects)
+    public static FakeController Start(params string[] effects) => Start(effects, null);
+
+    /// <summary>
+    /// A controller that also answers for <c>/json/fxdata</c>, one entry per effect.
+    /// </summary>
+    /// <remarks>
+    /// The metadata decides real things - which sliders an effect gets, and whether it is offered at
+    /// all, since the ones that need a matrix cannot run on a strip. A fake that 404s it leaves
+    /// every effect looking like one nothing is known about.
+    /// </remarks>
+    public static FakeController Start(string[] effects, string[]? fxdata)
     {
         // A port the operating system picks, so tests can run beside each other and beside anything
         // else already listening.
@@ -106,7 +117,11 @@ internal sealed class FakeController : IDisposable
             }
             """;
 
-        return new FakeController(listener, $"127.0.0.1:{port}", document);
+        string metadata = fxdata is null
+            ? "[]"
+            : "[" + string.Join(",", fxdata.Select(d => $"\"{d}\"")) + "]";
+
+        return new FakeController(listener, $"127.0.0.1:{port}", document, metadata);
     }
 
     private static int FreePort()
@@ -120,7 +135,7 @@ internal sealed class FakeController : IDisposable
         return port;
     }
 
-    private async Task ServeAsync(string document)
+    private async Task ServeAsync(string document, string fxdata)
     {
         while (!_stopping.IsCancellationRequested)
         {
@@ -148,6 +163,18 @@ internal sealed class FakeController : IDisposable
                 }
 
                 context.Response.ContentType = "application/json";
+                context.Response.Close();
+                continue;
+            }
+
+            if (path.TrimEnd('/') is "/json/fxdata" && fxdata != "[]")
+            {
+                byte[] body = Encoding.UTF8.GetBytes(fxdata);
+
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body);
+
                 context.Response.Close();
                 continue;
             }
