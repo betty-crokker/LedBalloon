@@ -1,18 +1,22 @@
-using System.Text;
 using LedBalloon.App.ViewModels;
 using LedBalloon.Core.Layout;
-using LedBalloon.Core.Models;
 using Xunit;
 
 namespace LedBalloon.App.Tests;
 
 /// <summary>
-/// The order of the rows in the palette editor.
+/// Where a stop can go, and where its row stays.
 /// <para>
-/// The bar above them is drawn sorted and the file written out is sorted, so a list that is not
-/// disagrees with both at once: a stop dragged past its neighbour sat above one with a lower
-/// percentage while the gradient showed it below, and saving and reopening put the rows in an order
-/// nobody had asked for.
+/// The rows are the gradient read top to bottom. The bar above them is drawn sorted and the file
+/// written out is sorted, so a row that crosses its neighbour disagrees with both at once - and the
+/// two ways out of that are both worse than not letting it happen. Reordering the rows means one
+/// jumps while the hand dragging it is still on the slider; leaving them means the list silently
+/// rearranges itself on the next open, with no edit in between.
+/// </para>
+/// <para>
+/// So a stop stops. The alternative - shoving the neighbour along to make room - keeps the order
+/// too, and quietly moves stops nobody asked to move: a drag to the far end would pile everything
+/// above it into the last few places and undo a gradient somebody had tuned.
 /// </para>
 /// </summary>
 [Collection(UiThreadCollection.Name)]
@@ -22,28 +26,65 @@ public class ThePaletteRowsFollowTheGradientTests(UiThreadFixture ui) : IDisposa
     private const string Fireworks =
         """{"palette":[0,"000000",37,"ffffff",116,"ff00ff",207,"ff002d",255,"ff0000"]}""";
 
-    /// <summary>One written out of order, which WLED's own editor and a text editor both allow.</summary>
+    /// <summary>One written out of order, which a text editor allows and nothing rejects.</summary>
     private const string Jumbled =
         """{"palette":[0,"000000",200,"00ff00",80,"0000ff",255,"ffffff"]}""";
 
     [Fact]
-    public void Dragging_a_stop_past_its_neighbour_moves_its_row() => ui.Run(async () =>
+    public void A_stop_stops_where_the_next_one_is() => ui.Run(async () =>
     {
         PaletteEditorViewModel editor = await OpenAsync(Fireworks);
 
         Assert.Equal([0, 37, 116, 207, 255], Positions(editor));
 
-        // The white one, up past the magenta. This is the drag in the screenshot: 37 of 255 is 15%,
-        // dragged to 150, which is 59% - and 59 sat above 45 in the list while the gradient drew it
-        // below.
+        // The white one, dragged well past the magenta. This is the drag that started it: 37 of 255
+        // is 15%, dragged to 150, which is 59% - and 59 sat above 45 in the list.
         editor.Stops[1].Position = 150;
 
-        Assert.Equal([0, 116, 150, 207, 255], Positions(editor));
+        // It went as far as the magenta and no further, and every row is where it was.
+        Assert.Equal([0, 116, 116, 207, 255], Positions(editor));
+        Assert.Equal(Color(255, 255, 255), At(editor, 1));
+        Assert.Equal(Color(255, 0, 255), At(editor, 2));
+    });
 
-        // Still the same stop, carried with its color rather than its value being swapped into a
-        // row that was already there.
-        Assert.Equal(Color(255, 255, 255), At(editor, 2));
-        Assert.Equal(Color(255, 0, 255), At(editor, 1));
+    [Fact]
+    public void And_where_the_one_before_it_is() => ui.Run(async () =>
+    {
+        PaletteEditorViewModel editor = await OpenAsync(Fireworks);
+
+        // Downwards is penned in the same way, by the stop above rather than by the one below.
+        editor.Stops[2].Position = 10;
+
+        Assert.Equal([0, 37, 37, 207, 255], Positions(editor));
+        Assert.Equal(Color(255, 0, 255), At(editor, 2));
+    });
+
+    [Fact]
+    public void The_ends_are_penned_in_by_the_range_itself() => ui.Run(async () =>
+    {
+        PaletteEditorViewModel editor = await OpenAsync(Fireworks);
+
+        // Nothing above the last one or below the first, so those two answer to 0 and 255 - the
+        // whole of what the firmware reads.
+        editor.Stops[4].Position = 300;
+        editor.Stops[0].Position = -20;
+
+        Assert.Equal(255, editor.Stops[4].Position);
+        Assert.Equal(0, editor.Stops[0].Position);
+    });
+
+    [Fact]
+    public void Freed_by_its_neighbour_moving_first() => ui.Run(async () =>
+    {
+        PaletteEditorViewModel editor = await OpenAsync(Fireworks);
+
+        // Which is the cost of this, said out loud: to move a stop a long way you move what is in
+        // its way first. Nothing is lost, and nothing moves that was not dragged.
+        editor.Stops[2].Position = 200;
+        editor.Stops[1].Position = 150;
+
+        Assert.Equal([0, 150, 200, 207, 255], Positions(editor));
+        Assert.Equal(Color(255, 255, 255), At(editor, 1));
     });
 
     [Fact]
@@ -53,50 +94,46 @@ public class ThePaletteRowsFollowTheGradientTests(UiThreadFixture ui) : IDisposa
 
         editor.Stops[1].Position = 150;
 
-        // Which is the whole complaint: these two were the same list drawn twice, disagreeing.
-        Assert.Equal(
-            [.. editor.Edited.Stops.Select(s => (int)s.Position)],
-            Positions(editor));
+        // Which is the whole point: these two were the same list drawn twice, disagreeing.
+        Assert.Equal([.. editor.Edited.Stops.Select(s => (int)s.Position)], Positions(editor));
     });
 
     [Fact]
-    public void A_palette_already_out_of_order_is_tidied_on_opening() => ui.Run(async () =>
+    public void A_palette_already_out_of_order_is_sorted_as_it_is_read() => ui.Run(async () =>
     {
-        // Nothing stops a file being written this way, and anything this editor saves will be
-        // sorted - so the rows would have reordered themselves on the next open with no edit in
-        // between, which looks like the app losing track of them.
+        // Sorted before there is a row to move, which is not the same as moving one. Everything
+        // downstream reads the list as ascending, and anything this editor saves will be.
         PaletteEditorViewModel editor = await OpenAsync(Jumbled);
 
         Assert.Equal([0, 80, 200, 255], Positions(editor));
+        Assert.Equal(Color(0, 0, 255), At(editor, 1));
+        Assert.Equal(Color(0, 255, 0), At(editor, 2));
     });
 
     [Fact]
-    public void A_new_color_lands_in_the_gap_it_was_aimed_at() => ui.Run(async () =>
+    public void A_new_color_is_inserted_in_the_gap_it_was_aimed_at() => ui.Run(async () =>
     {
         PaletteEditorViewModel editor = await OpenAsync(Fireworks);
 
-        // The widest gap here is 116 to 207, so it goes in at 161 - which is row three, not the end
-        // of the list where it was added.
+        // The widest gap is 116 to 207, so it goes in at 161 - and into row three, not onto the end
+        // of a list it sits in the middle of.
         editor.AddStopCommand.Execute(null);
 
         Assert.Equal([0, 37, 116, 161, 207, 255], Positions(editor));
     });
 
     [Fact]
-    public void Two_at_the_same_place_keep_the_order_they_were_written_in() => ui.Run(async () =>
+    public void Removing_one_gives_its_neighbours_the_room_back() => ui.Run(async () =>
     {
         PaletteEditorViewModel editor = await OpenAsync(Fireworks);
 
-        // The white one, dragged until it sits exactly on the magenta.
-        editor.Stops[1].Position = 116;
+        editor.Stops[2].RemoveCommand.Execute(null);
 
-        Assert.Equal([0, 116, 116, 207, 255], Positions(editor));
+        // The magenta is gone, so the white can now go as far as the crimson and not merely as far
+        // as where the magenta used to be. The room is read off the list rather than remembered.
+        editor.Stops[1].Position = 190;
 
-        // Stable, so neither of them moves: white was above magenta before they met and stays
-        // there. A sort that broke ties any other way would have the two rows swapping places every
-        // time the slider passed through the value, under a hand that is still holding it.
-        Assert.Equal(Color(255, 255, 255), At(editor, 1));
-        Assert.Equal(Color(255, 0, 255), At(editor, 2));
+        Assert.Equal([0, 190, 207, 255], Positions(editor));
     });
 
     private static int[] Positions(PaletteEditorViewModel editor) =>

@@ -137,7 +137,11 @@ public sealed partial class PaletteEditorViewModel : ObservableObject
         {
             Stops.Clear();
 
-            foreach (PaletteStop stop in value?.Stops ?? [])
+            // Sorted here, where there is no row yet to move. Nothing stops a palette being written
+            // out of order by hand or by another editor, and everything below this point - the
+            // gradient bar, the file this saves, the room each stop has to move in - reads the list
+            // as ascending.
+            foreach (PaletteStop stop in (value?.Stops ?? []).OrderBy(s => s.Position))
             {
                 Stops.Add(Row(stop));
             }
@@ -157,62 +161,43 @@ public sealed partial class PaletteEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(HasChosen));
         OnPropertyChanged(nameof(HasWarning));
         OnPropertyChanged(nameof(CanRemoveChosen));
-
-        // Sorted on opening as well, since a palette written by WLED's own editor or by hand need
-        // not be - and anything this saves will be.
-        Changed();
-    }
-
-    private PaletteStopRow Row(PaletteStop stop) =>
-        new(stop, Changed, Drop, _pickColor);
-
-    /// <summary>A stop moved or was recoloured: the rows follow it, then everything is redrawn.</summary>
-    private void Changed()
-    {
-        Reorder();
         Redraw();
     }
 
+    private PaletteStopRow Row(PaletteStop stop) =>
+        new(stop, Redraw, Drop, _pickColor, Room);
+
     /// <summary>
-    /// Puts the rows back in the order the gradient draws them.
+    /// How far one stop can move before it would pass a neighbour.
     /// </summary>
     /// <remarks>
-    /// The bar above the rows is sorted and the file written out is sorted, so a list that is not
-    /// disagrees with both: a stop dragged past its neighbour sat above one with a lower percentage
-    /// while the gradient showed it below, and saving and reopening silently put the rows in an
-    /// order nobody had asked for.
+    /// The rows are the gradient read top to bottom, and they stay where they are put. Letting a
+    /// stop cross its neighbour leaves two bad choices and no good one: reorder the rows, and a row
+    /// jumps while the hand dragging it is still on the slider; leave them, and the list reads out
+    /// of order against a gradient bar that is sorted and a file that is written sorted - so the
+    /// rows would rearrange themselves on the next open with no edit in between.
     /// <para>
-    /// Moved rather than removed and re-added, because a row can be reordered while its own slider
-    /// is being dragged. A move relocates the control; rebuilding it would take the thumb out from
-    /// under the pointer mid-drag.
+    /// The other way out would be to shove the neighbour along to make room. That keeps the order
+    /// too, and quietly moves stops nobody asked to move - and a drag to the far end would pile
+    /// every stop above it into the last few places, undoing a gradient somebody had tuned. Stopping
+    /// is the one that loses nothing.
     /// </para>
     /// <para>
-    /// Stable, so two stops at the same position keep the order they were written in rather than
-    /// swapping under the reader for no reason.
+    /// The ends are penned in by 0 and 255 rather than by a neighbour, which is the whole range the
+    /// firmware reads.
     /// </para>
     /// </remarks>
-    private void Reorder()
+    private (double Low, double High) Room(PaletteStopRow row)
     {
-        if (_settling)
+        int at = Stops.IndexOf(row);
+
+        if (at < 0)
         {
-            return;
+            return (0, 255);
         }
 
-        for (int i = 1; i < Stops.Count; i++)
-        {
-            PaletteStopRow row = Stops[i];
-            int at = i;
-
-            while (at > 0 && Stops[at - 1].Position > row.Position)
-            {
-                at--;
-            }
-
-            if (at != i)
-            {
-                Stops.Move(i, at);
-            }
-        }
+        return (at == 0 ? 0 : Stops[at - 1].Position,
+                at == Stops.Count - 1 ? 255 : Stops[at + 1].Position);
     }
 
     private void Redraw()
@@ -246,24 +231,25 @@ public sealed partial class PaletteEditorViewModel : ObservableObject
 
         // Dropped into the widest gap rather than at the end, so it lands somewhere it can be seen
         // instead of on top of a stop that is already there.
-        PaletteStop[] sorted = [.. Stops.Select(s => s.Stop).OrderBy(s => s.Position)];
-        int at = 128, widest = -1;
+        int at = 128, after = Stops.Count - 1, widest = -1;
 
-        for (int i = 0; i + 1 < sorted.Length; i++)
+        for (int i = 0; i + 1 < Stops.Count; i++)
         {
-            int gap = sorted[i + 1].Position - sorted[i].Position;
+            int gap = (int)(Stops[i + 1].Position - Stops[i].Position);
 
             if (gap > widest)
             {
                 widest = gap;
-                at = sorted[i].Position + (gap / 2);
+                after = i;
+                at = (int)Stops[i].Position + (gap / 2);
             }
         }
 
-        // Added at the end and then moved into the gap it was aimed at, so where it appears in the
-        // list is where it appears in the gradient.
-        Stops.Add(Row(new PaletteStop((byte)at, Sample(at / 255d))));
-        Changed();
+        // Inserted into the gap it was aimed at rather than appended, because the rows are the
+        // gradient read top to bottom and a new stop at the foot of a list it sits in the middle of
+        // would break that the moment it appeared.
+        Stops.Insert(after + 1, Row(new PaletteStop((byte)at, Sample(at / 255d))));
+        Redraw();
     }
 
     /// <summary>The colour the gradient already shows there, so adding a stop changes nothing by itself.</summary>

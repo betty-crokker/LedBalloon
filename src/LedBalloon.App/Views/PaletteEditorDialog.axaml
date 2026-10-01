@@ -125,9 +125,19 @@
                               BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
                     </Button>
 
+                    <!-- Every slider runs the whole 0 to 255 whatever room its stop has, so the
+                         thumbs read down the list as the spacing of the gradient itself. Bounding
+                         each one by its neighbours would stop them crossing too, and would put a
+                         thumb a third of the way along above a label reading 15%.
+
+                         One way in, and the move pushed back by hand, because a two-way binding
+                         will not write a coerced value back to the control that started the change:
+                         a stop held at its neighbour left its thumb out where the pointer had
+                         dragged it, with the percentage beside it reading something else. -->
                     <Slider Grid.Column="2" Minimum="0" Maximum="255" VerticalAlignment="Center"
                             AutomationProperties.AutomationId="StopPosition"
-                            Value="{Binding Position, Mode=TwoWay}" />
+                            ValueChanged="OnStopMoved"
+                            Value="{Binding Position, Mode=OneWay}" />
 
                     <TextBlock Grid.Column="4" Classes="hint" Width="36" TextAlignment="Right"
                                VerticalAlignment="Center" Text="{Binding Percent}" />

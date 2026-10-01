@@ -17,22 +17,31 @@ namespace LedBalloon.App.ViewModels;
 /// impossible to tell from one - which matters here, because WLED expands whatever is written into
 /// sixteen evenly spaced entries and a stop that lands on the same expansion slot as its neighbour
 /// simply disappears.
+/// <para>
+/// Every slider runs 0 to 255 whatever room the stop has, so a thumb halfway along means halfway
+/// along the gradient on every row. Bounding each slider by its neighbours instead would be the
+/// obvious way to stop them crossing, and it would put a thumb at a third of its track above a
+/// label reading 15%.
+/// </para>
 /// </remarks>
 public sealed partial class PaletteStopRow : ObservableObject
 {
     private readonly Action? _changed;
     private readonly Action<PaletteStopRow>? _remove;
     private readonly Func<PaletteStopRow, Task>? _pick;
+    private readonly Func<PaletteStopRow, (double Low, double High)>? _room;
 
     public PaletteStopRow(
         PaletteStop stop,
         Action? changed = null,
         Action<PaletteStopRow>? remove = null,
-        Func<PaletteStopRow, Task>? pick = null)
+        Func<PaletteStopRow, Task>? pick = null,
+        Func<PaletteStopRow, (double Low, double High)>? room = null)
     {
         _changed = changed;
         _remove = remove;
         _pick = pick;
+        _room = room;
 
         _position = stop.Position;
         _picked = Color.FromRgb(stop.Color.R, stop.Color.G, stop.Color.B);
@@ -64,6 +73,23 @@ public sealed partial class PaletteStopRow : ObservableObject
 
     partial void OnPositionChanged(double value)
     {
+        // A stop cannot pass its neighbours. The rows are the gradient read top to bottom, and one
+        // sliding past another would either put the list out of order or make a row jump while the
+        // hand dragging it was still on the slider; the slider simply stops instead.
+        //
+        // Set back rather than refused, so the thumb follows the limit instead of running on ahead
+        // of the value it is bound to. The second pass clamps to itself and falls through.
+        if (_room?.Invoke(this) is { } room)
+        {
+            double held = Math.Clamp(value, room.Low, room.High);
+
+            if (held != value)
+            {
+                Position = held;
+                return;
+            }
+        }
+
         OnPropertyChanged(nameof(Percent));
         _changed?.Invoke();
     }
