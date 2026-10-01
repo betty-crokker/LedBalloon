@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using LedBalloon.App.ViewModels;
 using LedBalloon.Core.Layout;
@@ -61,6 +62,24 @@ public partial class PaletteEditorDialog : Window
     /// </remarks>
     private static SegmentColorSlot Slot(PaletteStopRow row) =>
         new(0, "Color", row.Picked, (_, color) => row.Picked = color);
+
+    /// <summary>
+    /// Carries a dragged stop into the row, which may hold it short of where it was dragged.
+    /// </summary>
+    /// <remarks>
+    /// By hand rather than by a two-way binding. A stop cannot pass its neighbours, so the row
+    /// coerces what it is given - and Avalonia will not write a coerced value back to the control
+    /// that started the change, which left the thumb out at the far end of a drag with the
+    /// percentage beside it reading where the stop had actually stopped. The one-way binding this
+    /// pairs with has no such rule, so the clamp reaches the thumb.
+    /// </remarks>
+    private void OnStopMoved(object? sender, RangeBaseValueChangedEventArgs e)
+    {
+        if (sender is Slider { DataContext: PaletteStopRow row })
+        {
+            row.Position = e.NewValue;
+        }
+    }
 
     private bool _saved;
 
