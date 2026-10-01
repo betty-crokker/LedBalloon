@@ -55,6 +55,9 @@ public sealed class StripPreview : Control
     /// <summary>Cap on rows of history, which is also the cap on work done per frame.</summary>
     private const int MaxRows = 160;
 
+    /// <summary>The space between the two frames, so they read as two things rather than one.</summary>
+    private const double Gap = 5;
+
     /// <summary>The unlit strip, which is also what shows between the lit LEDs.</summary>
     private const uint Unlit = 0xFF101116;
 
@@ -94,9 +97,21 @@ public sealed class StripPreview : Control
     public static readonly StyledProperty<ControllerTiming?> TimingProperty =
         AvaloniaProperty.Register<StripPreview, ControllerTiming?>(nameof(Timing));
 
+    /// <summary>
+    /// How tall a band to give the run as it is this instant, above the history. Zero for none.
+    /// </summary>
+    /// <remarks>
+    /// Drawn by this control rather than by a second one beside it, because two controls would mean
+    /// two simulations - and two runs of an effect that uses randomness are two different pictures.
+    /// A strip claiming to be the same run as the panel under it has to actually be the same run.
+    /// </remarks>
+    public static readonly StyledProperty<double> NowHeightProperty =
+        AvaloniaProperty.Register<StripPreview, double>(nameof(NowHeight));
+
     static StripPreview() =>
         AffectsRender<StripPreview>(
-            SegmentProperty, LedCountProperty, EffectNamesProperty, PaletteProperty, TimingProperty);
+            SegmentProperty, LedCountProperty, EffectNamesProperty, PaletteProperty, TimingProperty,
+            NowHeightProperty);
 
     private readonly DispatcherTimer _clock;
     private readonly Stopwatch _since = Stopwatch.StartNew();
@@ -180,6 +195,12 @@ public sealed class StripPreview : Control
         set => SetValue(TimingProperty, value);
     }
 
+    public double NowHeight
+    {
+        get => GetValue(NowHeightProperty);
+        set => SetValue(NowHeightProperty, value);
+    }
+
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnAttachedToVisualTree(e);
@@ -227,10 +248,26 @@ public sealed class StripPreview : Control
             return;
         }
 
-        context.DrawRectangle(
-            new SolidColorBrush(Color.FromRgb(0x10, 0x11, 0x16)),
-            new Pen(new SolidColorBrush(Color.FromRgb(0x2A, 0x2E, 0x35))),
-            new RoundedRect(bounds, 4));
+        // Two frames when there is room for one: the run as it is this instant on top, and the
+        // last few seconds under it. Separate rather than the top row of one picture, because the
+        // top row of a waterfall is a line and what somebody wants to see is the strip.
+        double band = NowHeight;
+        bool split = band >= 6 && bounds.Height > band + 14;
+
+        Rect top = split ? bounds.WithHeight(band) : default;
+        Rect history = split
+            ? new Rect(0, band + Gap, bounds.Width, bounds.Height - band - Gap)
+            : bounds;
+
+        var unlit = new SolidColorBrush(Color.FromRgb(0x10, 0x11, 0x16));
+        var edge = new Pen(new SolidColorBrush(Color.FromRgb(0x2A, 0x2E, 0x35)));
+
+        if (split)
+        {
+            context.DrawRectangle(unlit, edge, new RoundedRect(top, 4));
+        }
+
+        context.DrawRectangle(unlit, edge, new RoundedRect(history, 4));
 
         if (LedCount < 1 || Segment is not { } wled)
         {
@@ -241,13 +278,13 @@ public sealed class StripPreview : Control
 
         // Inside the frame, so it reads as sitting in the strip rather than as a bar with a line
         // round it. One bitmap pixel per screen pixel, so nothing is scaled.
-        Rect inside = bounds.Deflate(new Thickness(2));
+        Rect inside = history.Deflate(new Thickness(2));
         int columns = Math.Clamp(Math.Min(LedCount, (int)inside.Width), 1, MaxLeds);
         int depth = Math.Clamp((int)inside.Height, 1, MaxRows);
 
         Resize(columns, depth);
         Scroll(wled);
-        Draw(context, inside);
+        Draw(context, inside, top.Height > 0 ? top.Deflate(new Thickness(2)) : null);
     }
 
     /// <summary>Throws the history away when it would no longer line up with what is drawn.</summary>
@@ -290,7 +327,7 @@ public sealed class StripPreview : Control
         }
     }
 
-    private void Draw(DrawingContext context, Rect inside)
+    private void Draw(DrawingContext context, Rect inside, Rect? now)
     {
         if (_image is not { } image)
         {
@@ -307,6 +344,13 @@ public sealed class StripPreview : Control
         }
 
         context.DrawImage(image, new Rect(0, 0, _columns, _depth), inside);
+
+        if (now is { } band)
+        {
+            // The newest row of the same picture, stretched up the band. Taken from the one bitmap
+            // rather than drawn again, so the two can never disagree about what the run is doing.
+            context.DrawImage(image, new Rect(0, 0, _columns, 1), band);
+        }
     }
 
     /// <summary>
