@@ -157,11 +157,63 @@ public sealed partial class PaletteEditorViewModel : ObservableObject
         OnPropertyChanged(nameof(HasChosen));
         OnPropertyChanged(nameof(HasWarning));
         OnPropertyChanged(nameof(CanRemoveChosen));
-        Redraw();
+
+        // Sorted on opening as well, since a palette written by WLED's own editor or by hand need
+        // not be - and anything this saves will be.
+        Changed();
     }
 
     private PaletteStopRow Row(PaletteStop stop) =>
-        new(stop, Redraw, Drop, _pickColor);
+        new(stop, Changed, Drop, _pickColor);
+
+    /// <summary>A stop moved or was recoloured: the rows follow it, then everything is redrawn.</summary>
+    private void Changed()
+    {
+        Reorder();
+        Redraw();
+    }
+
+    /// <summary>
+    /// Puts the rows back in the order the gradient draws them.
+    /// </summary>
+    /// <remarks>
+    /// The bar above the rows is sorted and the file written out is sorted, so a list that is not
+    /// disagrees with both: a stop dragged past its neighbour sat above one with a lower percentage
+    /// while the gradient showed it below, and saving and reopening silently put the rows in an
+    /// order nobody had asked for.
+    /// <para>
+    /// Moved rather than removed and re-added, because a row can be reordered while its own slider
+    /// is being dragged. A move relocates the control; rebuilding it would take the thumb out from
+    /// under the pointer mid-drag.
+    /// </para>
+    /// <para>
+    /// Stable, so two stops at the same position keep the order they were written in rather than
+    /// swapping under the reader for no reason.
+    /// </para>
+    /// </remarks>
+    private void Reorder()
+    {
+        if (_settling)
+        {
+            return;
+        }
+
+        for (int i = 1; i < Stops.Count; i++)
+        {
+            PaletteStopRow row = Stops[i];
+            int at = i;
+
+            while (at > 0 && Stops[at - 1].Position > row.Position)
+            {
+                at--;
+            }
+
+            if (at != i)
+            {
+                Stops.Move(i, at);
+            }
+        }
+    }
 
     private void Redraw()
     {
@@ -208,8 +260,10 @@ public sealed partial class PaletteEditorViewModel : ObservableObject
             }
         }
 
+        // Added at the end and then moved into the gap it was aimed at, so where it appears in the
+        // list is where it appears in the gradient.
         Stops.Add(Row(new PaletteStop((byte)at, Sample(at / 255d))));
-        Redraw();
+        Changed();
     }
 
     /// <summary>The colour the gradient already shows there, so adding a stop changes nothing by itself.</summary>
