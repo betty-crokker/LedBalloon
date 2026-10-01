@@ -1,6 +1,7 @@
 using System.Net;
 using System.Linq;
 using System.Text;
+using LedBalloon.Core.Layout;
 
 namespace LedBalloon.App.Tests;
 
@@ -26,6 +27,15 @@ internal sealed class FakeController : IDisposable
 {
     /// <summary>What the controller calls itself, and so what anything keyed by controller uses.</summary>
     public const string Key = "aa:bb:cc:dd:ee:ff";
+
+    /// <summary>
+    /// This one's MAC, which is how the project tells two controllers apart.
+    /// </summary>
+    /// <remarks>
+    /// A second stand-in needs a second identity or the house has one controller twice, and a
+    /// palette cannot travel from a box to itself.
+    /// </remarks>
+    public string DeviceKey { get; private init; } = Key;
 
     private readonly List<string> _posted = [];
     private readonly HttpListener _listener;
@@ -94,6 +104,29 @@ internal sealed class FakeController : IDisposable
     /// all, since the ones that need a matrix cannot run on a strip. A fake that 404s it leaves
     /// every effect looking like one nothing is known about.
     /// </remarks>
+    /// <summary>
+    /// The custom palette files this controller holds, keyed by name, lowest slot first.
+    /// </summary>
+    /// <remarks>
+    /// Here because a palette made on one controller and wanted on the other has to travel, and the
+    /// travelling is the part nothing could reach: the picker offers the rest of the house's
+    /// palettes, writes the file when one is picked, and uses the id it lands on - which is not the
+    /// id it had, since custom palettes are numbered by position in each controller's own list.
+    /// </remarks>
+    public Dictionary<string, byte[]> Files { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Where each upload was posted, since /edit and /upload are not interchangeable.</summary>
+    public List<string> Uploads { get; } = [];
+
+    /// <summary>Puts a custom palette on this controller, as if somebody had made it here.</summary>
+    public void Holds(params string[] palettes)
+    {
+        for (int slot = 0; slot < palettes.Length; slot++)
+        {
+            Files[$"palette{slot}.json"] = Encoding.UTF8.GetBytes(palettes[slot]);
+        }
+    }
+
     public static FakeController Start(string[] effects, string[]? fxdata) =>
         Start(effects, fxdata, null);
 
@@ -104,7 +137,12 @@ internal sealed class FakeController : IDisposable
     /// The <c>u</c> object of <c>/json/info</c>, verbatim. A sound-reactive build describes what it
     /// is listening to here, and two dozen of the effects it offers do nothing without it.
     /// </param>
-    public static FakeController Start(string[] effects, string[]? fxdata, string? usermods)
+    public static FakeController Start(string[] effects, string[]? fxdata, string? usermods) =>
+        Start(effects, fxdata, usermods, Key);
+
+    /// <summary>A controller with an identity of its own, for a house that has two of them.</summary>
+    public static FakeController Start(
+        string[] effects, string[]? fxdata, string? usermods, string key)
     {
         // A port the operating system picks, so tests can run beside each other and beside anything
         // else already listening.
@@ -120,7 +158,7 @@ internal sealed class FakeController : IDisposable
             $$"""
             {
               "state": { "on": false, "bri": 128, "seg": [ { "id": 0, "start": 0, "stop": 10, "len": 10, "on": true, "bri": 255, "fx": 0, "sx": 128, "ix": 128, "pal": 0, "col": [[255,160,0],[0,0,0],[0,0,0]] } ] },
-              "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{Key}}", "leds": { "count": 10, "fps": 0 }{{Heard(usermods)}} },
+              "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{key}}", "leds": { "count": 10, "fps": 0 }{{Heard(usermods)}} },
               "effects": [ {{names}} ],
               "palettes": [ "Default", "* Random Cycle", "* Color 1", "* Colors 1&2",
                             "* Color Gradient", "* Colors Only", "Ocean", "Analogous" ]
@@ -131,12 +169,60 @@ internal sealed class FakeController : IDisposable
             ? "[]"
             : "[" + string.Join(",", fxdata.Select(d => $"\"{d}\"")) + "]";
 
-        return new FakeController(listener, $"127.0.0.1:{port}", document, metadata);
+        return new FakeController(listener, $"127.0.0.1:{port}", document, metadata)
+        {
+            DeviceKey = key,
+        };
     }
 
     /// <summary>The usermod block as an <c>info</c> member, or nothing at all when there is none.</summary>
     private static string Heard(string? usermods) =>
         usermods is { Length: > 0 } said ? $", \"u\": {said}" : string.Empty;
+
+    /// <summary>One of the palette files, if this is a request for one and it is held.</summary>
+    private byte[]? Held(string path)
+    {
+        string name = path.TrimStart('/');
+
+        lock (_posted)
+        {
+            return name.StartsWith("palette", StringComparison.Ordinal) &&
+                   Files.TryGetValue(name, out byte[]? file)
+                ? file
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// What <c>/json/palx</c> says, which is the firmware's expansion of those files.
+    /// </summary>
+    /// <remarks>
+    /// Only the custom ones. The built-in gradients are not what any of this is about, and a palette
+    /// the controller does not hold is exactly the thing that has to be absent here.
+    /// </remarks>
+    private string Expanded()
+    {
+        var entries = new List<string>();
+
+        lock (_posted)
+        {
+            for (int slot = 0; slot < 10; slot++)
+            {
+                if (!Files.TryGetValue($"palette{slot}.json", out byte[]? file))
+                {
+                    // WLED stops at the first gap, and so does this.
+                    break;
+                }
+
+                string stops = string.Join(",", CustomPaletteFile.Parse(file)
+                    .Select(stop => $"[{stop.Position},{stop.Color.R},{stop.Color.G},{stop.Color.B}]"));
+
+                entries.Add($"\"{255 - slot}\":[{stops}]");
+            }
+        }
+
+        return "{\"m\":0,\"p\":{" + string.Join(",", entries) + "}}";
+    }
 
     private static int FreePort()
     {
@@ -171,12 +257,58 @@ internal sealed class FakeController : IDisposable
                 using var body = new StreamReader(context.Request.InputStream, Encoding.UTF8);
                 string sent = await body.ReadToEndAsync();
 
-                lock (_posted)
+                // A file upload rather than a state change. The part's filename says where it goes,
+                // and the payload sits between the blank line after the headers and the closing
+                // boundary - good enough for a stand-in.
+                int at = sent.IndexOf("filename=\"/", StringComparison.Ordinal);
+
+                if (at >= 0)
                 {
-                    _posted.Add(sent);
+                    int from = at + 11;
+                    string name = sent[from..sent.IndexOf('"', from)];
+
+                    int start = sent.IndexOf("\r\n\r\n", at, StringComparison.Ordinal) + 4;
+                    int end = sent.LastIndexOf("\r\n--", StringComparison.Ordinal);
+
+                    lock (_posted)
+                    {
+                        Uploads.Add(path.TrimStart('/'));
+                        Files[name] = Encoding.UTF8.GetBytes(sent[start..end]);
+                    }
+                }
+                else
+                {
+                    lock (_posted)
+                    {
+                        _posted.Add(sent);
+                    }
                 }
 
                 context.Response.ContentType = "application/json";
+                context.Response.Close();
+                continue;
+            }
+
+            // The custom palette files, which is what a palette actually is. Everything else about
+            // one - its id, its gradient - is worked out from where the file sits.
+            if (Held(path) is { } file)
+            {
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = file.Length;
+                await context.Response.OutputStream.WriteAsync(file);
+
+                context.Response.Close();
+                continue;
+            }
+
+            if (path.TrimEnd('/') is "/json/palx")
+            {
+                byte[] body = Encoding.UTF8.GetBytes(Expanded());
+
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body);
+
                 context.Response.Close();
                 continue;
             }
