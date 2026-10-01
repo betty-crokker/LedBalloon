@@ -597,6 +597,22 @@
 
                                     <Separator Margin="0,14,0,12" />
 
+                                    <!-- Asked rather than detected, because it cannot be detected:
+                                         a microphone in a quiet street and no microphone at all
+                                         both report quiet. Ticking it is what decides whether two
+                                         dozen sound-driven effects are worth offering here. -->
+                                    <TextBlock Text="Sound" FontWeight="SemiBold" FontSize="12" />
+                                    <TextBlock Classes="hint" Margin="0,3,0,6"
+                                               Text="Some effects follow music. They need a microphone wired to the controller, or another WLED device on the network sharing what it hears. Without one they leave the lights exactly as they were, so they are left out of the list." />
+                                    <CheckBox Content="This controller can hear sound"
+                                              AutomationProperties.AutomationId="ControllerHasSound"
+                                              IsChecked="{Binding Owner.ControllerHasSound}" />
+                                    <TextBlock Classes="hint" Margin="0,3,0,0"
+                                               Text="{Binding Owner.ControllerSoundNote}"
+                                               IsVisible="{Binding Owner.ControllerSoundNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                                    <Separator Margin="0,14,0,12" />
+
                                     <TextBlock Text="Work out its segments" FontWeight="SemiBold" FontSize="12" />
                                     <TextBlock Classes="hint" Margin="0,3,0,6"
                                                Text="From the wiring: asks the controller how its outputs are wired and makes a segment for each. From the presets: every preset stores its own copy of the segment bounds, so this weighs them against each other and asks about any disagreement. Both replace the segments already here, including the lines traced on the photo." />

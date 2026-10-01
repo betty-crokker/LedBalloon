@@ -3885,10 +3885,49 @@ public sealed partial class MainViewModel : ViewModelBase
         }
     }
 
-    /// <summary>True for a reserved slot rather than an effect. See the picker for why.</summary>
+    /// <summary>
+    /// True for an effect this strip cannot show, whatever anybody picks.
+    /// </summary>
+    /// <remarks>
+    /// Three ways for a name in the controller's list to be a name that can only disappoint.
+    /// <list type="bullet">
+    /// <item>It needs a matrix. 37 of the 187 do, a run of LED along a roofline is not one, and
+    /// WLED's own UI hides them for exactly this reason.</item>
+    /// <item>It is not an effect. WLED retires one by leaving its number in the list under the name
+    /// "RSVD", so presets saved against the numbers after it still recall the right thing; 7 of the
+    /// entries are that, and picking one does nothing whatsoever.</item>
+    /// <item>It follows sound this controller has none of. 24 more, and this is the only one of the
+    /// three that is a fact about the house rather than about the effect - so it is the only one
+    /// somebody can change their mind about.</item>
+    /// </list>
+    /// </remarks>
+    private static bool Hidden(DeviceViewModel device, int effect, bool deaf)
+    {
+        EffectMetadata metadata = device.Device.MetadataFor(effect);
+
+        return metadata.Is2DOnly
+            || (deaf && metadata.IsAudioReactive)
+            || IsPlaceholder(device.Effects[effect]);
+    }
+
+    /// <summary>True for a reserved slot rather than an effect. See <see cref="Hidden"/>.</summary>
     private static bool IsPlaceholder(string? name) =>
         string.IsNullOrWhiteSpace(name) ||
         name.Trim().Equals("RSVD", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Whether a controller has sound reaching it: what somebody said, or what it reports.
+    /// </summary>
+    /// <remarks>
+    /// Stored because it cannot be measured. A microphone with nothing happening in front of it and
+    /// no microphone at all both come back quiet, so the live reading is only a starting guess -
+    /// right for a house with one and right for a house without, until somebody ticks the box and
+    /// their answer stands.
+    /// </remarks>
+    public bool HasSound(string? controllerKey) =>
+        Project.FindController(controllerKey)?.HasSound
+        ?? DeviceFor(controllerKey)?.Info?.Sound.Hearing
+        ?? false;
 
     /// <summary>True when the open palette is one somebody here made, so it can be edited.</summary>
     public bool SegmentPaletteIsCustom =>
@@ -3926,23 +3965,15 @@ public sealed partial class MainViewModel : ViewModelBase
                 : new ControllerTiming(
                     EffectSimulation.DefaultFrameMilliseconds, FrameTime.MinimumFrameDelay);
 
+        bool deaf = !HasSound(segment.ControllerKey);
+
         for (int i = 0; i < device.Effects.Count; i++)
         {
-            // Not the matrix ones. A run of LED along a roofline cannot show them and WLED's own UI
-            // hides them for the same reason; offering them is 37 names that can only disappoint.
-            // Drift Rose is the one that made this obvious: offered, unrunnable, and sitting under
-            // two notes that contradicted each other about where its colors came from.
-            if (device.Device.MetadataFor(i).Is2DOnly)
-            {
-                continue;
-            }
-
-            // Nor the gaps. WLED retires an effect by leaving its number in the list under the name
-            // "RSVD", so that presets saved against the numbers after it still recall the right
-            // thing. Seven of the entries are that, they are not effects, and picking one does
-            // nothing whatsoever. The tests have called them placeholders all along; the picker was
-            // offering them.
-            if (IsPlaceholder(device.Effects[i]))
+            // Whatever the segment is on now is always offered, whatever else is true of it. An
+            // effect left out of this list is one the picker cannot show, so a segment already
+            // wearing one would open on an empty box with its own setting nowhere in the list,
+            // which looks like the app having lost it.
+            if (i != (shown?.Effect ?? -1) && Hidden(device, i, deaf))
             {
                 continue;
             }
@@ -4713,8 +4744,75 @@ public sealed partial class MainViewModel : ViewModelBase
         AfterProjectChanged($"Moved '{segment.Name}' to {value.DisplayName}.");
     }
 
-    partial void OnSelectedDeviceChanged(DeviceViewModel? value) =>
+    partial void OnSelectedDeviceChanged(DeviceViewModel? value)
+    {
         ControllerNameEdit = value?.DisplayName ?? string.Empty;
+
+        // Read rather than written, so opening a controller's card does not count as answering for
+        // it. Until somebody ticks the box it shows the live reading and stays unstored.
+        _readingController = true;
+        try
+        {
+            ControllerHasSound = HasSound(value?.DeviceKey);
+        }
+        finally
+        {
+            _readingController = false;
+        }
+
+        OnPropertyChanged(nameof(ControllerSoundNote));
+    }
+
+    /// <summary>True while the controller card is being filled in, so filling it is not an answer.</summary>
+    private bool _readingController;
+
+    /// <summary>
+    /// Whether the selected controller has sound reaching it, as the person setting it up says.
+    /// </summary>
+    /// <remarks>
+    /// Asked rather than detected, because it cannot be detected: a microphone in a quiet street
+    /// and no microphone at all both report quiet. See <see cref="HasSound"/>.
+    /// </remarks>
+    [ObservableProperty] private bool _controllerHasSound;
+
+    partial void OnControllerHasSoundChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ControllerSoundNote));
+
+        if (_readingController || SelectedDevice is not { DeviceKey: { } key } device)
+        {
+            return;
+        }
+
+        Project.RegisterController(key, device.Host, device.Info?.MdnsHostName, null).HasSound = value;
+
+        OnPropertyChanged(nameof(Project));
+        HasUnsavedChanges = true;
+
+        // The effect list is 24 names longer or shorter from here on, so whatever is open has to be
+        // refilled rather than left showing the list from before the answer.
+        RefreshSegmentPickers(SelectedSegment);
+
+        Status = value
+            ? $"{device.DisplayName} can hear. Its sound-driven effects are in the list. Save to keep it."
+            : $"{device.DisplayName} has no sound, so its 24 sound-driven effects are out of the " +
+              "list. Save to keep it.";
+    }
+
+    /// <summary>What the controller itself says about sound, beside the box somebody ticks.</summary>
+    /// <remarks>
+    /// Worth showing because it is the one part of this the app does know, and because it catches
+    /// the case the box cannot: a microphone that is wired up and not working looks exactly like a
+    /// quiet street, and seeing "nothing reaching it" while the box is ticked is the only hint
+    /// anybody gets.
+    /// </remarks>
+    public string ControllerSoundNote =>
+        SelectedDevice?.Info?.Sound is not { } sound ? string.Empty
+        : sound.Source is not { Length: > 0 } source
+            ? "This build has no sound support at all."
+        : sound.Hearing
+            ? $"Hearing something right now, through {source}."
+            : $"Set up for {source}, with nothing reaching it.";
 
     /// <summary>
     /// Repoints the effect and palette pickers at the selected segment's controller. The lists are
