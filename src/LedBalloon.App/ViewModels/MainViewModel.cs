@@ -3745,8 +3745,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// own colors from the palette" describes the effect rather than telling anybody where to go,
     /// and the place to go is the next control down.
     /// </remarks>
-    public string SegmentColorNote =>
-        SegmentUsesColor ? string.Empty : "Its colors come from the palette below.";
+    public string SegmentColorNote => SegmentUsesColor ? string.Empty
+        : SegmentUsesPalette ? "Its colors come from the palette below."
+
+        // Neither the boxes nor the palette. Saying the colors come from the palette directly under
+        // a line saying the effect does not use one is two notes arguing, which is worse than
+        // either of them alone - and some effects really do work this way: the rainbow ones pick
+        // their own hues and take nothing from anywhere.
+        : "This effect chooses its own colors.";
 
     /// <summary>Why the palette is unavailable. Empty when it is not.</summary>
     public string SegmentPaletteNote =>
@@ -3884,16 +3890,20 @@ public sealed partial class MainViewModel : ViewModelBase
     /// ported gets no stamp rather than a guessed one.
     /// </remarks>
     private IEnumerable<PickerOption> EffectOptions(
-        DeviceViewModel device, Segment segment, WledSegment? shown)
+        DeviceViewModel device, Segment segment, WledSegment? shown, int? palette = null)
     {
         // The palette the picker is on rather than the one the segment last reported. They differ
         // for as long as it takes the controller to echo a change back, and the stamps are redrawn
         // the instant it is picked - so reading the reported one would draw every effect under the
         // palette that was just replaced.
+        //
+        // Named by the caller when the picker is mid-rebuild, because the choice is cleared before
+        // the lists are refilled and ChosenPalette is null for exactly as long as that takes. The
+        // stamps were drawn from the report in that window, which is the stale one.
         WledSegment like = (shown ?? new WledSegment { Id = 0 }).Clone();
-        like.Palette = ChosenPalette ?? like.Palette;
+        like.Palette = palette ?? ChosenPalette ?? like.Palette;
 
-        WledPalette? palette = like.Palette is { } id && id > 0
+        WledPalette? gradient = like.Palette is { } id && id > 0
             ? PalettesOn(segment.ControllerKey)?.GetValueOrDefault(id)
             : null;
 
@@ -3905,9 +3915,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
         for (int i = 0; i < device.Effects.Count; i++)
         {
+            // Not the matrix ones. A run of LED along a roofline cannot show them and WLED's own UI
+            // hides them for the same reason; offering them is 37 names that can only disappoint.
+            // Drift Rose is the one that made this obvious: offered, unrunnable, and sitting under
+            // two notes that contradicted each other about where its colors came from.
+            if (device.Device.MetadataFor(i).Is2DOnly)
+            {
+                continue;
+            }
+
             yield return new PickerOption(i, device.Effects[i])
             {
-                Preview = EffectThumbnail.For(i, device.Effects, like, palette, timing),
+                Preview = EffectThumbnail.For(i, device.Effects, like, gradient, timing),
             };
         }
     }
@@ -4662,7 +4681,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
             // Alphabetical, because 187 names in firmware order is a list you search rather than
             // read. The id stays whatever the controller calls it; only the order on screen moves.
-            foreach (PickerOption option in EffectOptions(device, segment, shown)
+            // Named rather than left to ChosenPalette, which is null right now: the choice is
+            // cleared above before the lists are refilled, so every stamp in this rebuild would
+            // otherwise be drawn from the report - the stale one, for as long as a change takes to
+            // come back from the controller. The palette handed over is the one the picker is about
+            // to settle on a few lines below.
+            foreach (PickerOption option in EffectOptions(
+                    device, segment, shown, keepPalette ?? shown?.Palette)
                 .OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase))
             {
                 SegmentEffects.Add(option);
