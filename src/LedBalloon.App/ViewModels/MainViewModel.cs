@@ -4406,7 +4406,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? RgbColor.FromWledArray(c[i])
                 : RgbColor.Black;
 
-            IBrush? SwatchFor(int id) => gradients is not null &&
+            // No swatch for Default. The controller reports a real gradient for palette 0 - a
+            // rainbow - and it is never drawn with: every call that lands on palette 0 comes back
+            // as a color slot instead. Showing it put a rainbow beside "The effect's own colors",
+            // which reads as a promise of one. The row is a name and nothing else, which is honest:
+            // what it will look like is in the color boxes above, not in this list.
+            IBrush? SwatchFor(int id) => id != 0 && gradients is not null &&
                 gradients.TryGetValue(id, out WledPalette? found)
                     ? GradientOf(found, slot(0), slot(1), slot(2))
                     : null;
