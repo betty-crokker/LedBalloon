@@ -3709,8 +3709,17 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>Why the color is unavailable, for the line under it. Empty when it is.</summary>
+    /// <summary>
+    /// Why there are no color boxes, said as the thing to do instead.
+    /// </summary>
+    /// <remarks>
+    /// Worth keeping, because no boxes at all is exactly what a broken panel looks like - which is
+    /// how this started, with a color box offered for Twinklecat that did nothing. But "picks its
+    /// own colors from the palette" describes the effect rather than telling anybody where to go,
+    /// and the place to go is the next control down.
+    /// </remarks>
     public string SegmentColorNote =>
-        SegmentUsesColor ? string.Empty : "This effect picks its own colors from the palette.";
+        SegmentUsesColor ? string.Empty : "Its colors come from the palette below.";
 
     /// <summary>Why the palette is unavailable. Empty when it is not.</summary>
     public string SegmentPaletteNote =>

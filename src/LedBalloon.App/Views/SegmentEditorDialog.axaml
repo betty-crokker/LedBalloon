@@ -83,7 +83,7 @@
                says there is a time axis without saying which end of it is which - and a panel that
                is read the wrong way round is read as an effect running backwards. -->
           <Grid ColumnDefinitions="*,8,Auto">
-            <ctrl:StripPreview Grid.Column="0" Height="92" Margin="0,0,0,4"
+            <ctrl:StripPreview Grid.Column="0" Height="116" NowHeight="18" Margin="0,0,0,4"
                                AutomationProperties.AutomationId="SegmentPreview"
                                Segment="{Binding PreviewSegment}"
                                LedCount="{Binding PreviewLedCount}"
@@ -91,7 +91,7 @@
                                Palette="{Binding PreviewPalette}"
                                Timing="{Binding PreviewTiming}" />
 
-            <DockPanel Grid.Column="2" Height="92" Width="46">
+            <DockPanel Grid.Column="2" Height="116" Width="46" Margin="0,23,0,0">
               <TextBlock DockPanel.Dock="Top" Classes="hint" Text="now" FontSize="11" />
               <TextBlock DockPanel.Dock="Bottom" Classes="hint" Text="older" FontSize="11" />
               <TextBlock Text="&#x2193;" Classes="hint" FontSize="13"

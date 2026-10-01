@@ -111,9 +111,6 @@
             <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.AutomationId="PaletteName"
                      PlaceholderText="Custom 0" />
-            <TextBlock Classes="hint" FontStyle="Italic"
-                       Text="Kept with your house rather than on the controller, which has nowhere to put it." />
-
             <TextBlock Classes="hint" Margin="0,10,0,0" Text="The gradient" />
             <Border Height="40" CornerRadius="4" Background="{Binding Gradient}"
                     BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
