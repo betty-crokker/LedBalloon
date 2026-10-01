@@ -166,7 +166,11 @@
                and from the controller's own fxdata otherwise, so a control that would do nothing is
                not offered. -->
           <TextBlock Classes="hint" Margin="0,8,0,2" Text="Palette" />
-          <ComboBox ItemsSource="{Binding SegmentPalettes}"
+          <!-- The pencil sits on the row rather than under it, the way it does beside a segment
+               name, and only for a palette somebody here made: the firmware's own are the same on
+               every box and nobody can change them. -->
+          <Grid ColumnDefinitions="*,6,Auto">
+          <ComboBox Grid.Column="0" ItemsSource="{Binding SegmentPalettes}"
                     AutomationProperties.AutomationId="SegmentPalette"
                     SelectedItem="{Binding SegmentPaletteChoice}"
                     IsEnabled="{Binding SegmentUsesPalette}"
@@ -200,17 +204,18 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
 
+            <Button Grid.Column="2" Padding="7,3" VerticalAlignment="Center"
+                    Command="{Binding EditPalettesCommand}"
+                    IsVisible="{Binding SegmentPaletteIsCustom}"
+                    ToolTip.Tip="Edit this palette"
+                    AutomationProperties.AutomationId="EditPalettes">
+              <TextBlock Text="&#x270E;" FontSize="13" />
+            </Button>
+          </Grid>
+
           <TextBlock Classes="hint" FontStyle="Italic" Margin="0,2,0,0"
                      Text="{Binding SegmentPaletteNote}"
                      IsVisible="{Binding SegmentPaletteNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-          <!-- Here because this is where somebody is when the list has nothing that suits. The
-               palettes belong to the controller rather than to this segment, which the window it
-               opens says in its heading. -->
-          <Button Content="Edit this controller's own palettes..." Margin="0,6,0,0"
-                  HorizontalAlignment="Left" Padding="8,3"
-                  Command="{Binding EditPalettesCommand}"
-                  AutomationProperties.AutomationId="EditPalettes" />
 
           <!-- Under the effect's own names for them. Fire 2012 calls these "Cooling" and "Spark
                rate", which say what moving them does; an effect that ignores one does not get it. -->

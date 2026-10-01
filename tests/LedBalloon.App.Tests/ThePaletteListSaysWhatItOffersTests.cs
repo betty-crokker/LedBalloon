@@ -60,6 +60,10 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
                 "---",
                 "Analogous",
                 "Ocean",
+
+                // Last, because it is not a palette but a way to get one. A controller with none of
+                // its own would otherwise offer no way in at all.
+                "Make a new palette...",
             ],
             names);
     });
@@ -74,10 +78,17 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
 
         PaletteOption rule = app.SegmentPalettes.Single(p => p.IsSeparator);
 
-        // Nothing the controller reports can collide with it, which is what keeps a segment from
-        // ever matching the rule when the picker looks its palette up by id.
         Assert.True(rule.Id < 0);
-        Assert.DoesNotContain(app.SegmentPalettes.Where(p => !p.IsSeparator), p => p.Id < 0);
+
+        // Every row that actually names a palette carries the id the controller answers to, and
+        // none of those is negative - which is what keeps the picker from matching a segment's
+        // palette against the rule, or against the invitation to make one.
+        Assert.DoesNotContain(
+            app.SegmentPalettes.Where(p => p.Kind == PaletteKind.Palette), p => p.Id < 0);
+
+        Assert.All(
+            app.SegmentPalettes.Where(p => p.Kind != PaletteKind.Palette),
+            p => Assert.True(p.Id < 0));
     });
 
     private async Task<MainViewModel> HouseAsync(FakeController controller)
