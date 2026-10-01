@@ -4076,9 +4076,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// keeps whatever it is called and still joins the group.
     /// </para>
     /// </remarks>
-    internal static string PlainName(string reported) => reported switch
+    internal static string PlainName(string reported, bool defaultIsYourColors = false) => reported switch
     {
-        "Default" => "The effect's own colors",
+        "Default" => defaultIsYourColors ? YourColors : EffectsColors,
         "* Color 1" => "My color",
         "* Colors 1&2" => "My two colors",
         "* Color Gradient" => "My three colors, blended",
@@ -4086,6 +4086,101 @@ public sealed partial class MainViewModel : ViewModelBase
         "* Random Cycle" => "Random colors",
         _ => reported,
     };
+
+    /// <summary>
+    /// What WLED's palette 0 is called when the effect reads the color boxes on it.
+    /// </summary>
+    /// <remarks>
+    /// Palette 0 is not one palette. WLED's <c>color_from_palette</c> hands back a color slot rather
+    /// than a gradient while the palette is 0, so for most effects it means "use the colors that are
+    /// set" - and for the seventeen that read no slot even then, the effect supplies its own and the
+    /// boxes reach nothing.
+    /// <para>
+    /// Measured on 192.0.2.12 rather than read: with pure green in slot 1, Colorwaves on palette
+    /// 0 rendered 285 LEDs of exactly one hue, 120 degrees. Blends, Rainbow, Pacifica, Sunrise and
+    /// Flow on the same setting came back with 122, 240, 72, 1 and 11 hues of their own and no green
+    /// anywhere. One row, two meanings, and it was labelled with only the second - which is why it
+    /// sat over a green color box saying the effect chose its own colors.
+    /// </para>
+    /// </remarks>
+    internal const string YourColors = "The colors above";
+
+    /// <inheritdoc cref="YourColors"/>
+    internal const string EffectsColors = "Colors the effect picks itself";
+
+    /// <summary>
+    /// True when picking Default would hand this effect the color boxes rather than nothing.
+    /// </summary>
+    /// <remarks>
+    /// The same question <see cref="RebuildColorSlots"/> asks, so the boxes and the row agree by
+    /// construction: whenever this says the colors above are used, there are colors above.
+    /// </remarks>
+    private bool DefaultMeansYourColors =>
+        SlotsRead(
+            SegmentController?.Device.EffectName(SegmentEffectChoice?.Id ?? -1),
+            ChosenEffect,
+            0,
+            [0]).Count > 0;
+
+    /// <summary>
+    /// Renames the Default row for whichever effect is now chosen.
+    /// </summary>
+    /// <remarks>
+    /// In place rather than by refilling the list, because refilling clears the choice and this runs
+    /// every time the effect changes - which is the shape of the bug that had the palette dropdown
+    /// reverting a beat after it was set.
+    /// </remarks>
+    private void RenameDefaultPalette()
+    {
+        PaletteOption? row = SegmentPalettes.FirstOrDefault(
+            o => o.Id == 0 && o.Kind == PaletteKind.Palette);
+
+        if (row is null)
+        {
+            return;
+        }
+
+        string name = PlainName("Default", DefaultMeansYourColors);
+
+        // Also what stops this recurring: the setter below runs the effect-capability pass again,
+        // which comes back here, and the second visit finds the name already right.
+        if (string.Equals(row.Name, name, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        int at = SegmentPalettes.IndexOf(row);
+        PaletteOption renamed = row with { Name = name };
+        bool wasChosen = ReferenceEquals(SegmentPaletteChoice, row);
+
+        // Put back rather than cleared, because this runs inside the rebuild's own suppression as
+        // well as on its own. Clearing it unconditionally let the rest of that rebuild - the palette
+        // and the two sliders - push to the controller, which is a segment editor that sends three
+        // changes for being opened and cancelled.
+        bool suppressed = _suppressPush;
+        _suppressPush = true;
+
+        try
+        {
+            SegmentPalettes[at] = renamed;
+
+            if (wasChosen)
+            {
+                // Replacing an item drops the ComboBox's selection, so it is put back on the row
+                // that replaced it. Suppressed, because none of this is a choice anybody made.
+                SegmentPaletteChoice = renamed;
+            }
+
+            if (ReferenceEquals(_paletteBefore, row))
+            {
+                _paletteBefore = renamed;
+            }
+        }
+        finally
+        {
+            _suppressPush = suppressed;
+        }
+    }
 
     /// <summary>WLED's own name for a slot nobody has named.</summary>
     private static string DefaultSlotName(int slot) => slot switch
@@ -4372,6 +4467,11 @@ public sealed partial class MainViewModel : ViewModelBase
     partial void OnSegmentEffectChoiceChanged(PickerOption? value)
     {
         RefreshEffectCapabilities();
+
+        // Default is not one palette: for most effects it hands over the color boxes, and for the
+        // seventeen that read no slot the effect supplies its own. So the row's name belongs to the
+        // effect rather than to the list, and moves with it.
+        RenameDefaultPalette();
 
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
@@ -4938,27 +5038,29 @@ public sealed partial class MainViewModel : ViewModelBase
                 o.Name.StartsWith("* ", StringComparison.Ordinal) ||
                 string.Equals(o.Name, "Default", StringComparison.Ordinal);
 
-            PaletteOption Renamed(PaletteOption o) =>
-                o with { Name = PlainName(o.Name) };
-
-            List<PaletteOption> mine = [.. choices.Where(OwnColors).Select(Renamed)];
-            List<PaletteOption> gradients2 = [.. choices.Where(o => !OwnColors(o))];
-
             // Read as a progression - none, one, two, three, three again - rather than in the order
             // the firmware happens to number them, which puts random between "no palette" and one
             // color and makes the list look arbitrary. Anything unrecognised goes after.
-            static int Rank(PaletteOption o) => o.Name switch
+            //
+            // On the name the controller reported rather than on the one shown, because Default's
+            // shown name depends on the effect and is settled below once the effect is known.
+            static int Rank(string reported) => reported switch
             {
-                "The effect's own colors" => 0,
-                "My color" => 1,
-                "My two colors" => 2,
-                "My three colors, blended" => 3,
-                "My three colors, in bands" => 4,
-                "Random colors" => 5,
+                "Default" => 0,
+                "* Color 1" => 1,
+                "* Colors 1&2" => 2,
+                "* Color Gradient" => 3,
+                "* Colors Only" => 4,
+                "* Random Cycle" => 5,
                 _ => 6,
             };
 
-            foreach (PaletteOption option in mine.OrderBy(Rank).ThenBy(o => o.Id))
+            List<PaletteOption> mine = [.. choices.Where(OwnColors)];
+            List<PaletteOption> gradients2 = [.. choices.Where(o => !OwnColors(o))];
+
+            foreach (PaletteOption option in mine
+                .OrderBy(o => Rank(o.Name)).ThenBy(o => o.Id)
+                .Select(o => o with { Name = PlainName(o.Name) }))
             {
                 SegmentPalettes.Add(option);
             }
@@ -5021,6 +5123,9 @@ public sealed partial class MainViewModel : ViewModelBase
         // can land on the same effect - and on the other controller, whose firmware need not say
         // the same thing about it.
         RefreshEffectCapabilities();
+
+        // After the effect choice is set, since that is what decides what Default does here.
+        RenameDefaultPalette();
     }
 
     // ---- Checking the presets -------------------------------------------------------------------

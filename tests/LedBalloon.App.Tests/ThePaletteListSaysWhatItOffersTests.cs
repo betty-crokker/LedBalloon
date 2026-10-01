@@ -25,9 +25,19 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
     [InlineData("* Color Gradient", "My three colors, blended")]
     [InlineData("* Colors Only", "My three colors, in bands")]
     [InlineData("* Random Cycle", "Random colors")]
-    [InlineData("Default", "The effect's own colors")]
     public void The_shorthand_is_said_out_loud(string reported, string plain) =>
         Assert.Equal(plain, MainViewModel.PlainName(reported));
+
+    [Fact]
+    public void Default_is_named_for_what_it_does_to_the_effect_that_is_chosen()
+    {
+        // WLED's palette 0 is not one palette. Its color_from_palette hands back a color slot rather
+        // than a gradient while the palette is 0, so for most effects it means "use the colors that
+        // are set" - and for the seventeen that read no slot even then, the effect supplies its own
+        // and the boxes reach nothing. One row, two meanings.
+        Assert.Equal("The colors above", MainViewModel.PlainName("Default", defaultIsYourColors: true));
+        Assert.Equal("Colors the effect picks itself", MainViewModel.PlainName("Default"));
+    }
 
     [Fact]
     public void Anything_else_keeps_the_name_the_controller_gave_it()
@@ -51,7 +61,8 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
 
         Assert.Equal(
             [
-                "The effect's own colors",
+                // Solid reads color 1 on Default, so Default is the colors above it.
+                "The colors above",
                 "My color",
                 "My two colors",
                 "My three colors, blended",
@@ -66,6 +77,56 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
                 "Make a new palette...",
             ],
             names);
+    });
+
+    [Fact]
+    public void The_row_is_renamed_when_the_effect_changes_under_it() => ui.Run(async () =>
+    {
+        // Measured on 192.0.2.12 with pure green in slot 1: Colorwaves on palette 0 rendered 285
+        // LEDs of one hue, 120 degrees - the green. Pacifica on the same setting came back 72 hues
+        // of its own teals with no green in it anywhere. Same palette, opposite meanings, and the
+        // row said only the second, which is how it came to sit over a green color box claiming the
+        // effect chose its own colors.
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Colorwaves", "Pacifica"], ["", "!,Hue;!;!;01", ";;!;01"]);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.SelectedSegment = app.Project.Segments[0];
+
+        app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Colorwaves");
+        Assert.Equal("The colors above", app.SegmentPalettes.Single(p => p.Id == 0).Name);
+
+        app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Pacifica");
+        Assert.Equal("Colors the effect picks itself", app.SegmentPalettes.Single(p => p.Id == 0).Name);
+    });
+
+    [Fact]
+    public void And_renaming_it_does_not_drop_the_selection_or_send_anything() => ui.Run(async () =>
+    {
+        // Renaming replaces the row, which is the shape of the bug that had this dropdown reverting
+        // a beat after it was set - and the rebuild it runs inside is suppressing its own writes, so
+        // it has to put that suppression back rather than clear it.
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Pacifica"], ["", ";;!;01"]);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.MasterOn = true;
+        Assert.True(await controller.WaitForPostAsync(TimeSpan.FromSeconds(2)));
+
+        app.SelectedSegment = app.Project.Segments[0];
+        app.SegmentPaletteChoice = app.SegmentPalettes.Single(p => p.Id == 0);
+
+        int before = controller.Posts.Count;
+
+        app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Pacifica");
+
+        await Task.Delay(300);
+
+        Assert.Equal("Colors the effect picks itself", app.SegmentPaletteChoice?.Name);
+        Assert.Equal(0, app.SegmentPaletteChoice?.Id);
+
+        // One post, for the effect that was actually picked. Not a palette on top of it.
+        Assert.Equal(before + 1, controller.Posts.Count);
     });
 
     [Fact]
