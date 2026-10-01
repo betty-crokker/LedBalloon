@@ -101,7 +101,8 @@ internal sealed class FakeController : IDisposable
               "state": { "on": false, "bri": 128, "seg": [ { "id": 0, "start": 0, "stop": 10, "len": 10, "on": true, "bri": 255, "fx": 0, "sx": 128, "ix": 128, "pal": 0, "col": [[255,160,0],[0,0,0],[0,0,0]] } ] },
               "info": { "name": "Fake", "ver": "0.15.3", "mac": "{{Key}}", "leds": { "count": 10, "fps": 0 } },
               "effects": [ {{names}} ],
-              "palettes": [ "Default", "Random Cycle" ]
+              "palettes": [ "Default", "* Random Cycle", "* Color 1", "* Colors 1&2",
+                            "* Color Gradient", "* Colors Only", "Ocean", "Analogous" ]
             }
             """;
 

@@ -166,6 +166,17 @@ public sealed record PickerOption(int Id, string Name)
 /// </remarks>
 public sealed record PaletteOption(int Id, string Name, IBrush? Gradient)
 {
+    /// <summary>
+    /// A rule between the palettes made from the segment's own colors and the rest.
+    /// </summary>
+    /// <remarks>
+    /// An item rather than a real separator, because a ComboBox has no notion of one. It is made
+    /// unselectable by a style on the container, and nothing will ever match its id.
+    /// </remarks>
+    public static PaletteOption Rule => new(-1, string.Empty, null);
+
+    public bool IsSeparator => Id < 0;
+
     public bool HasGradient => Gradient is not null;
 
     public override string ToString() => Name;
@@ -3816,6 +3827,31 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Anything not in this list is passed through, because an effect that troubled to write a real
     /// word - "Glitter color", "Peaks" - has said it better than this could.
     /// </remarks>
+    /// <summary>
+    /// What WLED's handful of non-gradient palettes are actually offering, in words.
+    /// </summary>
+    /// <remarks>
+    /// These five are recipes rather than gradients - "* Colors 1&amp;2" is c1, c1, c2, c2 - and the
+    /// shorthand only reads as an instruction if you already know that. Said plainly they are the
+    /// obvious way to put your own colors on one of the 22 ported effects that read no color slot of
+    /// their own, which until now meant choosing something called "* Color 1" and hoping.
+    /// <para>
+    /// Matched on the name the controller reports rather than on the index, because the indices are
+    /// a firmware detail and a fork is free to move them. Anything else beginning with an asterisk
+    /// keeps whatever it is called and still joins the group.
+    /// </para>
+    /// </remarks>
+    internal static string PlainName(string reported) => reported switch
+    {
+        "Default" => "The effect's own colors",
+        "* Color 1" => "My color",
+        "* Colors 1&2" => "My two colors",
+        "* Color Gradient" => "My three colors, blended",
+        "* Colors Only" => "My three colors, in bands",
+        "* Random Cycle" => "Random colors",
+        _ => reported,
+    };
+
     /// <summary>WLED's own name for a slot nobody has named.</summary>
     private static string DefaultSlotName(int slot) => slot switch
     {
@@ -4356,11 +4392,45 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
             }
 
-            // Alphabetical here too. The five WLED marks with an asterisk sort to the top of their
-            // own accord, which is where they belong: they are not gradients at all but recipes made
-            // from the segment's own color slots, so they are the ones that answer to the boxes
-            // above rather than to this list.
-            foreach (PaletteOption option in choices
+            // Two groups: the ones made out of the segment's own colors, then the gradients. The
+            // first group answers to the color boxes rather than to anything in this list, which is
+            // a different kind of choice and used to be hidden behind WLED's own shorthand - a
+            // reader had to know that "* Colors 1&2" was an instruction rather than a palette name.
+            bool OwnColors(PaletteOption o) =>
+                o.Name.StartsWith("* ", StringComparison.Ordinal) ||
+                string.Equals(o.Name, "Default", StringComparison.Ordinal);
+
+            PaletteOption Renamed(PaletteOption o) =>
+                o with { Name = PlainName(o.Name) };
+
+            List<PaletteOption> mine = [.. choices.Where(OwnColors).Select(Renamed)];
+            List<PaletteOption> gradients2 = [.. choices.Where(o => !OwnColors(o))];
+
+            // Read as a progression - none, one, two, three, three again - rather than in the order
+            // the firmware happens to number them, which puts random between "no palette" and one
+            // color and makes the list look arbitrary. Anything unrecognised goes after.
+            static int Rank(PaletteOption o) => o.Name switch
+            {
+                "The effect's own colors" => 0,
+                "My color" => 1,
+                "My two colors" => 2,
+                "My three colors, blended" => 3,
+                "My three colors, in bands" => 4,
+                "Random colors" => 5,
+                _ => 6,
+            };
+
+            foreach (PaletteOption option in mine.OrderBy(Rank).ThenBy(o => o.Id))
+            {
+                SegmentPalettes.Add(option);
+            }
+
+            if (mine.Count > 0 && gradients2.Count > 0)
+            {
+                SegmentPalettes.Add(PaletteOption.Rule);
+            }
+
+            foreach (PaletteOption option in gradients2
                 .OrderBy(o => o.Name, StringComparer.CurrentCultureIgnoreCase))
             {
                 SegmentPalettes.Add(option);
