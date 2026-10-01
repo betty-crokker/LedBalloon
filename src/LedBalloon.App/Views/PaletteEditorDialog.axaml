@@ -110,7 +110,7 @@
             <TextBlock Classes="hint" Text="Name" />
             <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      AutomationProperties.AutomationId="PaletteName"
-                     Watermark="Custom 0" />
+                     PlaceholderText="Custom 0" />
             <TextBlock Classes="hint" FontStyle="Italic"
                        Text="Kept with your house rather than on the controller, which has nowhere to put it." />
 
