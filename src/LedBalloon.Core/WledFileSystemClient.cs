@@ -136,7 +136,17 @@ public sealed class WledFileSystemClient : IDisposable
         }
     }
 
-    /// <summary>Deletes a file from the device.</summary>
+    /// <summary>
+    /// Deletes a file from the device, and checks it is gone.
+    /// </summary>
+    /// <remarks>
+    /// The status code is not evidence, the same as it is not for a write. WLED's file editor
+    /// answers 200 to a delete of a path that does not exist and never did - demonstrated by
+    /// accident, deleting "C:/Program Files/Git/palette1.json" off a controller because a shell had
+    /// helpfully rewritten the leading slash. It answered 200, echoed the path back, and of course
+    /// removed nothing. Anything that trusted that answer would have reported a file deleted that
+    /// was still sitting there.
+    /// </remarks>
     public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
         string normalized = Normalize(path);
@@ -152,6 +162,32 @@ public sealed class WledFileSystemClient : IDisposable
         if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
         {
             throw new WledHttpException(response.StatusCode, $"Could not delete /{normalized} from the device.");
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+
+        if (await StillThereAsync(normalized, cancellationToken).ConfigureAwait(false))
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"Could not delete /{normalized} from the device (it answered " +
+                $"{(int)response.StatusCode} and the file is still there). The build may omit the " +
+                "file editor, or the path may not be the one the device knows it by.");
+        }
+    }
+
+    /// <summary>Whether the file still answers after being told to go.</summary>
+    private async Task<bool> StillThereAsync(string path, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await DownloadAsync(path, cancellationToken).ConfigureAwait(false) is not null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or WledHttpException or TaskCanceledException)
+        {
+            // Unreachable rather than present. Saying it survived would turn a network blip into a
+            // failed delete that had in fact worked.
+            return false;
         }
     }
 
