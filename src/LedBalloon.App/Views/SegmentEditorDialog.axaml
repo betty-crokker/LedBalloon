@@ -172,17 +172,30 @@
                     IsEnabled="{Binding SegmentUsesPalette}"
                     PlaceholderText="Not reported yet"
                     HorizontalAlignment="Stretch">
+            <ComboBox.Styles>
+              <!-- The rule between the two groups is an item, a ComboBox having no notion of a real
+                   separator. Disabling its container is what stops it being chosen. -->
+              <Style Selector="ComboBoxItem" x:DataType="vm:PaletteOption">
+                <Setter Property="IsEnabled" Value="{Binding !IsSeparator}" />
+              </Style>
+            </ComboBox.Styles>
             <ComboBox.ItemTemplate>
               <DataTemplate x:DataType="vm:PaletteOption">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="48" Height="14" CornerRadius="3"
-                          VerticalAlignment="Center"
-                          Background="{Binding Gradient}"
-                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
-                          IsVisible="{Binding HasGradient}" />
-                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
+                <Panel>
+                  <Border Height="1" VerticalAlignment="Center" Margin="0,1"
+                          Background="{DynamicResource PanelBorder}"
+                          IsVisible="{Binding IsSeparator}" />
+                  <StackPanel Orientation="Horizontal" Spacing="8"
+                              IsVisible="{Binding !IsSeparator}">
+                    <Border Width="48" Height="14" CornerRadius="3"
+                            VerticalAlignment="Center"
+                            Background="{Binding Gradient}"
+                            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                            IsVisible="{Binding HasGradient}" />
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                  </StackPanel>
+                </Panel>
               </DataTemplate>
             </ComboBox.ItemTemplate>
           </ComboBox>
