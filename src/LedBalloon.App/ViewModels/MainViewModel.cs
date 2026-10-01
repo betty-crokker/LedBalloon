@@ -6143,7 +6143,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// answered first.
     /// </para>
     /// </summary>
-    private async Task LoadPalettesAsync()
+    internal async Task LoadPalettesAsync()
     {
         var byController = new Dictionary<string, IReadOnlyDictionary<int, WledPalette>>(
             StringComparer.OrdinalIgnoreCase);
