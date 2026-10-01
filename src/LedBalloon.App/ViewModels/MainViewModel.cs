@@ -164,6 +164,21 @@ public sealed record PickerOption(int Id, string Name)
 /// A list of names asks the reader to remember what "Icefire" came out like. The gradient is the
 /// same one the photo draws the house with, so picking one is looking at it.
 /// </remarks>
+public enum PaletteKind
+{
+    /// <summary>One this controller holds, by the id it answers to.</summary>
+    Palette,
+
+    /// <summary>A rule between groups, which cannot be chosen.</summary>
+    Rule,
+
+    /// <summary>One another controller holds, to be copied here when it is picked.</summary>
+    Elsewhere,
+
+    /// <summary>Not a palette: picking it opens the editor on a new one.</summary>
+    Create,
+}
+
 public sealed record PaletteOption(int Id, string Name, IBrush? Gradient)
 {
     /// <summary>
@@ -173,11 +188,23 @@ public sealed record PaletteOption(int Id, string Name, IBrush? Gradient)
     /// An item rather than a real separator, because a ComboBox has no notion of one. It is made
     /// unselectable by a style on the container, and nothing will ever match its id.
     /// </remarks>
-    public static PaletteOption Rule => new(-1, string.Empty, null);
+    public static PaletteOption Rule => new(-1, string.Empty, null) { Kind = PaletteKind.Rule };
 
-    public bool IsSeparator => Id < 0;
+    public PaletteKind Kind { get; init; } = PaletteKind.Palette;
 
-    public bool HasGradient => Gradient is not null;
+    /// <summary>
+    /// The palette file itself, for one this controller does not hold yet.
+    /// </summary>
+    /// <remarks>
+    /// Which box a gradient's file happens to sit on is not something anybody making a house look
+    /// nice should have to think about. A palette made on one controller is offered on the other,
+    /// and picking it writes it there first.
+    /// </remarks>
+    public byte[]? Content { get; init; }
+
+    public bool IsSeparator => Kind == PaletteKind.Rule;
+
+    public bool HasGradient => Gradient is not null && Kind != PaletteKind.Rule;
 
     public override string ToString() => Name;
 }
@@ -3786,6 +3813,69 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>
+    /// Palettes the rest of the house has and this controller does not.
+    /// </summary>
+    /// <remarks>
+    /// Offered here so that which box a file sits on stays the app's problem. Picking one writes it
+    /// to this controller first and then uses the id it lands on, which is not the id it had on the
+    /// other box - custom palettes are numbered by position in each controller's own file list.
+    /// </remarks>
+    private IEnumerable<PaletteOption> Elsewhere(string? controllerKey)
+    {
+        if (controllerKey is not { Length: > 0 } key ||
+            !_paletteFiles.TryGetValue(key, out List<byte[]>? here))
+        {
+            yield break;
+        }
+
+        var seen = new List<byte[]>(here);
+
+        foreach ((string other, List<byte[]> theirs) in _paletteFiles)
+        {
+            if (string.Equals(other, key, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            for (int slot = 0; slot < theirs.Count; slot++)
+            {
+                byte[] gradient = theirs[slot];
+
+                // Byte for byte, the same test the copier uses, so a palette already carried across
+                // is recognised rather than offered as if it were somewhere else.
+                if (seen.Any(x => x.AsSpan().SequenceEqual(gradient)))
+                {
+                    continue;
+                }
+
+                seen.Add(gradient);
+
+                int id = CustomPaletteCopier.IdForSlot(slot);
+                string name = Project.NameForPalette(other, id)
+                    ?? DeviceFor(other)?.Device.PaletteName(id)
+                    ?? $"Custom {slot}";
+
+                yield return new PaletteOption(
+                    -3,
+                    name,
+                    GradientOf(
+                        new WledPalette { Stops = [.. CustomPaletteFile.Parse(gradient)] },
+                        RgbColor.White,
+                        RgbColor.Black,
+                        RgbColor.Black))
+                {
+                    Kind = PaletteKind.Elsewhere,
+                    Content = gradient,
+                };
+            }
+        }
+    }
+
+    /// <summary>True when the open palette is one somebody here made, so it can be edited.</summary>
+    public bool SegmentPaletteIsCustom =>
+        ChosenPalette is { } id && CustomPaletteCopier.IsCustom(id);
+
+    /// <summary>
     /// Every effect this controller reports, each with a stamp of what it would do on this segment.
     /// </summary>
     /// <remarks>
@@ -4136,16 +4226,33 @@ public sealed partial class MainViewModel : ViewModelBase
             WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Effect = value.Id));
     }
 
+    /// <summary>The last row that was a real palette, to go back to if another kind leads nowhere.</summary>
+    private PaletteOption? _paletteBefore;
+
     partial void OnSegmentPaletteChoiceChanged(PaletteOption? value)
     {
         // Which color slots are read depends on it: on Default the palette IS the slots, and on
         // anything else those slots go quiet.
         RefreshEffectCapabilities();
+        OnPropertyChanged(nameof(SegmentPaletteIsCustom));
 
         if (_suppressPush || value is null || SelectedSegment is not { } segment)
         {
             return;
         }
+
+        // Two of the rows are not palettes. One is held by the other controller and has to be
+        // written here before it means anything; the other is an invitation to make one. Neither is
+        // an id to send, so both are handled and the picker is put back where it was.
+        if (value.Kind is PaletteKind.Elsewhere or PaletteKind.Create)
+        {
+            PaletteOption? back = _paletteBefore;
+
+            Dispatcher.UIThread.Post(async void () => await TakeOnAsync(value, back));
+            return;
+        }
+
+        _paletteBefore = value;
 
         // Every stamp in the effect list is drawn against this segment's palette, so until they are
         // drawn again the whole list is a picture of the palette that was just replaced. All 187 of
@@ -4155,6 +4262,71 @@ public sealed partial class MainViewModel : ViewModelBase
         Send(
             DeviceFor(segment),
             WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Palette = value.Id));
+    }
+
+    /// <summary>
+    /// Deals with the two rows that are not a palette: one from elsewhere, and the invitation.
+    /// </summary>
+    /// <remarks>
+    /// Both end the same way - read the controller's palettes again and pick whatever is now the
+    /// right one - because both may have changed what it holds. If neither did, the picker goes
+    /// back to the palette it was on rather than being left on a row that means nothing.
+    /// </remarks>
+    private async Task TakeOnAsync(PaletteOption asked, PaletteOption? back)
+    {
+        if (SegmentController is not { } device || SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        int? landed = null;
+
+        try
+        {
+            IsBusy = true;
+
+            if (asked.Kind == PaletteKind.Elsewhere && asked.Content is { Length: > 0 } gradient)
+            {
+                landed = await CustomPaletteCopier.EnsureAsync(device.Host, gradient);
+
+                // The name travels with it, since the name is the only part that was ever ours.
+                Project.NamePalette(device.DeviceKey, landed.Value, asked.Name);
+                Status = $"'{asked.Name}' is on {device.DisplayName} now.";
+            }
+            else if (asked.Kind == PaletteKind.Create && ShowPaletteEditor is { } show)
+            {
+                await show(device);
+            }
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            Status = $"Could not put that palette on {device.DisplayName}.";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+
+        await LoadPalettesAsync();
+
+        _suppressPush = true;
+        try
+        {
+            RefreshSegmentPickers(segment);
+        }
+        finally
+        {
+            _suppressPush = false;
+        }
+
+        PaletteOption? pick = landed is { } id
+            ? SegmentPalettes.FirstOrDefault(o => o.Id == id)
+            : back;
+
+        if (pick is not null)
+        {
+            SegmentPaletteChoice = pick;
+        }
     }
 
     /// <summary>
@@ -4571,6 +4743,16 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 SegmentPalettes.Add(option);
             }
+
+            foreach (PaletteOption option in Elsewhere(segment.ControllerKey))
+            {
+                SegmentPalettes.Add(option);
+            }
+
+            SegmentPalettes.Add(new PaletteOption(-2, "Make a new palette...", null)
+            {
+                Kind = PaletteKind.Create,
+            });
 
             int segmentId = Project.WledSegmentIdFor(segment);
 
@@ -5320,6 +5502,10 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty]
     private IReadOnlyDictionary<string, IReadOnlyDictionary<int, WledPalette>>? _palettes;
 
+    /// <summary>Each controller's custom palette files, lowest slot first, for copying between them.</summary>
+    private IReadOnlyDictionary<string, List<byte[]>> _paletteFiles =
+        new Dictionary<string, List<byte[]>>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// The timetable the controllers keep for themselves, one row per entry.
     /// <para>
@@ -5627,6 +5813,8 @@ public sealed partial class MainViewModel : ViewModelBase
         var byController = new Dictionary<string, IReadOnlyDictionary<int, WledPalette>>(
             StringComparer.OrdinalIgnoreCase);
 
+        var files = new Dictionary<string, List<byte[]>>(StringComparer.OrdinalIgnoreCase);
+
         foreach (DeviceViewModel device in Devices)
         {
             if (device.DeviceKey is not { } key)
@@ -5643,6 +5831,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 {
                     byController[key] = loaded;
                 }
+
+                // The files as well as the gradients. palx reports what the firmware expanded, which
+                // is enough to draw with and not enough to copy: carrying a palette to the other
+                // controller means carrying its file.
+                using var palettes = new WledFileSystemClient(device.Host);
+                files[key] = await CustomPaletteCopier.ReadAllAsync(palettes);
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
@@ -5662,6 +5856,7 @@ public sealed partial class MainViewModel : ViewModelBase
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             Palettes = byController;
+            _paletteFiles = files;
             RefreshSegmentPickers(SelectedSegment);
         });
     }

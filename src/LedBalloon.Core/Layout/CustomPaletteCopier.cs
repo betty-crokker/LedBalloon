@@ -135,35 +135,70 @@ public static class CustomPaletteCopier
                 continue;
             }
 
-            // Byte-for-byte, because a palette this copier put there is byte-for-byte what it
-            // read. A hand-uploaded equivalent would not match and would be copied again, which
-            // wastes a slot but is never wrong.
-            int already = onTarget.FindIndex(held => held.AsSpan().SequenceEqual(gradient));
-            if (already >= 0)
-            {
-                moved[id] = IdForSlot(already);
-                continue;
-            }
-
-            if (onTarget.Count >= MaxSlots)
-            {
-                throw new WledException(
-                    $"{targetHost} already holds all {MaxSlots} custom palettes, so there is no " +
-                    "room for this one. Delete one it no longer uses and try again.");
-            }
-
-            // The next slot up, never a gap: WLED stops reading at the first missing file, so a
-            // palette written above one would be invisible to it.
-            int slot = onTarget.Count;
-
-            await to.UploadAsync(FileForSlot(slot), gradient, "application/json", cancellationToken)
+            moved[id] = await PutAsync(to, targetHost, onTarget, gradient, cancellationToken)
                 .ConfigureAwait(false);
-
-            onTarget.Add(gradient);
-            moved[id] = IdForSlot(slot);
         }
 
         return moved;
+    }
+
+    /// <summary>
+    /// Makes sure one controller holds this palette, and says which id it answers to there.
+    /// </summary>
+    /// <remarks>
+    /// For putting a palette somewhere it is wanted rather than for copying a preset: somebody who
+    /// made a gradient on one box and then picks it for a run on the other is not thinking about
+    /// which box the file is on, and should not have to.
+    /// </remarks>
+    public static async Task<int> EnsureAsync(
+        string targetHost,
+        byte[] gradient,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(targetHost);
+        ArgumentNullException.ThrowIfNull(gradient);
+
+        using var to = new WledFileSystemClient(targetHost);
+
+        List<byte[]> held = await ReadAllAsync(to, cancellationToken).ConfigureAwait(false);
+
+        return await PutAsync(to, targetHost, held, gradient, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Finds this palette on the controller or writes it, and says where it ended up.</summary>
+    private static async Task<int> PutAsync(
+        WledFileSystemClient to,
+        string targetHost,
+        List<byte[]> held,
+        byte[] gradient,
+        CancellationToken cancellationToken)
+    {
+        // Byte-for-byte, because a palette this copier put there is byte-for-byte what it read. A
+        // hand-uploaded equivalent would not match and would be copied again, which wastes a slot
+        // but is never wrong.
+        int already = held.FindIndex(x => x.AsSpan().SequenceEqual(gradient));
+
+        if (already >= 0)
+        {
+            return IdForSlot(already);
+        }
+
+        if (held.Count >= MaxSlots)
+        {
+            throw new WledException(
+                $"{targetHost} already holds all {MaxSlots} custom palettes, so there is no room " +
+                "for this one. Delete one it no longer uses and try again.");
+        }
+
+        // The next slot up, never a gap: WLED stops reading at the first missing file, so a palette
+        // written above one would be invisible to it.
+        int slot = held.Count;
+
+        await to.UploadAsync(FileForSlot(slot), gradient, "application/json", cancellationToken)
+            .ConfigureAwait(false);
+
+        held.Add(gradient);
+        return IdForSlot(slot);
     }
 
     /// <summary>
