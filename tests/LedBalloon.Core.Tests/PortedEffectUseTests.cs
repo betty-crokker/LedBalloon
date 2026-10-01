@@ -77,15 +77,30 @@ public class PortedEffectUseTests
         Assert.Empty(use.SlotsFor(paletteId: 11));
     }
 
+    /// <summary>
+    /// Scan and Scan Dual share a body and do not read the same thing, which reading it could not
+    /// tell.
+    /// </summary>
+    /// <remarks>
+    /// The line that chooses between color slots - <c>Colors[2] == Black ? 0 : 2</c> - is inside
+    /// <c>if (dual)</c>, and only Scan Dual passes dual. Following the call and reading what it
+    /// contains credited plain Scan with a slot it never reaches, the same way Running was credited
+    /// with Running Dual's. Running it instead tells them apart.
+    /// </remarks>
     [Fact]
-    public void Scan_reads_the_slot_it_chooses_between()
+    public void Scan_and_scan_dual_do_not_read_the_same_slots()
     {
-        // int slot = segment.Colors[2] == RgbColor.Black ? 0 : 2 - and Colors[1] fills the
-        // background outright. Read by hand, the slot being computed.
-        EffectUse use = PortedEffectUse.For("Scan")!;
+        EffectUse scan = PortedEffectUse.For("Scan")!;
 
-        Assert.Equal([1, 2], use.Direct);
-        Assert.Equal([0, 1, 2], use.SlotsFor(paletteId: 0));
+        Assert.Equal([1], scan.Direct);
+        Assert.Equal([0, 1], scan.SlotsFor(paletteId: 0));
+
+        // Its twin takes the branch, so the third slot is live there - and only while the palette is
+        // Default, because on a real one that call comes back as the gradient.
+        EffectUse dual = PortedEffectUse.For("Scan Dual")!;
+
+        Assert.Contains(2, dual.SlotsFor(paletteId: 0));
+        Assert.DoesNotContain(2, dual.SlotsFor(paletteId: 11));
     }
 
     /// <summary>
@@ -132,12 +147,12 @@ public class PortedEffectUseTests
     [Fact]
     public void Nearly_everything_reads_both()
     {
-        // A guard on the extractor rather than on the effects. It follows calls into the shared
-        // helper classes a dozen effects delegate to, and an earlier version keyed them by bare
-        // method name - so every effect that called Render() was handed every other effect's body
-        // and all 118 came back reading everything.
-        Assert.Equal(114, Counted(u => u.UsesSpeed));
-        Assert.Equal(101, Counted(u => u.UsesIntensity));
+        // A guard on the measurement rather than on the effects. The numbers moved twice while it
+        // was being built: too few frames and Halloween Eyes shut its eyes through the whole run and
+        // reported both sliders unused, and sampling every seventh frame caught Strobe dark in both
+        // runs and reported it using nothing at all.
+        Assert.Equal(112, Counted(u => u.UsesSpeed));
+        Assert.Equal(96, Counted(u => u.UsesIntensity));
     }
 
     private static int Counted(Func<EffectUse, bool> match) =>
