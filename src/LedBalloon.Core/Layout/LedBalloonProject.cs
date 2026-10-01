@@ -91,6 +91,47 @@ public sealed class LedBalloonProject
     /// <summary>Named appearances for the whole house.</summary>
     [JsonPropertyName("scenes")] public List<Scene> Scenes { get; set; } = [];
 
+    /// <summary>
+    /// What this house calls each controller's own uploaded palettes.
+    /// </summary>
+    /// <remarks>
+    /// Kept here because there is nowhere on the controller to keep it. WLED stores a custom palette
+    /// as <c>paletteN.json</c> and knows it only by a number counted down from 255, so its own UI
+    /// calls them "Custom 0" and up. A file can be given an extra key and the firmware does preserve
+    /// it - that was tried - but WLED's own palette editor rewrites the file and would drop it, so
+    /// the name would survive exactly until somebody edited the palette the other way.
+    /// <para>
+    /// Keyed by controller as well as id, because the id is a position in that controller's own file
+    /// list. 254 is North's second palette and South's second palette, and those are two different
+    /// gradients with two different names.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("paletteNames")] public List<PaletteName> PaletteNames { get; set; } = [];
+
+    /// <summary>What this house calls that palette, or null when it has not been named.</summary>
+    public string? NameForPalette(string? controllerKey, int paletteId) =>
+        PaletteNames.FirstOrDefault(p =>
+            p.PaletteId == paletteId && KeyEquals(p.ControllerKey, controllerKey))?.Name;
+
+    /// <summary>
+    /// Names a palette, or forgets the name when given nothing.
+    /// </summary>
+    public void NamePalette(string? controllerKey, int paletteId, string? name)
+    {
+        PaletteNames.RemoveAll(p =>
+            p.PaletteId == paletteId && KeyEquals(p.ControllerKey, controllerKey));
+
+        if (name is { Length: > 0 } called && controllerKey is { Length: > 0 } key)
+        {
+            PaletteNames.Add(new PaletteName
+            {
+                ControllerKey = key,
+                PaletteId = paletteId,
+                Name = called.Trim(),
+            });
+        }
+    }
+
     /// <summary>The named look with this id, or null.</summary>
     public Look? FindLook(string? id) =>
         id is null ? null : Looks.FirstOrDefault(l => string.Equals(l.Id, id, StringComparison.Ordinal));
