@@ -219,6 +219,17 @@ EXPORT void wled_audio(float volume, const uint8_t* bins, float majorPeakHz, flo
   }
 }
 
+// How the segment is wired. reverse is not only a presentation detail: Segment::setPixelColor maps
+// through it on the way to the bus, and mode_flow reads SEGMENT.reverse itself and applies it per
+// zone - which no amount of reversing the finished output can imitate. South's roofline runs from
+// the far end, so it renders with this set, and a comparison that leaves it clear is comparing two
+// different effects.
+EXPORT void wled_orientation(uint8_t reverse, uint8_t mirror) {
+  Segment& seg = strip.getSegment(0);
+  seg.reverse = reverse != 0;
+  seg.mirror = mirror != 0;
+}
+
 // Diagnostic: the clock the effects actually see. strip.now is nowUp + timebase, and WLED re-pins
 // timebase when a segment resets, so an effect can be handed a clock that never advances.
 EXPORT uint32_t wled_now() { return (uint32_t)strip.now; }
