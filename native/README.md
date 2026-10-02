@@ -103,31 +103,41 @@ would substitute, the spread is 121.2°.
 
 ## Checked against the house
 
-26 effects have been captured off south and compared against the engine, with both sides told the
-same effect, palette, speed, intensity, colours, six controls and wiring. Of those, **20 agree**.
+Effects are captured off south and compared against the engine, with both sides told the same
+effect, palette, speed, intensity, colours, six controls and wiring. Of the last 16 run that way,
+**15 agree, seven of them exactly** (0.00 out of 255), against unrelated-frame baselines of 19 to
+130.
 
-The comparison fits phase on the *first* captured frame only — the controller's clock has been
-running for days and its timebase is its own — and then walks the rest without refitting. The
-fitted residual says the shape is right; the held residual says the rate is right. Keeping those
-apart is the point: an effect that draws the correct picture at the wrong speed passes the first and
-fails the second, and three effects did exactly that until the frame interval was measured rather
-than assumed.
+The comparison fits phase on the *first* captured frame only and then walks the rest without
+refitting. The fitted residual says the shape is right; the held residual says the rate is right.
+Keeping them apart is the point: an effect that draws the correct picture at the wrong speed passes
+the first and fails the second, and three effects did exactly that until the frame interval was
+measured instead of assumed. `native/against-house.py` runs it.
 
-Agreement is usually not approximate. Residuals under 1 out of 255 are common and Two Dots is 0.00,
-against 25 to 128 for the same captured frame compared with unrelated engine frames.
+### Two kinds of effect this method cannot judge
 
-**Four cannot be compared this way at all**: Stream, Ripple, Halloween Eyes and Drip seed themselves
-with `random()`, so they cannot agree pixel-for-pixel with another machine's generator. Nothing is
-wrong with them; the method does not apply.
+Recognise these before hunting for a bug in the engine.
 
-**Two disagree and are not explained**: Pacifica (23.7 against an unrelated-frame baseline of 40.4)
-and Noise 2 (30.5 against 45.5). Both are fully dynamic, neither uses randomness, and three
-hypotheses have been eliminated by measurement rather than argument: the clock they are handed
-advances correctly (`WLEDFX_CLOCK=1`), `strip.paletteBlend` is 0 on both sides, and both are given
-their own fxdata defaults. These are the next things to look at.
+**Seeded by `random()`** - Stream, Ripple, Halloween Eyes, Drip, and Fill Noise, which does
+`if (SEGENV.call == 0) SEGENV.step = random16(12345)`. These cannot agree pixel-for-pixel with
+another machine's generator, and a single capture of one is worth nothing: Fill Noise measured 0.00
+against the engine on one capture and 67.18 on the next.
 
-Running the comparison is `against-house.py` in the session scratchpad; it is not in the repository
-yet and should be, as a test alongside the existing `*AgainstHardwareTests.cs`.
+**Path-dependent on render timing** - Pacifica integrates `beatsin` over every render since the
+effect started:
 
-Not yet done: the app still uses its own ported effects. The 161 effects not captured off the house
-are verified to run and to be self-consistent, not to be right.
+```c
+sCIStart1 += (deltams1 * beatsin88_t(1011,10,13));   // and three more like it
+```
+
+The controller's render instants are irregular, so the integral differs run to run. It does not
+reproduce *itself*: two runs on the same hardware with identical settings differ by 18.2, where
+chance for that effect is 36.4. Lake, by contrast, self-matches at 1.4 against 13.9. Testing
+whether the house agrees with itself is the first thing to do with any effect that will not match,
+and it is cheap.
+
+Note that Pacifica *does* match at speed 0 (5.3 against 54.7) - but that proves little, because at
+speed 0 its `deltams` is 0 and all four accumulators are frozen.
+
+Not yet done: the app still uses its own ported effects, and most of the 187 are verified to run and
+to be self-consistent rather than to be right.

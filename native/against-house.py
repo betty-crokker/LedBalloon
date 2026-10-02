@@ -1,10 +1,5 @@
 """Compares WLED's effect engine, run through native/wledfx.dll, against the same effect on the house.
 
-    python native/against-house.py
-
-Needs the DLL built (pwsh native/build.ps1) and south reachable. It leaves the lights off, because
-tools/wled.cs does.
-
 Both sides are told the same effect, palette, speed, intensity and colours. Three things are not
 known and are fitted rather than assumed:
 
@@ -21,8 +16,7 @@ the first and fails the second, and that distinction is the whole point of measu
 """
 import subprocess, statistics, sys
 
-import os
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = r"D:\projects\LedBalloon"
 HOST = "192.0.2.12"
 # Measured per capture rather than assumed. South runs unlimited, so its rate is whatever the wire
 # and the loop allow: about 100 fps idle, 95 to 99 while the live preview is streaming. Assuming 9 ms
@@ -195,8 +189,9 @@ def compare(name, pal=11, sx=128, ix=128):
 
 
 
-WANTED = ["Flow", "Pacifica", "Noise 2", "Colorwaves", "Rainbow", "Two Dots",
-          "Lake", "Breathe", "Rainbow Runner", "Palette", "Plasma", "Running"]
+WANTED = ["Colorwaves", "Rainbow", "Lake", "Palette", "Two Dots", "Flow",
+          "Noise 2", "Noise 1", "Fill Noise", "Perlin Move", "Breathe",
+          "Rainbow Runner", "Plasma", "Running", "Sinelon", "Phased"]
 
 print("%-16s %7s %7s %7s %9s %5s %6s  %s"
       % ("effect", "fitted", "held", "free", "unrelated", "flip", "march", "verdict"))
