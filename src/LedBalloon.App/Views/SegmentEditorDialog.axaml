@@ -246,6 +246,39 @@
             </DockPanel>
           </StackPanel>
 
+          <!-- The three the firmware gives every effect on top of speed and intensity, under the
+               names the effect gives them. Parsed out of the metadata for months and shown to
+               nobody, which left any effect whose character lives in one of them half reachable:
+               Palette's whole behaviour is in a tick box called Animate Shift. -->
+          <ItemsControl ItemsSource="{Binding SegmentKnobs}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SegmentKnob">
+                <StackPanel Margin="0,8,0,0">
+                  <DockPanel>
+                    <TextBlock Classes="hint" DockPanel.Dock="Left" VerticalAlignment="Center"
+                               Text="{Binding Label}" Margin="0,0,8,0" />
+                    <TextBlock Classes="hint" DockPanel.Dock="Right" Width="30"
+                               TextAlignment="Right" VerticalAlignment="Center"
+                               Text="{Binding Value, StringFormat={}{0:0}}" />
+                    <Slider Minimum="0" Maximum="255"
+                            AutomationProperties.AutomationId="SegmentKnob"
+                            Value="{Binding Value, Mode=TwoWay}" />
+                  </DockPanel>
+                </StackPanel>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <ItemsControl ItemsSource="{Binding SegmentSwitches}" Margin="0,6,0,0">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:SegmentSwitch">
+                <CheckBox Content="{Binding Label}" Margin="0,0,0,2"
+                          AutomationProperties.AutomationId="SegmentSwitch"
+                          IsChecked="{Binding On, Mode=TwoWay}" />
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
           <!-- Naming is a promotion, not a requirement: most segments in most scenes are one-offs.
                It is in here because a look is one segment's appearance, and the segment it is taken
                from is the one this dialog is open on. -->

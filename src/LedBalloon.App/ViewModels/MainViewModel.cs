@@ -3805,6 +3805,7 @@ public sealed partial class MainViewModel : ViewModelBase
         OnPropertyChanged(nameof(SegmentUsesIntensity));
 
         RebuildColorSlots();
+        RebuildKnobs();
 
         // After the boxes, because both of these are now read off them.
         OnPropertyChanged(nameof(SegmentUsesColor));
@@ -3817,6 +3818,83 @@ public sealed partial class MainViewModel : ViewModelBase
 
     /// <summary>The color slots the chosen effect reads, named the way the effect names them.</summary>
     public ObservableCollection<SegmentColorSlot> SegmentColors { get; } = [];
+
+    /// <summary>The effect's three extra sliders, where it declares one.</summary>
+    public ObservableCollection<SegmentKnob> SegmentKnobs { get; } = [];
+
+    /// <summary>The effect's three tick boxes, where it declares one.</summary>
+    public ObservableCollection<SegmentSwitch> SegmentSwitches { get; } = [];
+
+    /// <summary>
+    /// Fills the extra sliders and tick boxes for whatever effect is chosen.
+    /// </summary>
+    /// <remarks>
+    /// From the controller's own metadata rather than from a port, because unlike the color slots
+    /// these cannot be over-declared into a control that does nothing: a slider the effect ignores
+    /// is a slider nobody moves, where a color box that reaches nothing is read as the app being
+    /// broken. The names are the whole value - "Boost" and "Rotation" say what moving them does in
+    /// a way "Custom 1" never could.
+    /// </remarks>
+    private void RebuildKnobs()
+    {
+        SegmentKnobs.Clear();
+        SegmentSwitches.Clear();
+
+        if (SelectedSegment is not { } segment)
+        {
+            return;
+        }
+
+        EffectMetadata effect = ChosenEffect;
+        WledSegment? live = LiveSegmentFor(segment);
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (effect.CustomLabels.Count > i && effect.CustomLabels[i] is { } knob)
+            {
+                SegmentKnobs.Add(new SegmentKnob(i, Spell(knob), CustomOf(live, i), SetCustom));
+            }
+
+            if (effect.OptionLabels.Count > i && effect.OptionLabels[i] is { } box)
+            {
+                SegmentSwitches.Add(new SegmentSwitch(i, Spell(box), OptionOf(live, i), SetOption));
+            }
+        }
+    }
+
+    private static byte CustomOf(WledSegment? live, int index) => index switch
+    {
+        0 => live?.Custom1 ?? 128,
+        1 => live?.Custom2 ?? 128,
+        _ => live?.Custom3 ?? 128,
+    };
+
+    private static bool OptionOf(WledSegment? live, int index) => index switch
+    {
+        0 => live?.Option1 ?? false,
+        1 => live?.Option2 ?? false,
+        _ => live?.Option3 ?? false,
+    };
+
+    private void SetCustom(int index, byte value) => SendSlider(seg =>
+    {
+        switch (index)
+        {
+            case 0: seg.Custom1 = value; break;
+            case 1: seg.Custom2 = value; break;
+            default: seg.Custom3 = value; break;
+        }
+    });
+
+    private void SetOption(int index, bool on) => SendSlider(seg =>
+    {
+        switch (index)
+        {
+            case 0: seg.Option1 = on; break;
+            case 1: seg.Option2 = on; break;
+            default: seg.Option3 = on; break;
+        }
+    });
 
     /// <summary>
     /// Draws the effect list's stamps again, keeping whichever effect is chosen.
@@ -4646,9 +4724,79 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
+        // The effect's own settings go with it, which is what WLED's UI does and what this did not.
+        // An effect arrives carrying whatever the last one was set to otherwise: Palette declares
+        // Animate Shift on, and without that it lays its gradient down and never moves it, so the
+        // same effect looked like two different things depending on which app had picked it.
+        EffectMetadata picked = SegmentController?.Device.MetadataFor(value.Id)
+            ?? EffectMetadata.Unknown;
+
         Send(
             DeviceFor(segment),
-            WledState.ForSegment(Project.WledSegmentIdFor(segment), seg => seg.Effect = value.Id));
+            WledState.ForSegment(Project.WledSegmentIdFor(segment), seg =>
+            {
+                seg.Effect = value.Id;
+                Wanted(picked, seg);
+            }));
+
+        ShowDefaults(picked);
+    }
+
+    /// <summary>Puts an effect's declared defaults onto the segment being sent.</summary>
+    private static void Wanted(EffectMetadata effect, WledSegment seg)
+    {
+        foreach ((string control, int value) in effect.Defaults)
+        {
+            byte held = (byte)Math.Clamp(value, 0, 255);
+
+            switch (control)
+            {
+                case "sx": seg.Speed = held; break;
+                case "ix": seg.Intensity = held; break;
+                case "c1": seg.Custom1 = held; break;
+                case "c2": seg.Custom2 = held; break;
+                case "c3": seg.Custom3 = held; break;
+                case "o1": seg.Option1 = value != 0; break;
+                case "o2": seg.Option2 = value != 0; break;
+                case "o3": seg.Option3 = value != 0; break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves the controls to match what was just sent, rather than waiting to be told.
+    /// </summary>
+    /// <remarks>
+    /// The sliders read from what the segment reports, and the report does not catch up for as long
+    /// as it takes the controller to answer. Leaving them where they were for that beat is the
+    /// shape of the bug that had the palette picker reverting, so they are moved here and the push
+    /// suppressed - this is the controller being told, not a second instruction to it.
+    /// </remarks>
+    private void ShowDefaults(EffectMetadata effect)
+    {
+        if (effect.Defaults.Count == 0)
+        {
+            return;
+        }
+
+        bool suppressed = _suppressPush;
+        _suppressPush = true;
+
+        try
+        {
+            foreach ((string control, int value) in effect.Defaults)
+            {
+                switch (control)
+                {
+                    case "sx": SegmentSpeed = value; break;
+                    case "ix": SegmentIntensity = value; break;
+                }
+            }
+        }
+        finally
+        {
+            _suppressPush = suppressed;
+        }
     }
 
     /// <summary>The last row that was a real palette, to go back to if another kind leads nowhere.</summary>
