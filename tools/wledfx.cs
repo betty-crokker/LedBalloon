@@ -50,13 +50,43 @@ int leds = Number("leds", 285);          // south's roofline: LEDs 25-309 of 310
 int palette = Number("pal", 11);
 int speed = Number("sx", 128);
 int intensity = Number("ix", 128);
-int stepMs = Number("ms", 23);
+// `ms` is the gap between the timestamps the engine is handed, and it takes a fraction: south
+// renders at 95 to 100 frames a second while its live preview is streaming, so the interval is
+// about 10.4 ms and rounding it to 10 drifts four percent a frame. That shows up as an effect whose
+// motion is wrong when it is the measurement that is wrong - and it only shows up on the effects
+// that advance per rendered frame rather than per millisecond.
+//
+// `fps` is WLED's own target, where 0 is the unlimited mode both controllers here use; it decides
+// FRAMETIME, which many effects add to their own counters, so it is behaviour and not tuning.
+double stepMs = options.TryGetValue("ms", out string? given)
+    && double.TryParse(given, NumberStyles.Float, CultureInfo.InvariantCulture, out double parsed)
+        ? parsed : 10.4;
+int fps = Number("fps", 0);
 int settle = Number("settle", 60);       // frames rendered and thrown away before the first printed one
 int frames = Number("frames", 12);
 int bpm = Number("sound", 120);
 bool sound = flags.Contains("sound") || options.ContainsKey("sound");
 
-Engine.Begin((ushort)leds);
+// The three colour slots, as hex: col0=00ff00. The default is the green primary every comparison
+// against the house has used, with the other two black.
+uint Colour(string key, uint fallback) =>
+    options.TryGetValue(key, out string? raw) && raw.Length == 6
+        ? Convert.ToUInt32(raw, 16) : fallback;
+
+uint colour0 = Colour("col0", 0x00FF00);
+uint colour1 = Colour("col1", 0x000000);
+uint colour2 = Colour("col2", 0x000000);
+
+// The six controls behind the sliders. Several effects read nothing else, so a comparison against a
+// controller has to set them on both sides or it is comparing two different effects.
+int custom1 = Number("c1", 128);
+int custom2 = Number("c2", 128);
+int custom3 = Number("c3", 16);
+int check1 = Number("o1", 0);
+int check2 = Number("o2", 0);
+int check3 = Number("o3", 0);
+
+Engine.Begin((ushort)leds, (byte)fps);
 
 var names = new string[Engine.ModeCount()];
 for (int i = 0; i < names.Length; i++)
@@ -87,7 +117,9 @@ switch (args[0])
 
         Console.Error.WriteLine(
             $"{names[mode]} (fx {mode}), palette {palette}, sx {speed}, ix {intensity}, " +
-            $"{frames} frames of {stepMs} ms after {settle} settling{(sound ? $", sound at {bpm} bpm" : "")}");
+            $"colours {colour0:x6}/{colour1:x6}/{colour2:x6}, " +
+            $"c1 {custom1} c2 {custom2} c3 {custom3} o1 {check1} o2 {check2} o3 {check3}, " +
+            $"{frames} frames of {stepMs:F2} ms at fps {fps} after {settle} settling{(sound ? $", sound at {bpm} bpm" : "")}");
 
         foreach (string line in lines) Console.WriteLine(line);
         return 0;
@@ -130,23 +162,28 @@ int Mode(string wanted)
     return -1;
 }
 
-string[] Render(int mode, int pal, int sx, int ix, int ms, int warm, int count,
+string[] Render(int mode, int pal, int sx, int ix, double ms, int warm, int count,
                 bool withSound, int beats, int pixels)
 {
     // Each render starts the clock at zero, because the clock an effect sees restarts when the
     // effect does - an effect that waits before its first change sits black until it has.
-    Engine.Begin((ushort)pixels);
-    Engine.Segment((byte)mode, (byte)pal, (byte)sx, (byte)ix, 0x00FF00, 0, 0);
+    Engine.Begin((ushort)pixels, (byte)fps);
+    Engine.Segment((byte)mode, (byte)pal, (byte)sx, (byte)ix, colour0, colour1, colour2);
+    Engine.Controls((byte)custom1, (byte)custom2, (byte)custom3,
+                    (byte)check1, (byte)check2, (byte)check3);
 
     var output = new uint[pixels];
     var lines = new List<string>(count);
-    uint now = 0;
+    double clock = 0;
 
     for (int frame = 0; frame < warm + count; frame++)
     {
+        // The clock is accumulated as a fraction and rounded only when handed over, so a step of
+        // 10.4 ms does not quietly become 10.
+        uint now = (uint)Math.Round(clock);
         if (withSound) Sound(now, beats);
         Engine.Frame(now, (ushort)pixels, output);
-        now += (uint)ms;
+        clock += ms;
 
         if (frame < warm) continue;
 
@@ -247,11 +284,15 @@ static class Engine
     }
 
     [DllImport(Dll, EntryPoint = "wled_begin")]
-    public static extern void Begin(ushort count);
+    public static extern void Begin(ushort count, byte fps);
 
     [DllImport(Dll, EntryPoint = "wled_segment")]
     public static extern void Segment(byte fx, byte pal, byte speed, byte intensity,
                                       uint c0, uint c1, uint c2);
+
+    [DllImport(Dll, EntryPoint = "wled_controls")]
+    public static extern void Controls(byte custom1, byte custom2, byte custom3,
+                                       byte check1, byte check2, byte check3);
 
     [DllImport(Dll, EntryPoint = "wled_frame")]
     public static extern void Frame(uint now, ushort count, [Out] uint[] pixels);

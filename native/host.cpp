@@ -137,7 +137,7 @@ extern "C" {
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
-EXPORT void wled_begin(uint16_t count) {
+EXPORT void wled_begin(uint16_t count, uint8_t fps) {
   memset(g_leds, 0, sizeof(g_leds));
 
   // WLED's own init. _length is private and only finalizeInit() sets it, and WS2812FX::setPixelColor
@@ -157,7 +157,12 @@ EXPORT void wled_begin(uint16_t count) {
   strip.getSegment(0).opacity = 255;
   strip.getSegment(0).refreshLightCapabilities();
   strip.setBrightness(255, true);
-  strip.setTargetFps(42);
+
+  // Frame time is behaviour, not tuning. setTargetFps(0) is WLED's unlimited mode, which makes
+  // FRAMETIME equal MIN_FRAME_DELAY - 2 ms on an ESP32 - and both controllers here run unlimited
+  // (hw.led.fps is 0). Any other value changes the rate of every effect that counts frames or adds
+  // FRAMETIME to a counter, which is most of them.
+  strip.setTargetFps(fps);
 }
 
 // The effect list and its fxdata, straight from the engine. LedBalloon currently scrapes these from
@@ -183,6 +188,21 @@ EXPORT void wled_segment(uint8_t fx, uint8_t pal, uint8_t speed, uint8_t intensi
   // Normally done by the service loop when a segment changes; loadPalette turns the palette id into
   // the sixteen entries ColorFromPalette reads.
   seg.setCurrentPalette();
+}
+
+// The six controls behind the two sliders: custom1-3 and the three checkmarks. Several effects read
+// nothing else - Palette's own fxdata asks for c1=0, o1=1, o2=0, o3=1 - so leaving them at whatever
+// the Segment constructor chose makes those effects disagree with a controller for no reason that
+// shows up anywhere. custom3 is five bits wide, which is behaviour: it saturates at 31.
+EXPORT void wled_controls(uint8_t custom1, uint8_t custom2, uint8_t custom3,
+                          uint8_t check1, uint8_t check2, uint8_t check3) {
+  Segment& seg = strip.getSegment(0);
+  seg.custom1 = custom1;
+  seg.custom2 = custom2;
+  seg.custom3 = custom3 > 31 ? 31 : custom3;
+  seg.check1 = check1 != 0;
+  seg.check2 = check2 != 0;
+  seg.check3 = check3 != 0;
 }
 
 // Mirrors LedBalloon's AudioFrame: one volume, sixteen bins, a peak frequency and a beat flag.
