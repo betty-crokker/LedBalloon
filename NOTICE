@@ -9,11 +9,11 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
-LedBalloon was published under the MIT licence until October 2026. That was a
-mistake rather than a change of heart: parts of it stand in a relationship to
-WLED that MIT could not describe honestly, and this file sets out which parts
-and why. Copies obtained under the MIT licence before that date were received
-under it; everything from here on is GPL-3.0.
+Until 2 October 2026 this repository carried the MIT licence. It should not
+have: parts of it stand in a relationship to WLED that MIT cannot describe, and
+this file sets out which parts. Anyone holding a copy taken before that date
+holds it under MIT, and nothing here is retroactive. Everything from that date
+on is GPL-3.0.
 
 
 WLED
