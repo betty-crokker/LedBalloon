@@ -185,6 +185,15 @@ string[] Render(int mode, int pal, int sx, int ix, double ms, int warm, int coun
         Engine.Frame(now, (ushort)pixels, output);
         clock += ms;
 
+        // WLEDFX_CLOCK=1 prints the clock the effects are actually seeing. Worth keeping: this
+        // repository has been caught out by frame time more than once, and when an effect holds
+        // still the first suspicion is always that its clock has stopped. Here it ruled that out in
+        // one run - strip.now was advancing fine and the bug was in map().
+        if (Environment.GetEnvironmentVariable("WLEDFX_CLOCK") is not null && frame < 6)
+        {
+            Console.Error.WriteLine($"  frame {frame}: told {now} ms, engine clock {Engine.Now()} ms");
+        }
+
         if (frame < warm) continue;
 
         var text = new StringBuilder(pixels * 6);
@@ -300,6 +309,9 @@ static class Engine
     [DllImport(Dll, EntryPoint = "wled_audio")]
     public static extern void Audio(float volume, byte[] bins, float majorPeakHz,
                                     float magnitude, byte beat);
+
+    [DllImport(Dll, EntryPoint = "wled_now")]
+    public static extern uint Now();
 
     [DllImport(Dll, EntryPoint = "wled_mode_count")]
     public static extern byte ModeCount();

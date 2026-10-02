@@ -39,7 +39,13 @@ long random(long, long);
 template <typename A, typename B> inline A min(A a, B b) { return a < (A)b ? a : (A)b; }
 template <typename A, typename B> inline A max(A a, B b) { return a > (A)b ? a : (A)b; }
 #define constrain(x,l,h) ((x)<(l)?(l):((x)>(h)?(h):(x)))
-#define map(x,a,b,c,d) (((x)-(a))*((d)-(c))/((b)-(a))+(c))
+// Arduino's map, with Arduino's signature. It has to be a function taking long, not a macro: as a
+// macro each argument keeps its own type, and callers pass unsigned ones. police_base asks for
+// map(speed, 0, 255, delay<<4, delay) with delay unsigned, so (d)-(c) was 1 - 16 evaluated unsigned,
+// the division underflowed to nothing, and Two Dots held still forever. Used 77 times in FX.cpp.
+static inline long map(long x, long in_min, long in_max, long out_min, long out_max) {
+  return ((x - in_min) * (out_max - out_min) / (in_max - in_min)) + out_min;
+}
 class String {
   const char* _s;
  public:

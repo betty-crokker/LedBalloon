@@ -219,6 +219,10 @@ EXPORT void wled_audio(float volume, const uint8_t* bins, float majorPeakHz, flo
   }
 }
 
+// Diagnostic: the clock the effects actually see. strip.now is nowUp + timebase, and WLED re-pins
+// timebase when a segment resets, so an effect can be handed a clock that never advances.
+EXPORT uint32_t wled_now() { return (uint32_t)strip.now; }
+
 EXPORT void wled_frame(uint32_t now, uint16_t count, uint32_t* out) {
   g_millis = now;
   strip.now = now;

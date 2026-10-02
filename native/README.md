@@ -52,9 +52,17 @@ dotnet run tools/wledfx.cs -- sweep
 `render` prints hex RGB triples in the same format `tools/wled.cs capture` prints, so a render here
 and a capture off the house go through the same comparison unchanged.
 
-## Three things that cost a day
+## Four things that cost a day
 
-All three were silent: the thing built, linked, ran, exited zero, and was wrong.
+All four were silent: the thing built, linked, ran, exited zero, and was wrong.
+
+**`map` has to be a function taking `long`, not a macro.** Arduino's is
+`long map(long, long, long, long, long)`, and the conversion to `long` is load-bearing. As a macro
+each argument keeps its own type, and WLED's callers pass unsigned ones: `police_base` asks for
+`map(speed, 0, 255, delay<<4, delay)` with `delay` unsigned, so `out_max - out_min` was `1 - 16`
+evaluated unsigned, the division underflowed to nothing, and Two Dots sat at pixel 0 forever. It is
+used 77 times in FX.cpp. Found by elimination: `WLEDFX_CLOCK=1` showed the clock the effects see was
+advancing perfectly, which ruled out the obvious suspect and left the arithmetic.
 
 **`finalizeInit()` has to run.** `WS2812FX::_length` is private and only `finalizeInit` sets it, and
 `WS2812FX::setPixelColor` drops every index at or past it. Skipping it — which looked reasonable,
