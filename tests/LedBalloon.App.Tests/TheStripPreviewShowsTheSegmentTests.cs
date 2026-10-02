@@ -100,17 +100,21 @@ public class TheStripPreviewShowsTheSegmentTests(UiThreadFixture ui) : IDisposab
     });
 
     [Fact]
-    public void An_effect_the_app_cannot_run_says_so() => ui.Run(async () =>
+    public void An_effect_the_app_only_knows_the_colors_of_says_so() => ui.Run(async () =>
     {
-        // Akemi is one of the 2D effects, which are not ported - rev 2.0 - so its colors are known
-        // and its movement is not. A preview that is lying is worse than no preview.
+        // Akemi is not ported - rev 2.0 - so its colors are known and its movement is not, and the
+        // strip holds the palette still rather than inventing a motion for it.
         using FakeController controller = FakeController.Start("Solid", "Akemi");
         MainViewModel app = await HouseAsync(controller);
 
         app.SelectedSegment = app.Project.Segments[0];
         app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Akemi");
 
-        Assert.Contains("cannot run this effect", app.SegmentPreviewNote);
+        // Said as what the strip is rather than as what this program cannot do. "The app cannot run
+        // this effect" was true and useless - it is a fact about the software, printed under a
+        // strip full of color, which is read as the effect running.
+        Assert.Contains("only shows on the house", app.SegmentPreviewNote, StringComparison.Ordinal);
+        Assert.DoesNotContain("cannot run", app.SegmentPreviewNote, StringComparison.Ordinal);
     });
 
     [Fact]
