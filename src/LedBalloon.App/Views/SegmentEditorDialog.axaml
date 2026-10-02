@@ -92,6 +92,17 @@
                      Text="{Binding SegmentPreviewNote}"
                      IsVisible="{Binding SegmentPreviewNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+          <!-- Not a simulation of the effect: the effect itself, on the house. WLED can take its
+               audio from the network instead of a microphone, so this sends the controller a kick,
+               a bass line and a hat, and the run does what it would do to music. -->
+          <StackPanel IsVisible="{Binding SegmentFollowsSound}" Margin="0,0,0,4">
+            <CheckBox Content="Play music to the house"
+                      AutomationProperties.AutomationId="SimulateSound"
+                      IsChecked="{Binding SimulateSound}" />
+            <TextBlock Classes="hint" FontStyle="Italic" Margin="22,0,0,0" TextWrapping="Wrap"
+                       Text="Neither controller has a microphone, so these effects sit still. This sends one invented music over the network and lets it run properly. The strip above cannot show it; the house can." />
+          </StackPanel>
+
           <!-- First of the three, because it decides the other two. The color boxes are
                whichever slots this effect reads and the palette picker is there only if it reads
                one, so both of them appear, disappear and change their labels when this changes -
