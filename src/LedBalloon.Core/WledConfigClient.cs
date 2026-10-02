@@ -469,6 +469,86 @@ public sealed class WledConfigClient
         }
     }
 
+    /// <summary>
+    /// Tells the controller to take its audio from the network, or to stop.
+    /// </summary>
+    /// <remarks>
+    /// The AudioReactive usermod's sync has three settings: off, send what this box hears, and
+    /// receive what another box sends. Off is the default, and a controller that is off ignores
+    /// every packet sent to it however well formed.
+    /// <para>
+    /// Read back rather than trusted, the way the rename above is, because a settings PIN blocks
+    /// this endpoint and a blocked write still answers 200.
+    /// </para>
+    /// </remarks>
+    /// <returns>What the mode was before, so the caller can put it back.</returns>
+    public async Task<int> SetSoundSyncAsync(
+        bool receive, CancellationToken cancellationToken = default)
+    {
+        int before = await ReadSoundSyncAsync(cancellationToken).ConfigureAwait(false);
+        int wanted = receive ? 2 : 0;
+
+        if (before == wanted)
+        {
+            return before;
+        }
+
+        // Built rather than written out, because the one setting sits four objects deep and the
+        // closing braces outnumber anything a string literal can say plainly.
+        var patch = new JsonObject
+        {
+            ["um"] = new JsonObject
+            {
+                ["AudioReactive"] = new JsonObject
+                {
+                    ["sync"] = new JsonObject
+                    {
+                        ["port"] = WledAudioSync.DefaultPort,
+                        ["mode"] = wanted,
+                    },
+                },
+            },
+        };
+
+        using var body = new StringContent(patch.ToJsonString(), Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage write = await _http.PostAsync("json/cfg", body, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!write.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                write.StatusCode,
+                $"The controller refused the sound sync setting ({(int)write.StatusCode}).");
+        }
+
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+
+        int applied = await ReadSoundSyncAsync(cancellationToken).ConfigureAwait(false);
+
+        if (applied != wanted)
+        {
+            throw new WledException(
+                "The controller did not take the sound sync setting. A settings PIN will block this.");
+        }
+
+        return before;
+    }
+
+    /// <summary>Which of the three sync settings the usermod is on: 0 off, 1 send, 2 receive.</summary>
+    public async Task<int> ReadSoundSyncAsync(CancellationToken cancellationToken = default)
+    {
+        using JsonDocument config = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+
+        return config.RootElement.TryGetProperty("um", out JsonElement usermods) &&
+               usermods.TryGetProperty("AudioReactive", out JsonElement audio) &&
+               audio.TryGetProperty("sync", out JsonElement sync) &&
+               sync.TryGetProperty("mode", out JsonElement mode) &&
+               mode.TryGetInt32(out int which)
+            ? which
+            : 0;
+    }
+
     /// <summary>The name the device reports for itself.</summary>
     public async Task<string?> ReadDeviceNameAsync(CancellationToken cancellationToken = default)
     {

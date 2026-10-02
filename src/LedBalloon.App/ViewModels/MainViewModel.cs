@@ -3798,6 +3798,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void RefreshEffectCapabilities()
     {
         OnPropertyChanged(nameof(SegmentUsesPalette));
+        OnPropertyChanged(nameof(SegmentFollowsSound));
         OnPropertyChanged(nameof(SegmentSpeedLabel));
         OnPropertyChanged(nameof(SegmentIntensityLabel));
         OnPropertyChanged(nameof(SegmentUsesSpeed));
@@ -4425,6 +4426,110 @@ public sealed partial class MainViewModel : ViewModelBase
     private bool SegmentNeedsSoundItHasNot =>
         ChosenEffect.IsAudioReactive && !HasSound(SelectedSegment?.ControllerKey);
 
+    /// <summary>True for an effect that follows sound, which is the only one offered a tune.</summary>
+    public bool SegmentFollowsSound => ChosenEffect.IsAudioReactive;
+
+    /// <summary>
+    /// Plays invented music at the controller so a sound-reactive effect has something to react to.
+    /// </summary>
+    /// <remarks>
+    /// Not a simulation of the effect - the effect itself, on the house, running on the controller
+    /// the way it always does. WLED's AudioReactive usermod can take its audio from the network
+    /// instead of from a microphone, so a controller with no microphone will follow whatever is
+    /// sent to it, and what is sent is <see cref="SyntheticAudio"/>: a kick, a bass line and a hat.
+    /// <para>
+    /// The alternative was to port two dozen effects into the preview strip, which cannot be
+    /// checked: a port written from reading the firmware has nothing to be measured against on a
+    /// house that cannot make a sound. This way the answer comes from the hardware, which is the
+    /// only place it was ever going to be right.
+    /// </para>
+    /// </remarks>
+    [ObservableProperty] private bool _simulateSound;
+
+    /// <summary>What the controller's sync was set to before the music started, to put it back.</summary>
+    private int _soundSyncBefore;
+
+    private CancellationTokenSource? _music;
+
+    partial void OnSimulateSoundChanged(bool value)
+    {
+        if (value)
+        {
+            Dispatcher.UIThread.Post(async void () => await StartMusicAsync());
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(async void () => await StopMusicAsync());
+        }
+    }
+
+    private async Task StartMusicAsync()
+    {
+        if (SegmentController is not { } device || _music is not null)
+        {
+            return;
+        }
+
+        var stopping = new CancellationTokenSource();
+        _music = stopping;
+
+        try
+        {
+            var config = new WledConfigClient(device.Host);
+            _soundSyncBefore = await config.SetSoundSyncAsync(receive: true, stopping.Token);
+
+            Status = MasterOn
+                ? $"Playing music to {device.DisplayName}. Watch the house."
+                : $"Playing music to {device.DisplayName}. Switch the house on to see it.";
+
+            using var player = new WledAudioSync(device.Host);
+            await player.PlayAsync(cancellationToken: stopping.Token);
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException
+                                      or OperationCanceledException)
+        {
+            if (!stopping.IsCancellationRequested)
+            {
+                Status = $"Could not send sound to {device.DisplayName}. {ex.Message}";
+                SimulateSound = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops the music and puts the controller's sync setting back.
+    /// </summary>
+    /// <remarks>
+    /// Called when the box is unticked, when a different run is opened and when the editor closes,
+    /// because a controller left listening is a setting somebody did not choose and would have no
+    /// reason to look for.
+    /// </remarks>
+    public async Task StopMusicAsync()
+    {
+        if (_music is not { } stopping)
+        {
+            return;
+        }
+
+        _music = null;
+        await stopping.CancelAsync();
+        stopping.Dispose();
+
+        if (SegmentController is not { } device)
+        {
+            return;
+        }
+
+        try
+        {
+            await new WledConfigClient(device.Host).SetSoundSyncAsync(_soundSyncBefore == 2);
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            Status = $"{device.DisplayName} is still set to listen for sound over the network.";
+        }
+    }
+
     private void RefreshPreview()
     {
         OnPropertyChanged(nameof(PreviewSegment));
@@ -4850,6 +4955,15 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(PhotoHint));
         OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
+
+        // The music belongs to the run that asked for it. Closing the editor sets this to null, so
+        // this covers the editor closing as well as a different run being opened - and a controller
+        // left listening for sound over the network is a setting nobody chose and would never think
+        // to look for.
+        if (SimulateSound)
+        {
+            SimulateSound = false;
+        }
 
         // Keep the setup list in step with a pick made on the photo.
         SegmentRow? row = SegmentRows.FirstOrDefault(r => ReferenceEquals(r.Segment, value));
