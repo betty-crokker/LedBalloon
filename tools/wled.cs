@@ -30,11 +30,37 @@ string host = args[1];
 
 Dictionary<string, int> options = new(StringComparer.OrdinalIgnoreCase);
 
+// Colour slots are an array in WLED's JSON, not a number, so they do not go through `options` with
+// everything else: col0=00ff00 col1=000000. Needed to compare a capture against a render, which has
+// to be told the same colours.
+Dictionary<int, string> colours = new();
+
+// Booleans have to be sent as JSON booleans, not as 0 and 1. WLED reads them through getBoolVal,
+// which is `elem | dflt`, and ArduinoJson's `|` is strictly typed: a number is not a bool, so the
+// default wins and the field is silently left alone. That quietly discarded every rev=, mi= and
+// o1/o2/o3= this tool was ever given - the effect option checkboxes among them.
+Dictionary<string, bool> switches = new(StringComparer.OrdinalIgnoreCase);
+
 foreach (string argument in args.Skip(2))
 {
     string[] parts = argument.Split('=', 2);
 
-    if (parts.Length == 2 && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int value))
+    if (parts.Length != 2)
+    {
+        continue;
+    }
+
+    if (parts[0].Length == 4
+        && parts[0].StartsWith("col", StringComparison.OrdinalIgnoreCase)
+        && char.IsDigit(parts[0][3]))
+    {
+        colours[parts[0][3] - '0'] = parts[1];
+    }
+    else if (bool.TryParse(parts[1], out bool flag))
+    {
+        switches[parts[0]] = flag;
+    }
+    else if (int.TryParse(parts[1], CultureInfo.InvariantCulture, out int value))
     {
         options[parts[0]] = value;
     }
@@ -94,6 +120,32 @@ async Task Apply()
         }
 
         segment[key] = value;
+    }
+
+    foreach ((string key, bool flag) in switches)
+    {
+        segment[key] = JsonValue.Create(flag);
+    }
+
+    if (colours.Count > 0)
+    {
+        var slots = new JsonArray();
+
+        for (int slot = 0; slot <= colours.Keys.Max(); slot++)
+        {
+            string hex = colours.TryGetValue(slot, out string? given) ? given : "000000";
+
+            // JsonValue.Create rather than JsonArray's collection initialiser: a file-based app runs
+            // with a source-generated resolver that has no metadata for a bare int.
+            slots.Add(new JsonArray
+            {
+                JsonValue.Create(Convert.ToInt32(hex.Substring(0, 2), 16)),
+                JsonValue.Create(Convert.ToInt32(hex.Substring(2, 2), 16)),
+                JsonValue.Create(Convert.ToInt32(hex.Substring(4, 2), 16)),
+            });
+        }
+
+        segment["col"] = slots;
     }
 
     // The other segments off, so what is measured is the one asked for and nothing else.
