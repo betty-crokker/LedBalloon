@@ -16,6 +16,12 @@ namespace LedBalloon.Core.Effects;
 /// cover a fork's extra effects or one a usermod registered, since no amount of reading WLED's
 /// source describes code that was never in it.
 /// </para>
+/// <para>
+/// <b>Provenance.</b> Everything in this folder reproduces the behaviour of WLED's own effects,
+/// and how closely any one of them follows WLED's <c>FX.cpp</c> is not recorded in this project's
+/// history. They are treated as derivative works of WLED, which is why this project is GPL-3.0
+/// rather than MIT. See the NOTICE file at the root.
+/// </para>
 /// </summary>
 public static class EffectLibrary
 {
