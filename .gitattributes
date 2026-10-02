@@ -2,3 +2,10 @@
 *.sh text eol=lf
 *.png binary
 *.ico binary
+
+# The whole claim of native/vendor is that these files are byte-identical to their upstream tags,
+# and native/verify-vendor.sh checks it. Line-ending conversion on checkout would break both, so
+# these are passed through untouched. beats.cpp is diffed against vendor/wled/util.cpp, so it has
+# to match them.
+native/vendor/** -text
+native/beats.cpp text eol=lf
