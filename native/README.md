@@ -103,41 +103,52 @@ would substitute, the spread is 121.2°.
 
 ## Checked against the house
 
-Effects are captured off south and compared against the engine, with both sides told the same
-effect, palette, speed, intensity, colours, six controls and wiring. Of the last 16 run that way,
-**15 agree, seven of them exactly** (0.00 out of 255), against unrelated-frame baselines of 19 to
-130.
+All 187 effects have been captured off south and compared against the engine, with both sides told
+the same effect, palette, speed, intensity, colours, six controls and wiring, and each effect given
+its own fxdata defaults. `native/against-house-all.py` runs it; `tools/wled.cs -- sweep` and
+`tools/wledfx.cs -- dump` do the two batch halves.
 
-The comparison fits phase on the *first* captured frame only and then walks the rest without
-refitting. The fitted residual says the shape is right; the held residual says the rate is right.
-Keeping them apart is the point: an effect that draws the correct picture at the wrong speed passes
-the first and fails the second, and three effects did exactly that until the frame interval was
-measured instead of assumed. `native/against-house.py` runs it.
+**Of the 57 effects the house reproduces well enough to test, the engine agrees on 55.** Agreement is
+usually exact: residuals of 0.00 out of 255 are common.
 
-### Two kinds of effect this method cannot judge
+The two that do not agree are **Scanner** and **Scanner Dual** (`mode_larson_scanner`). At identical
+settings - verified by reading the segment back off the controller - the house lights 216 pixels and
+the engine at most 94. That effect fades once per rendered frame and advances
+`SEGLEN / (FRAMETIME * map(speed,0,255,96,2))` pixels per frame, so it is directly sensitive to the
+render rate, but no step from 2 ms to 16 ms reproduces the house's trail. Unexplained, and written
+down as such.
 
-Recognise these before hunting for a bug in the engine.
+### Ask whether the house agrees with itself first
 
-**Seeded by `random()`** - Stream, Ripple, Halloween Eyes, Drip, and Fill Noise, which does
-`if (SEGENV.call == 0) SEGENV.step = random16(12345)`. These cannot agree pixel-for-pixel with
-another machine's generator, and a single capture of one is worth nothing: Fill Noise measured 0.00
-against the engine on one capture and 67.18 on the next.
-
-**Path-dependent on render timing** - Pacifica integrates `beatsin` over every render since the
-effect started:
+Run the capture sweep twice and compare the two runs before comparing either against the engine. Many
+WLED effects are not pure functions of elapsed time and pixel index: they accumulate state once per
+rendered frame, and what they accumulate often comes from a beat function of the controller's
+absolute clock, which has been running for days. Colorwaves does
 
 ```c
-sCIStart1 += (deltams1 * beatsin88_t(1011,10,13));   // and three more like it
+sHue16 += duration * beatsin88_t(400, 5, 9);   // 38-second period, read off the absolute clock
 ```
 
-The controller's render instants are irregular, so the integral differs run to run. It does not
-reproduce *itself*: two runs on the same hardware with identical settings differ by 18.2, where
-chance for that effect is 36.4. Lake, by contrast, self-matches at 1.4 against 13.9. Testing
-whether the house agrees with itself is the first thing to do with any effect that will not match,
-and it is cheap.
+so two captures of it minutes apart differ in hue, and no spatial or temporal alignment brings them
+together. Nothing can match such an effect from a single capture - the controller included. Of the
+187: 23 are seeded by `random()`, 9 more fail to reproduce themselves for this reason, 6 are
+audio-reactive and the house has no microphone, and 23 are dark on both sides, which agrees.
 
-Note that Pacifica *does* match at speed 0 (5.3 against 54.7) - but that proves little, because at
-speed 0 its `deltams` is 0 and all four accumulators are frozen.
+69 hold too still over a 1.2-second capture to resolve anything. That is the capture length, not the
+effects; a longer `ms=` would settle them.
 
-Not yet done: the app still uses its own ported effects, and most of the 187 are verified to run and
-to be self-consistent rather than to be right.
+### A batch sweep is not 187 individual measurements
+
+This cost real time, so it is worth stating plainly. Captured on its own, Colorwaves matches the
+engine at **1.33**. The same effect captured inside the 187-effect sweep measures **30.06** against
+the same engine render. Sweeps of 1 and 3 effects are fine (1.33, 2.72). Ruled out by measurement:
+the controller slowing down (frames per capture were flat, 19.6 to 20.6 across the whole run), the
+previous effect's state (applying Colorwaves after another effect gives 4.33, from lights-off 5.37),
+and the clock origin (swept over a full 38-second beat period; best 24.06 against 35.45).
+
+So the sweep's own tallies are pessimistic. Twelve of the fourteen it called failures agree when
+captured individually - Theater Rainbow 10.40 to 0.00, Noise 4 84.00 to 1.41, Twinklefox 42.40 to
+0.16, Twinklecat 39.20 to 0.03, Twinkleup 14.30 to 0.00 - which is where the 55 comes from. The
+individual numbers are the trustworthy ones.
+
+Not yet done: the app still uses its own ported effects.
