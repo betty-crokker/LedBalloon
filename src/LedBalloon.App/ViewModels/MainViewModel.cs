@@ -3944,18 +3944,28 @@ public sealed partial class MainViewModel : ViewModelBase
         name.Trim().Equals("RSVD", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Whether a controller has sound reaching it: what somebody said, or what it reports.
+    /// Whether a controller has sound reaching it, as somebody who can see the box has said.
     /// </summary>
     /// <remarks>
-    /// Stored because it cannot be measured. A microphone with nothing happening in front of it and
-    /// no microphone at all both come back quiet, so the live reading is only a starting guess -
-    /// right for a house with one and right for a house without, until somebody ticks the box and
-    /// their answer stands.
+    /// Stored because it cannot be measured, and no until it is answered.
+    /// <para>
+    /// This used to fall back to what the controller reported hearing, on the grounds that it was
+    /// right for a house with a microphone and right for one without. It is not: a board with
+    /// nothing wired to its I2S pins reads whatever is floating on them, and the usermod's automatic
+    /// gain winds that up into a signal. Both Gledoptos here are configured for a microphone neither
+    /// of them has, on the firmware's default pins, and one of them reported "peak 78%" for a while
+    /// and then went quiet again on its own - which, on the old fall-back, silently added two dozen
+    /// effects to its list and silently took them away again with nobody touching anything.
+    /// </para>
+    /// <para>
+    /// So the answer is no until somebody says otherwise, and the live reading appears beside the
+    /// box as a hint rather than deciding anything. Wrong in the discoverable direction: a house
+    /// that does have a microphone shows "Hearing something right now" next to an unticked box,
+    /// which is an invitation. The other way round there was nothing to notice.
+    /// </para>
     /// </remarks>
     public bool HasSound(string? controllerKey) =>
-        Project.FindController(controllerKey)?.HasSound
-        ?? DeviceFor(controllerKey)?.Info?.Sound.Hearing
-        ?? false;
+        Project.FindController(controllerKey)?.HasSound ?? false;
 
     /// <summary>True when the open palette is one somebody here made, so it can be edited.</summary>
     public bool SegmentPaletteIsCustom =>
@@ -4362,13 +4372,18 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         get
         {
-            // First, because it is the one that decides whether the house does anything at all. An
-            // effect that follows sound on a controller hearing none is not approximated badly, it
-            // is a run that stays exactly as dark as it was.
-            if (SegmentNeedsSoundItHasNot)
+            // First, and said whichever way the answer goes. That this effect follows sound is a
+            // fact about the effect and worth knowing before anything else: with none reaching the
+            // controller it is not approximated badly, it is a run that stays exactly as dark as it
+            // was, and with sound it is the one thing on this panel the sliders and the palette do
+            // not decide.
+            if (ChosenEffect.IsAudioReactive)
             {
-                return "This effect follows sound, and this controller reports none coming in, " +
-                       "so the house would stay as it is.";
+                return SegmentNeedsSoundItHasNot
+                    ? "This effect follows sound, and this controller reports none coming in, " +
+                      "so the house would stay as it is."
+                    : "This effect follows sound, so what the run does depends on what the " +
+                      "controller can hear rather than on anything here.";
             }
 
             if (PortedUse is not null)
@@ -4401,9 +4416,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// with no microphone starts answering the moment another one on the network begins
     /// broadcasting what it hears.
     /// </para>
+    /// <para>
+    /// The same question the list asks, so the two cannot disagree. It used to read the controller's
+    /// live report instead, which on a board with floating microphone pins meant the warning came
+    /// and went by itself while the effect sat there doing nothing either way.
+    /// </para>
     /// </remarks>
     private bool SegmentNeedsSoundItHasNot =>
-        ChosenEffect.IsAudioReactive && SegmentController?.Info?.Sound is { Hearing: false };
+        ChosenEffect.IsAudioReactive && !HasSound(SelectedSegment?.ControllerKey);
 
     private void RefreshPreview()
     {
