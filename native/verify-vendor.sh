@@ -28,12 +28,12 @@ for f in FX.cpp FX_fcn.cpp colors.cpp wled_math.cpp util.cpp \
 done
 
 echo
-echo "FastLED 3.7.0 (tag 3.7.0), src/ -> native/vendor/fastled/"
+echo "FastLED 3.6.0 (tag 3.6.0), src/ -> native/vendor/fastled/"
 for f in colorpalettes.cpp colorutils.cpp hsv2rgb.cpp lib8tion.cpp noise.cpp \
-         color.h colorpalettes.h colorutils.h fastled_progmem.h hsv2rgb.h \
+         color.h colorpalettes.h colorutils.h fastled_config.h fastled_progmem.h hsv2rgb.h \
          lib8tion.h noise.h pixeltypes.h \
          lib8tion/math8.h lib8tion/random8.h lib8tion/scale8.h lib8tion/trig8.h; do
-  check FastLED/FastLED 3.7.0 "src/$f" "vendor/fastled/$f"
+  check FastLED/FastLED 3.6.0 "src/$f" "vendor/fastled/$f"
 done
 
 echo

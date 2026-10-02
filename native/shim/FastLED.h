@@ -14,6 +14,13 @@
 #define __INC_LED_SYSDEFS_H
 #define FASTLED_INTERNAL
 
+// FastLED's own defaults, which live in fastled_config.h and are pulled in by FastLED.h:50. This
+// file stands in for FastLED.h, so without this include none of them are set - and they are not
+// preferences, they are behaviour: FASTLED_NOISE_FIXED picks which easing inoise uses, and
+// FASTLED_SCALE8_FIXED picks whether scale8 is (i*sc)>>8 or (i*(1+sc))>>8. Undefined, every
+// "#if FASTLED_x_FIXED == 1" silently took the old branch.
+#include "fastled_config.h"
+
 #include "lib8tion.h"
 #include "pixeltypes.h"
 #include "colorutils.h"
