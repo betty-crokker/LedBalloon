@@ -41,6 +41,34 @@ GCC's named-variadic macro extension, `#define DEBUGBUS_PRINTF(x...)`, which is 
 has no `/Zc` switch to accept it. That is a property of the vendored source, not a choice — and
 switching compilers was preferable to patching a file whose being unpatched is the point.
 
+## How the app uses it
+
+`EffectLibrary` hands out `NativeEffect` instead of this project's ported effects wherever the
+engine offers one, so everything downstream - the thumbnails, the strip preview, the house canvas -
+draws with the firmware's own code without knowing it changed. 143 effects instead of the ports'
+43. `EffectLibrary.UsingEngine` says whether that happened and `EngineUnavailable` says why not;
+the fallback is deliberate, so that a build without the engine beside it still runs.
+
+The engine has one segment and the app has a preview per effect, so nothing is left in the engine
+between calls: each render hands in that preview's runtime - `aux0`, `aux1`, `step`, `call`, WLED's
+per-segment data buffer, and the previous frame, which anything that fades reads back - and takes it
+all out again afterwards. `EffectSegment` already carried most of that.
+
+Two things about that are worth knowing before changing it:
+
+- **Do not resize the segment with `setGeometry`.** It marks the segment for reset, so a caller of a
+  different length would wipe the state of whichever caller went before it - every frame, with
+  previews of different sizes on screen. `wled_length` sets `start` and `stop` directly instead.
+  Getting this wrong cost nine passing tests, and `NativeEngineTests` now pins it.
+- **`service()` declines to draw twice in the same millisecond**, and the counter it measures
+  against is private. Callers stepping in lockstep - which a screenful of previews does - would
+  starve each other, so a declined frame is retried three milliseconds later. One of two colliding
+  callers is therefore up to three milliseconds late, which is a fifth of a frame.
+
+Publishing needs `-p:IncludeAllContentForSelfExtract=true`, which `publish.ps1` passes. The engine
+travels as content rather than as a runtime pack's native library, so without it the engine is
+inside the single-file exe but not on disk where the app looks, and the fallback is silent.
+
 ## Running it
 
 ```bash

@@ -63,6 +63,9 @@ class String {
 #define M_PI 3.14159265358979323846
 #endif
 #define M_TWOPI (2.0 * M_PI)
+#define TWO_PI 6.283185307179586476925286766559
+#define PI 3.1415926535897932384626433832795
+#define HALF_PI 1.5707963267948966192313216916398
 #ifndef M_PI_2
 #define M_PI_2 (M_PI / 2)
 #endif
@@ -70,6 +73,15 @@ class String {
 #define M_PI_4 (M_PI / 4)
 #endif
 #define bitRead(v, b) (((v) >> (b)) & 1)
+#define bitSet(v, b) ((v) |= (1UL << (b)))
+#define bitClear(v, b) ((v) &= ~(1UL << (b)))
+#define radians(deg) ((deg) * DEG_TO_RAD)
+#define degrees(rad) ((rad) * RAD_TO_DEG)
+#define DEG_TO_RAD 0.017453292519943295769236907684886
+#define RAD_TO_DEG 57.295779513082320876798154814105
+// AVR distinguishes near and far PROGMEM; nothing here does.
+#define pgm_read_byte_near(a) pgm_read_byte(a)
+#define pgm_read_word_near(a) pgm_read_word(a)
 #define bitWrite(v, b, x) ((x) ? ((v) |= (1UL << (b))) : ((v) &= ~(1UL << (b))))
 
 class Print { public: void print(...) {} void println(...) {} };

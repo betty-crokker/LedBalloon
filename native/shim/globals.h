@@ -2,6 +2,7 @@
 // WLED's own globals and debug macros, with the types taken from wled.h rather than guessed.
 // These are declarations only: the effects read them, nothing here decides what they contain.
 #include <vector>
+#include <ctime>
 
 #define DEBUG_PRINT(x)
 #define DEBUG_PRINTLN(x)
@@ -51,3 +52,18 @@ struct CHSV;
 CHSV rgb2hsv_approximate(const CRGB&);
 extern std::vector<BusConfig> busConfigs;
 extern StaticJsonDocument<4096>* pDoc;
+
+// ---- the wall clock ---------------------------------------------------------------------------
+// WLED's clock effects (Analog Clock among them) read the local time through the Time library.
+// Told rather than read, like the millisecond clock: an effect asked for the same moment twice
+// draws the same thing, which a real clock would not give.
+extern time_t localTime;
+extern bool useAMPM;
+
+int hour(time_t t);
+int minute(time_t t);
+int second(time_t t);
+int day(time_t t);
+int month(time_t t);
+int year(time_t t);
+const char* monthShortStr(uint8_t month);
