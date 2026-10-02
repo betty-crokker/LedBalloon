@@ -248,10 +248,14 @@
               </Border>
 
               <!-- Naming is the only way work leaves this screen, so it is the first thing on it
-                   when there is anything to name, and absent when there is not. -->
-              <Button Classes="block" Content="Name it…" Margin="0,4,0,0"
-                      Command="{Binding CaptureSceneCommand}"
-                      IsVisible="{Binding SceneUnsaved}" />
+                   and it is always on it. It used to appear only while the house was showing
+                   something not already written down, which is the moment it is most wanted and not
+                   the only one: there was nothing to press to start a scene from cold, and nothing
+                   to press to make a second one like the scene already open. The line above says
+                   whether there is unsaved work; this says what to do about it either way. -->
+              <Button Classes="block" Content="New scene…" Margin="0,4,0,0"
+                      AutomationProperties.AutomationId="NewScene"
+                      Command="{Binding NewSceneCommand}" />
 
               <!-- No banner and no buttons for sending: whether this has reached the lights is what
                    the Sync switch says, in one place, for everything on this panel. -->

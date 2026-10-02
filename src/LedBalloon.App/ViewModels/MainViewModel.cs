@@ -2724,14 +2724,56 @@ public sealed partial class MainViewModel : ViewModelBase
     public ObservableCollection<string> SceneNotes { get; } = [];
 
     /// <summary>
-    /// Saves what the house is doing right now under a name.
+    /// Saves what the house is doing right now under a name somebody types.
     /// <para>
-    /// The way scenes get made. Get the house looking right by hand, then write it down — which is
+    /// The way scenes get made. Get the house looking right by hand, then write it down - which is
     /// how anyone actually arrives at a scene, rather than by describing one from cold.
     /// </para>
     /// </summary>
+    /// <remarks>
+    /// Always offered, where it used to appear only when the house was showing something not
+    /// already written down. That is the moment it is most wanted and it is not the only one:
+    /// somebody who opens the app meaning to build a Christmas scene had nothing on screen to start
+    /// from, and somebody looking at a saved scene had no way to make a second one like it without
+    /// first changing something. The line above this button already says whether there is unsaved
+    /// work, so the button does not have to; two buttons a centimetre apart that both make a scene
+    /// would be two chances to wonder which.
+    /// <para>
+    /// Asks for the name up front rather than making "New scene" and saying to rename it, which was
+    /// two steps and left a scene called "New scene" behind whenever anybody stopped after the
+    /// first one.
+    /// </para>
+    /// </remarks>
     [RelayCommand]
-    private void CaptureScene() => CaptureSceneNamed(null);
+    private async Task NewSceneAsync()
+    {
+        if (Ask is not { } ask)
+        {
+            return;
+        }
+
+        if (HouseStates.Count == 0)
+        {
+            Status = "No connected controller to read the house from.";
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: "New scene",
+            Message: "Writes down what each run is showing right now, under a name you can put " +
+                     "back any time. Change the house first if it is not what you want kept.",
+            AcceptText: "Create",
+            CancelText: "Cancel",
+            InputLabel: "Scene name",
+            InputDefault: Project.UniqueSceneName("New scene")));
+
+        if (!answer.Accepted || answer.Input is not { Length: > 0 } name)
+        {
+            return;
+        }
+
+        CaptureSceneNamed(name);
+    }
 
     /// <summary>Writes the house down as a scene, under <paramref name="name"/> if one is given.</summary>
     private void CaptureSceneNamed(string? name)
@@ -2767,8 +2809,7 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedScene = Scenes.FirstOrDefault(row => ReferenceEquals(row.Scene, scene));
 
         AfterProjectChanged(
-            $"Saved what the house looks like now as '{scene.Name}'. Give it a name, then Save to " +
-            "put it on the controllers." +
+            $"'{scene.Name}' is what the house looks like now. Save to put it on the controllers." +
             (bound > 0 ? $" {bound} segment(s) are wearing a look you have named." : string.Empty));
     }
 
