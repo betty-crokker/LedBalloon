@@ -86,6 +86,12 @@ int check1 = Number("o1", 0);
 int check2 = Number("o2", 0);
 int check3 = Number("o3", 0);
 
+// How the segment is wired. South's roofline runs from the far end and renders with rev set, and
+// one effect - Flow - reads it and applies it per zone, so it cannot be imitated afterwards by
+// reversing the output.
+int reverse = Number("rev", 0);
+int mirror = Number("mi", 0);
+
 Engine.Begin((ushort)leds, (byte)fps);
 
 var names = new string[Engine.ModeCount()];
@@ -119,6 +125,7 @@ switch (args[0])
             $"{names[mode]} (fx {mode}), palette {palette}, sx {speed}, ix {intensity}, " +
             $"colours {colour0:x6}/{colour1:x6}/{colour2:x6}, " +
             $"c1 {custom1} c2 {custom2} c3 {custom3} o1 {check1} o2 {check2} o3 {check3}, " +
+            $"rev {reverse} mi {mirror}, " +
             $"{frames} frames of {stepMs:F2} ms at fps {fps} after {settle} settling{(sound ? $", sound at {bpm} bpm" : "")}");
 
         foreach (string line in lines) Console.WriteLine(line);
@@ -171,6 +178,7 @@ string[] Render(int mode, int pal, int sx, int ix, double ms, int warm, int coun
     Engine.Segment((byte)mode, (byte)pal, (byte)sx, (byte)ix, colour0, colour1, colour2);
     Engine.Controls((byte)custom1, (byte)custom2, (byte)custom3,
                     (byte)check1, (byte)check2, (byte)check3);
+    Engine.Orientation((byte)reverse, (byte)mirror);
 
     var output = new uint[pixels];
     var lines = new List<string>(count);
@@ -309,6 +317,9 @@ static class Engine
     [DllImport(Dll, EntryPoint = "wled_audio")]
     public static extern void Audio(float volume, byte[] bins, float majorPeakHz,
                                     float magnitude, byte beat);
+
+    [DllImport(Dll, EntryPoint = "wled_orientation")]
+    public static extern void Orientation(byte reverse, byte mirror);
 
     [DllImport(Dll, EntryPoint = "wled_now")]
     public static extern uint Now();
