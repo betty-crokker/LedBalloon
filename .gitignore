@@ -46,3 +46,7 @@ desktop.ini
 ## LedBalloon local config (device lists, saved presets)
 appsettings.Local.json
 devices.local.json
+
+## native build output
+native/wledfx.dll
+native/*.o
