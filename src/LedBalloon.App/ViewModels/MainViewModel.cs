@@ -4348,14 +4348,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// them. Worth one line, because a preview that is lying is worse than no preview, and the
     /// difference is not visible from the picture.
     /// </remarks>
-    /// <summary>What the two directions of the preview mean, said once beside it.</summary>
+    /// <summary>What the strip is, said once beside it.</summary>
     /// <remarks>
-    /// A strip that is also a chart needs its axes given, and the length is worth saying because it
-    /// is what the effect was drawn at - Halloween Eyes over 308 LEDs is two small eyes, and over
-    /// 20 it is most of the run.
+    /// The length is worth saying because it is what the effect is drawn at - Halloween Eyes over
+    /// 308 LEDs is two small eyes, and over 20 it is most of the run.
     /// </remarks>
     public string SegmentPreviewCaption => SelectedSegment is { Count: > 0 } segment
-        ? $"The {segment.Count} LEDs across, the last few seconds downwards. " +
+        ? $"The {segment.Count} LEDs, as they are this instant. " +
           "Brightness and the house switch are left out."
         : string.Empty;
 
@@ -4377,11 +4376,14 @@ public sealed partial class MainViewModel : ViewModelBase
                 return string.Empty;
             }
 
+            // Said as what the strip is rather than as what the app is not. "The app cannot run
+            // this effect" was true and useless: it is about this program rather than about the
+            // house, and it sat over a strip full of color, which reads as the effect running.
             return PreviewPalette is not null
-                ? "The app cannot run this effect. This is the palette it draws from, held still: " +
-                  "its colors, not what it does with them."
-                : "The app cannot run this effect, and its colors come from neither the palette " +
-                  "nor the boxes, so there is nothing here to show.";
+                ? "These are the colors it draws from, held still. What it does with them only " +
+                  "shows on the house."
+                : "Nothing to show: this effect takes its colors from neither the palette nor the " +
+                  "boxes above. It only shows on the house.";
         }
     }
 
