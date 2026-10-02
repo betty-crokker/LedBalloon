@@ -101,6 +101,33 @@ got wrong twice. On palette 0, Colorwaves shows a **single hue** — the green c
 DLL gives hue 120.0° with a spread of 0.0, matching the house; on palette 26, the one `loadPalette`
 would substitute, the spread is 121.2°.
 
-Not yet done: the app still uses its own ported effects, and the engine has only been checked against
-the house on Colorwaves. The other 186 are verified to run and to be self-consistent, not to be
-right.
+## Checked against the house
+
+26 effects have been captured off south and compared against the engine, with both sides told the
+same effect, palette, speed, intensity, colours, six controls and wiring. Of those, **20 agree**.
+
+The comparison fits phase on the *first* captured frame only — the controller's clock has been
+running for days and its timebase is its own — and then walks the rest without refitting. The
+fitted residual says the shape is right; the held residual says the rate is right. Keeping those
+apart is the point: an effect that draws the correct picture at the wrong speed passes the first and
+fails the second, and three effects did exactly that until the frame interval was measured rather
+than assumed.
+
+Agreement is usually not approximate. Residuals under 1 out of 255 are common and Two Dots is 0.00,
+against 25 to 128 for the same captured frame compared with unrelated engine frames.
+
+**Four cannot be compared this way at all**: Stream, Ripple, Halloween Eyes and Drip seed themselves
+with `random()`, so they cannot agree pixel-for-pixel with another machine's generator. Nothing is
+wrong with them; the method does not apply.
+
+**Two disagree and are not explained**: Pacifica (23.7 against an unrelated-frame baseline of 40.4)
+and Noise 2 (30.5 against 45.5). Both are fully dynamic, neither uses randomness, and three
+hypotheses have been eliminated by measurement rather than argument: the clock they are handed
+advances correctly (`WLEDFX_CLOCK=1`), `strip.paletteBlend` is 0 on both sides, and both are given
+their own fxdata defaults. These are the next things to look at.
+
+Running the comparison is `against-house.py` in the session scratchpad; it is not in the repository
+yet and should be, as a test alongside the existing `*AgainstHardwareTests.cs`.
+
+Not yet done: the app still uses its own ported effects. The 161 effects not captured off the house
+are verified to run and to be self-consistent, not to be right.
