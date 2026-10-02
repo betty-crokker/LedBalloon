@@ -270,9 +270,6 @@ EUPL-1.2. The EUPL permits a derivative to be licensed under the GPL-3.0, which 
 here because GPL is better understood by the tooling and the people this project would like
 contributions from.
 
-This was MIT until October 2026. That was a mistake rather than a change of heart — MIT could not
-describe the relationship honestly. Copies obtained under MIT before then were received under it.
-
 ## Credits
 
 [**WLED**](https://github.com/wled/WLED), by Christian Schwinne and contributors, which this app
