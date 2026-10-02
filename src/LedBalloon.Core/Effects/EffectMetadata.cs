@@ -51,6 +51,44 @@ public sealed class EffectMetadata
     public IReadOnlyList<string> Sliders { get; private init; } = [];
 
     /// <summary>
+    /// What the effect's three extra sliders are called, or null for one it does not read.
+    /// </summary>
+    /// <remarks>
+    /// Positions three to five of the slider section. Fire 2012 calls its two "2D Blur" and "Boost";
+    /// Palette calls its one "Rotation". An effect with one of these and no way to move it is an
+    /// effect only half reachable.
+    /// </remarks>
+    public IReadOnlyList<string?> CustomLabels { get; private init; } = [null, null, null];
+
+    /// <summary>What the effect's three tick boxes are called, or null for one it does not read.</summary>
+    /// <remarks>
+    /// Positions six to eight. Palette's first is "Animate Shift", and whether it is ticked is the
+    /// difference between a gradient lying still and one scrolling.
+    /// </remarks>
+    public IReadOnlyList<string?> OptionLabels { get; private init; } = [null, null, null];
+
+    /// <summary>
+    /// What the effect wants its controls set to when it is chosen.
+    /// </summary>
+    /// <remarks>
+    /// The last section, as <c>ix=112,c1=0,o1=1,o2=0,o3=1</c>. WLED's own UI applies these the
+    /// moment an effect is picked, which is why the same effect can look like two different things
+    /// depending on which app selected it: an app that sends only the effect number leaves the
+    /// segment carrying whatever the last effect was set to.
+    /// <para>
+    /// Measured on 192.168.0.131: Palette with its own defaults draws 244 colors across 285 LEDs and
+    /// scrolls; with the flags left as they were it draws the same 244 and sits still. Keys other
+    /// than the eight controls - <c>m12</c> for how a 2D effect maps itself, <c>si</c> for which
+    /// sound input it reads - are the firmware's business and are kept out.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyDictionary<string, int> Defaults { get; private init; } =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+
+    /// <summary>The eight controls a segment carries, which are the only defaults worth sending.</summary>
+    private static readonly string[] Controls = ["sx", "ix", "c1", "c2", "c3", "o1", "o2", "o3"];
+
+    /// <summary>
     /// What the effect calls its speed slider, or null when it has no use for one.
     /// </summary>
     /// <remarks>
@@ -150,7 +188,10 @@ public sealed class EffectMetadata
             Sliders = [.. Section(sections, 0).Select(s => s.Trim()).Where(s => s.Length > 0)],
             SpeedLabel = SliderLabel(sections, 0, "Speed"),
             IntensityLabel = SliderLabel(sections, 1, "Intensity"),
+            CustomLabels = [.. Enumerable.Range(2, 3).Select(i => SliderLabel(sections, i, null))],
+            OptionLabels = [.. Enumerable.Range(5, 3).Select(i => SliderLabel(sections, i, null))],
             Flags = sections.Length > 3 ? sections[3].Trim() : string.Empty,
+            Defaults = ParseDefaults(sections.Length > 4 ? sections[4] : string.Empty),
         };
     }
 
@@ -158,12 +199,37 @@ public sealed class EffectMetadata
     /// One positional slider label: null when the effect ignores it, the default when it asks for
     /// one without naming it, and otherwise the name it gave.
     /// </summary>
-    private static string? SliderLabel(string[] sections, int at, string fallback)
+    private static string? SliderLabel(string[] sections, int at, string? fallback)
     {
         string[] slots = Section(sections, 0);
         string entry = at < slots.Length ? slots[at].Trim() : string.Empty;
 
         return entry.Length == 0 ? null : entry == "!" ? fallback : entry;
+    }
+
+    /// <summary>
+    /// The <c>name=number</c> list the effect ends with, keeping only the eight real controls.
+    /// </summary>
+    private static IReadOnlyDictionary<string, int> ParseDefaults(string section)
+    {
+        var wanted = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (string pair in section.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            string[] halves = pair.Split('=', 2);
+
+            if (halves.Length == 2 &&
+                Controls.Contains(halves[0].Trim(), StringComparer.Ordinal) &&
+                int.TryParse(halves[1].Trim(),
+                    System.Globalization.NumberStyles.Integer,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out int value))
+            {
+                wanted[halves[0].Trim()] = value;
+            }
+        }
+
+        return wanted;
     }
 
     /// <summary>Reads every effect's metadata, lined up with the effect list by index.</summary>

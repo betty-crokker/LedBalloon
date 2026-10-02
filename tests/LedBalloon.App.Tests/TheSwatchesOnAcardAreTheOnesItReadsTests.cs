@@ -62,6 +62,20 @@ public class TheSwatchesOnAcardAreTheOnesItReadsTests(UiThreadFixture ui) : IDis
         Assert.Equal(Color.FromRgb(0, 80, 255), ((SolidColorBrush)card.PrimarySwatch).Color);
     });
 
+    /// <summary>
+    /// True once the controller has reported its effect list and the metadata behind it.
+    /// </summary>
+    /// <remarks>
+    /// Asked of Blink rather than of the effect under test, because Solid declares nothing at all -
+    /// its fxdata is the empty string - so "this effect has metadata" is false for it whether the
+    /// list has arrived or not. Blink declares plenty, so it answers the question actually being
+    /// asked, which is whether the fxdata got here.
+    /// </remarks>
+    private static bool Ready(MainViewModel app) =>
+        app.SegmentController is { } device &&
+        device.Effects.Count > 1 &&
+        device.Device.MetadataFor(1).Declared;
+
     private async Task<PresetDetail> CardAsync(int effect, int palette = 0)
     {
         using FakeController controller = FakeController.Start(
@@ -84,15 +98,18 @@ public class TheSwatchesOnAcardAreTheOnesItReadsTests(UiThreadFixture ui) : IDis
 
         // Said out loud, because without it this test fails by quietly answering the other
         // question. A controller that has not reported its effects leaves the card with no effect
-        // name to look up, which is the "nothing is known" case - and that one is meant to show two
-        // swatches. The assertion below would then fail as if the rule were wrong rather than as if
-        // the stand-in had been slow, which is what happened once on a loaded machine.
-        for (int tries = 0; tries < 40 && app.SegmentController?.Effects.Count is null or 0; tries++)
+        // name to look up, and one that has not reported its fxdata leaves it with no metadata -
+        // either of which is the "nothing is known" case, and that one is meant to show two
+        // swatches. So the assertion below fails as if the rule were wrong rather than as if the
+        // stand-in had been slow. It did that twice, because the first version of this waited for
+        // the effect list and not for the metadata behind it.
+        for (int tries = 0; tries < 60 && !Ready(app); tries++)
         {
             await Task.Delay(50);
         }
 
         Assert.NotEmpty(app.SegmentController!.Effects);
+        Assert.True(Ready(app));
 
         // Pink in slot 0, a blue in slot 1 so the two can be told apart, and black in slot 2 -
         // which WLED keeps on every segment whether or not anything reads it, and which is the
