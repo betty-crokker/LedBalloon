@@ -54,24 +54,64 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
     [Fact]
     public void An_effect_that_follows_sound_says_so_when_there_is_none() => ui.Run(async () =>
     {
-        // Freqwave's own entry, and the usermod block 192.168.0.131 really reports: the driver is
-        // running, it names a source, and it has heard nothing. Picking this leaves the run exactly
-        // as dark as it was, which reads as the app failing to send.
+        // Freqwave at effect 0, which is what the stand-in reports its segment as wearing - the one
+        // way an effect this list leaves out can still be on screen. Picking it leaves the run
+        // exactly as dark as it was, which reads as the app failing to send.
         using FakeController controller = FakeController.Start(
-            ["Solid", "Freqwave"],
-            ["", "Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0"],
+            ["Freqwave", "Blink"],
+            ["Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0", "!,Duty cycle;!,!;!;01"],
             Quiet);
 
         MainViewModel app = await HouseAsync(controller);
-
-        // Credited with sound, because an effect that is not in the list cannot be picked - and
-        // this is about what the panel says once one has been.
-        app.Project.FindController(FakeController.Key)!.HasSound = true;
         app.SelectedSegment = app.Project.Segments[0];
-        app.SegmentEffectChoice = app.SegmentEffects.Single(o => o.Name == "Freqwave");
 
+        Assert.Equal("Freqwave", app.SegmentEffectChoice?.Name);
         Assert.Contains("follows sound", app.SegmentPreviewNote, StringComparison.Ordinal);
         Assert.Contains("none coming in", app.SegmentPreviewNote, StringComparison.Ordinal);
+    });
+
+    [Fact]
+    public void And_still_says_it_follows_sound_once_somebody_says_there_is_some() => ui.Run(async () =>
+    {
+        // That it follows sound is a fact about the effect, so it is said either way - only the
+        // second half changes. The warning half asks the same question the list asks, so the two
+        // cannot disagree; it used to read the controller's live report instead, which left the
+        // warning beside an effect the house had just been credited with being able to run.
+        using FakeController controller = FakeController.Start(
+            ["Freqwave", "Blink"],
+            ["Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0", "!,Duty cycle;!,!;!;01"],
+            Quiet);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.Project.FindController(FakeController.Key)!.HasSound = true;
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.Contains("follows sound", app.SegmentPreviewNote, StringComparison.Ordinal);
+        Assert.DoesNotContain("none coming in", app.SegmentPreviewNote, StringComparison.Ordinal);
+    });
+
+    [Fact]
+    public void A_controller_nobody_has_answered_for_is_taken_as_having_none() => ui.Run(async () =>
+    {
+        // Even while it swears it can hear. A board with nothing wired to its I2S pins reads
+        // whatever is floating on them and the usermod's automatic gain winds that up into a signal:
+        // one of the two here reported "peak 78%" for a few minutes and then went quiet again on its
+        // own, with no microphone on either of them. Trusting that added two dozen effects to the
+        // list and took them away again with nobody touching anything.
+        using FakeController controller = FakeController.Start(
+            ["Solid", "Freqwave"],
+            ["", "Speed,Sound effect,Low bin,High bin,Pre-amp;;;01f;m12=2,si=0"],
+            Hearing);
+
+        MainViewModel app = await HouseAsync(controller);
+        app.SelectedSegment = app.Project.Segments[0];
+
+        Assert.DoesNotContain(app.SegmentEffects, o => o.Name == "Freqwave");
+
+        // The reading is not thrown away - it is shown beside the box, where a house that really
+        // does have a microphone reads it as an invitation to tick one.
+        app.SelectedDevice = app.SegmentController;
+        Assert.Contains("Hearing something right now", app.ControllerSoundNote, StringComparison.Ordinal);
     });
 
     [Fact]
@@ -199,6 +239,16 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
         Assert.Contains(app.SegmentEffects, o => o.Name == "Freqwave");
         Assert.Equal("Freqwave", app.SegmentEffectChoice?.Name);
     });
+
+    /// <summary>A controller reporting a signal, which a floating pin does as readily as a microphone.</summary>
+    private const string Hearing = """
+    {
+      "AudioReactive": ["<button></button>"],
+      "Audio Source": ["I2S digital", " - peak  78%"],
+      "Sound Processing": ["running"],
+      "UDP Sound Sync": ["off"]
+    }
+    """;
 
     /// <summary>The usermod block from 192.168.0.131, which has no microphone wired to its I2S pins.</summary>
     private const string Quiet = """

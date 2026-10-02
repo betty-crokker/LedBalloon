@@ -92,11 +92,39 @@
                      Text="{Binding SegmentPreviewNote}"
                      IsVisible="{Binding SegmentPreviewNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+          <!-- First of the three, because it decides the other two. The color boxes are
+               whichever slots this effect reads and the palette picker is there only if it reads
+               one, so both of them appear, disappear and change their labels when this changes -
+               and a control that rearranges the things above it is read as having gone wrong. -->
+          <TextBlock Classes="hint" Margin="0,4,0,2" Text="Effect" />
+          <!-- Each row carries a stamp of what that effect does on this segment, drawn the same
+               way the preview above is: the run across, a few recent frames down. "Chunchun" is not
+               a description and neither is "Phased Noise", and the list is 187 of them. -->
+          <ComboBox ItemsSource="{Binding SegmentEffects}"
+                    AutomationProperties.AutomationId="SegmentEffect"
+                    SelectedItem="{Binding SegmentEffectChoice}"
+                    PlaceholderText="Not reported yet"
+                    HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:PickerOption">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Width="72" Height="18" CornerRadius="2" VerticalAlignment="Center"
+                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
+                    <Image Source="{Binding Preview}" Stretch="Fill"
+                           RenderOptions.BitmapInterpolationMode="None" />
+                  </Border>
+                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
           <!-- One box per color slot the effect actually reads, named the way the effect names it.
                A single box called "Color" was wrong twice over: most effects read more than one
                slot - Aurora reads three, Two Dots reads two and a background - and a good third of
                them read none at all. -->
-          <ItemsControl ItemsSource="{Binding SegmentColors}" Margin="0,4,0,0">
+          <ItemsControl ItemsSource="{Binding SegmentColors}" Margin="0,10,0,0">
             <ItemsControl.ItemsPanel>
               <ItemsPanelTemplate>
                 <WrapPanel Orientation="Horizontal" />
@@ -124,30 +152,6 @@
           <TextBlock Classes="hint" FontStyle="Italic" Margin="0,2,0,0"
                      Text="{Binding SegmentColorNote}"
                      IsVisible="{Binding SegmentColorNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-
-          <TextBlock Classes="hint" Margin="0,8,0,2" Text="Effect" />
-          <!-- Each row carries a stamp of what that effect does on this segment, drawn the same
-               way the preview above is: the run across, a few recent frames down. "Chunchun" is not
-               a description and neither is "Phased Noise", and the list is 187 of them. -->
-          <ComboBox ItemsSource="{Binding SegmentEffects}"
-                    AutomationProperties.AutomationId="SegmentEffect"
-                    SelectedItem="{Binding SegmentEffectChoice}"
-                    PlaceholderText="Not reported yet"
-                    HorizontalAlignment="Stretch">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:PickerOption">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="72" Height="18" CornerRadius="2" VerticalAlignment="Center"
-                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
-                    <Image Source="{Binding Preview}" Stretch="Fill"
-                           RenderOptions.BitmapInterpolationMode="None" />
-                  </Border>
-                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
 
           <!-- Gone rather than greyed, when the effect ignores it. A disabled picker showing a
                palette the effect never reads, under a line saying so, is the app arguing with
