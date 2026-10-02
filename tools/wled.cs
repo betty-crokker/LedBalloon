@@ -8,6 +8,7 @@
 //   dotnet run tools/wled.cs -- state <host>
 //   dotnet run tools/wled.cs -- set <host> seg=<n> fx=<n> sx=<n> ix=<n> pal=<n> c1=<n> ...
 //   dotnet run tools/wled.cs -- capture <host> seg=<n> from=<led> to=<led> ms=<n> [settle=<n>] [fx=... ]
+//   WLED_SWEEP_EFFECTS=0,1,2 WLED_SWEEP_INTO=<dir> dotnet run tools/wled.cs -- sweep <host> ...
 //
 // Capture prints one line of hex RGB triples per frame, in wire order, ready to check in as a
 // fixture. It turns nothing on by itself: pass the same fx/sx/ix arguments as `set` to have it apply
@@ -21,7 +22,7 @@ using System.Text.Json.Nodes;
 
 if (args.Length < 2)
 {
-    Console.Error.WriteLine("usage: off|state|set|capture <host> [key=value ...]");
+    Console.Error.WriteLine("usage: off|state|set|capture|sweep <host> [key=value ...]");
     return 1;
 }
 
@@ -85,6 +86,10 @@ switch (command)
 
     case "capture":
         await Capture();
+        return 0;
+
+    case "sweep":
+        await Sweep();
         return 0;
 
     default:
@@ -165,8 +170,78 @@ async Task Apply()
     });
 }
 
+/// <summary>
+/// Captures a list of effects in one go, each to its own file.
+/// <para>
+/// Only for capturing many: one process instead of one per effect, which matters when the list is
+/// all 187 of them. Takes effects=<id>,<id>,... and into=<directory>, and writes <id>.txt per
+/// effect. Everything else - the segment, the colours, the controls - comes from the same arguments
+/// `capture` takes, and it leaves the lights off at the end exactly as `capture` does.
+/// </para>
+/// </summary>
+async Task Sweep()
+{
+    string list = Environment.GetEnvironmentVariable("WLED_SWEEP_EFFECTS")
+        ?? throw new InvalidOperationException("set WLED_SWEEP_EFFECTS to a comma-separated id list");
+    string into = Environment.GetEnvironmentVariable("WLED_SWEEP_INTO")
+        ?? throw new InvalidOperationException("set WLED_SWEEP_INTO to an output directory");
+
+    Directory.CreateDirectory(into);
+    // Entries are separated by ';' because an entry's own settings use ','.
+    string[] effects = list.Split(';').Where(x => x.Length > 0).ToArray();
+
+    for (int n = 0; n < effects.Length; n++)
+    {
+        // An entry may carry its own settings: "65:ix=112,c1=0,o1=true". Effects declare defaults in
+        // their fxdata and WLED's UI applies them when you pick one, but the JSON API does not, so
+        // they have to be sent explicitly or the two sides run the same effect differently set up.
+        string[] parts = effects[n].Split(':', 2);
+        int id = int.Parse(parts[0], CultureInfo.InvariantCulture);
+
+        var restoreInts = new Dictionary<string, int>(options);
+        var restoreFlags = new Dictionary<string, bool>(switches, StringComparer.OrdinalIgnoreCase);
+
+        if (parts.Length == 2)
+        {
+            foreach (string pair in parts[1].Split(','))
+            {
+                string[] kv = pair.Split('=', 2);
+                if (kv.Length != 2) continue;
+                if (bool.TryParse(kv[1], out bool flag)) switches[kv[0]] = flag;
+                else if (int.TryParse(kv[1], CultureInfo.InvariantCulture, out int value)) options[kv[0]] = value;
+            }
+        }
+
+        options["fx"] = id;
+        string[] lines = await Frames();
+        await File.WriteAllLinesAsync(Path.Combine(into, $"{id}.txt"), lines);
+        Console.Error.WriteLine($"[{n + 1}/{effects.Length}] fx {id}: {lines.Length} frames");
+
+        options.Clear();
+        foreach ((string k, int v) in restoreInts) options[k] = v;
+        switches.Clear();
+        foreach ((string k, bool v) in restoreFlags) switches[k] = v;
+    }
+
+    await AllOff();
+}
+
 /// <summary>Reads the strip back over the live preview socket, one hex line per frame.</summary>
 async Task Capture()
+{
+    string[] lines = await Frames();
+    await AllOff();
+
+    Console.Error.WriteLine($"{lines.Length} frames, lights off");
+
+    foreach (string line in lines)
+    {
+        Console.WriteLine(line);
+    }
+}
+
+/// <summary>Applies the state if asked, then reads back one hex line per frame.</summary>
+async Task<string[]> Frames()
 {
     if (options.ContainsKey("fx"))
     {
@@ -215,14 +290,9 @@ async Task Capture()
     await socket.SendAsync(
         Encoding.UTF8.GetBytes("{\"lv\":false}"), WebSocketMessageType.Text, true, CancellationToken.None);
 
-    await AllOff();
-
-    Console.Error.WriteLine($"{lines.Count} frames over {duration} ms, lights off");
-
-    foreach (string line in lines)
-    {
-        Console.WriteLine(line);
-    }
+    // Turning the lights off is the caller's job now, because `sweep` has more to capture first and
+    // the one rule here is that they are off when everything is done.
+    return lines.ToArray();
 }
 
 async Task Post(JsonNode body)

@@ -141,6 +141,80 @@ switch (args[0])
         return 0;
     }
 
+    // Renders many effects in one process, each to its own file, applying each effect's own fxdata
+    // defaults. One process instead of 187 of them, which is the difference between minutes and an
+    // hour when comparing the whole list against the house.
+    case "dump":
+    {
+        string into = Environment.GetEnvironmentVariable("WLEDFX_DUMP_INTO")
+            ?? throw new InvalidOperationException("set WLEDFX_DUMP_INTO");
+        Directory.CreateDirectory(into);
+
+        // Per-effect clock origins, "<id><tab><ms>" a line. Several effects are functions of the
+        // absolute clock rather than of elapsed time - color_wipe takes strip.now modulo a cycle
+        // that is 19.8 seconds long at speed 128 - so an engine whose clock starts at zero can only
+        // ever show the first slice of that cycle, and no amount of searching will reach the
+        // controller's phase. Given where the controller's clock actually was, it matches.
+        var origins = new Dictionary<int, long>();
+        if (Environment.GetEnvironmentVariable("WLEDFX_DUMP_CLOCKS") is string clockFile
+            && File.Exists(clockFile))
+        {
+            foreach (string line in File.ReadLines(clockFile))
+            {
+                string[] bits = line.Split('	');
+                if (bits.Length == 2
+                    && int.TryParse(bits[0], out int which)
+                    && long.TryParse(bits[1], out long at))
+                {
+                    origins[which] = at;
+                }
+            }
+        }
+
+        int done = 0;
+        for (int mode = 0; mode < names.Length; mode++)
+        {
+            Defaults(mode, out int useSx, out int useIx, out int usePal,
+                     out int c1, out int c2, out int c3, out int o1, out int o2, out int o3);
+
+            Engine.Begin((ushort)leds, (byte)fps);
+            Engine.Segment((byte)mode, (byte)usePal, (byte)useSx, (byte)useIx,
+                           colour0, colour1, colour2);
+            Engine.Controls((byte)c1, (byte)c2, (byte)c3, (byte)o1, (byte)o2, (byte)o3);
+            Engine.Orientation((byte)reverse, (byte)mirror);
+
+            var output = new uint[leds];
+            var lines = new List<string>(frames);
+            double clock = origins.TryGetValue(mode, out long origin) ? origin : clockFrom;
+
+            for (int frame = 0; frame < settle + frames; frame++)
+            {
+                uint at = (uint)Math.Round(clock);
+                if (sound) Sound(at, bpm);
+                Engine.Frame(at, (ushort)leds, output);
+                clock += stepMs;
+                if (frame < settle) continue;
+
+                var text = new StringBuilder(leds * 6);
+                foreach (uint pixel in output)
+                {
+                    text.Append(((pixel >> 16) & 0xFF).ToString("x2", CultureInfo.InvariantCulture));
+                    text.Append(((pixel >> 8) & 0xFF).ToString("x2", CultureInfo.InvariantCulture));
+                    text.Append((pixel & 0xFF).ToString("x2", CultureInfo.InvariantCulture));
+                }
+                lines.Add(text.ToString());
+            }
+
+            File.WriteAllLines(Path.Combine(into, $"{mode}.txt"), lines);
+            Console.WriteLine($"{mode}	{names[mode]}	{usePal}	{useSx}	{useIx}	" +
+                              $"{c1},{c2},{c3},{o1},{o2},{o3}");
+            done++;
+        }
+
+        Console.Error.WriteLine($"rendered {done} effects into {into}");
+        return 0;
+    }
+
     case "sweep":
     {
         Console.WriteLine($"{"fx",3}  {"name",-22} {"lit",4} {"distinct",8} {"moving",6} {"mean",5}");
@@ -158,6 +232,41 @@ switch (args[0])
     default:
         Console.Error.WriteLine($"unknown command '{args[0]}'");
         return 1;
+}
+
+// What an effect's own fxdata asks for, falling back to this run's arguments. Section 5 of the
+// fxdata is the default list - Palette's is "ix=112,c1=0,o1=1,o2=0,o3=1", and without it Palette
+// renders one colour and does not move.
+void Defaults(int mode, out int useSx, out int useIx, out int usePal,
+              out int c1, out int c2, out int c3, out int o1, out int o2, out int o3)
+{
+    useSx = speed; useIx = intensity; usePal = palette;
+    c1 = custom1; c2 = custom2; c3 = custom3; o1 = check1; o2 = check2; o3 = check3;
+
+    string data = Engine.ModeData((byte)mode);
+    string[] parts = data.Split(';');
+    if (parts.Length < 5) return;
+
+    foreach (string pair in parts[4].Split(','))
+    {
+        string[] kv = pair.Split('=', 2);
+        if (kv.Length != 2 || !int.TryParse(kv[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out int v))
+        {
+            continue;
+        }
+        switch (kv[0])
+        {
+            case "sx": useSx = v; break;
+            case "ix": useIx = v; break;
+            case "pal": usePal = v; break;
+            case "c1": c1 = v; break;
+            case "c2": c2 = v; break;
+            case "c3": c3 = v; break;
+            case "o1": o1 = v; break;
+            case "o2": o2 = v; break;
+            case "o3": o3 = v; break;
+        }
+    }
 }
 
 // Accepts a name or a number, and prefers the name: WLED's ids move between releases.
