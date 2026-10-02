@@ -21,4 +21,25 @@
     <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
+
+  <!--
+    WLED's effect engine, built by native/build.ps1. It travels beside the app because
+    NativeEngine loads it by name at run time; without it the app falls back to the ported
+    effects in Effects/ and says so. Not checked in - it is a build output - so a clean clone
+    builds and runs, just without the engine until build.ps1 has been run once.
+  -->
+  <PropertyGroup>
+    <WledEngine>$(MSBuildThisFileDirectory)../../native/wledfx.dll</WledEngine>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(WledEngine)')">
+    <None Include="$(WledEngine)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>wledfx.dll</Link>
+    </None>
+  </ItemGroup>
+
+  <Target Name="WarnWithoutNativeEngine" BeforeTargets="Build" Condition="!Exists('$(WledEngine)')">
+    <Warning Text="native/wledfx.dll is missing, so the app falls back to the ported effects. Build it with: pwsh native/build.ps1" />
+  </Target>
 </Project>

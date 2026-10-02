@@ -150,11 +150,47 @@ public static class EffectLibrary
         new RippleEffect(),
     ];
 
-    private static readonly Dictionary<string, IWledEffect> ByName =
-        Ported.ToDictionary(effect => effect.Name, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// WLED's own effect engine, when it is available: see <see cref="NativeEngine"/>. It is
+    /// preferred over everything in this folder, because it is the firmware's code rather than a
+    /// reading of it - all 187 effects instead of this folder's handful, and measured against the
+    /// house at nought out of 255 on most of them.
+    /// </summary>
+    private static readonly IWledEffect[] FromEngine = NativeEngine.All().ToArray();
+
+    /// <summary>
+    /// What a name resolves to: the engine first, then this folder's ports for anything the engine
+    /// does not offer. The ports remain the fallback for a build with no engine beside it, which is
+    /// every platform the engine has not been built for.
+    /// </summary>
+    private static readonly Dictionary<string, IWledEffect> ByName = Build();
+
+    private static Dictionary<string, IWledEffect> Build()
+    {
+        var byName = new Dictionary<string, IWledEffect>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (IWledEffect effect in Ported)
+        {
+            byName[effect.Name] = effect;
+        }
+
+        foreach (IWledEffect effect in FromEngine)
+        {
+            byName[effect.Name] = effect;
+        }
+
+        return byName;
+    }
+
+    /// <summary>True when the effects come from WLED's own compiled engine.</summary>
+    public static bool UsingEngine => FromEngine.Length > 0;
+
+    /// <summary>Why the engine is not in use, when it is not. Null when it is.</summary>
+    public static string? EngineUnavailable => UsingEngine ? null : NativeEngine.Unavailable;
 
     /// <summary>Every effect that can be drawn exactly rather than approximated.</summary>
-    public static IReadOnlyList<IWledEffect> All => Ported;
+    public static IReadOnlyList<IWledEffect> All =>
+        FromEngine.Length > 0 ? ByName.Values.ToArray() : Ported;
 
     /// <summary>The effect a controller calls <paramref name="name"/>, if it is one we can draw.</summary>
     public static IWledEffect? Find(string? name) =>

@@ -29,6 +29,11 @@ $sources = @(
 ) | ForEach-Object { Join-Path $here $_ }
 
 $flags = @(
+    # 2D is off, which costs the 44 matrix-only effects - they register as RSVD and the engine
+    # offers 143 of the firmware's 187. That is close to no loss here: the house is one strip and the
+    # app filters matrix-only effects out anyway. Turning it on needs vendor/wled/FX_2Dfcn.cpp
+    # vendored for the drawing primitives (setPixelColorXY, blur2D, drawCircle and the rest) and
+    # crc16 extracted from util.cpp; FX.cpp and FX_fcn.cpp themselves already compile with it.
     '-std=c++17', '-O2', '-DWLED_DISABLE_2D',
     "-I$here", "-I$here/shim", "-I$here/vendor/wled", "-I$here/vendor/fastled",
     '-shared', '-o', (Join-Path $here 'wledfx.dll'),

@@ -45,6 +45,36 @@ unsigned long millis() { return g_millis; }
 unsigned long micros() { return g_millis * 1000UL; }
 uint32_t get_millisecond_timer() { return g_millis; }
 
+// ---- the wall clock, told rather than read ------------------------------------------------------
+// Fixed, and settable, for the same reason the millisecond clock is: an effect asked for the same
+// moment twice should draw the same thing. 2026-01-01 12:00:00 is an arbitrary but legible default.
+time_t localTime = 1767268800;
+bool useAMPM = false;
+
+static std::tm broken(time_t t) {
+  std::tm out{};
+  time_t v = t;
+#ifdef _WIN32
+  gmtime_s(&out, &v);
+#else
+  gmtime_r(&v, &out);
+#endif
+  return out;
+}
+
+int hour(time_t t)   { return broken(t).tm_hour; }
+int minute(time_t t) { return broken(t).tm_min; }
+int second(time_t t) { return broken(t).tm_sec; }
+int day(time_t t)    { return broken(t).tm_mday; }
+int month(time_t t)  { return broken(t).tm_mon + 1; }
+int year(time_t t)   { return broken(t).tm_year + 1900; }
+
+const char* monthShortStr(uint8_t month) {
+  static const char* names[] = {"Err", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  return names[month <= 12 ? month : 0];
+}
+
 long random(long howbig) { return howbig ? (long)(rand() % howbig) : 0; }
 long random(long howsmall, long howbig) { return howsmall + random(howbig - howsmall); }
 
@@ -228,6 +258,104 @@ EXPORT void wled_orientation(uint8_t reverse, uint8_t mirror) {
   Segment& seg = strip.getSegment(0);
   seg.reverse = reverse != 0;
   seg.mirror = mirror != 0;
+}
+
+// ---- rendering on behalf of a caller that keeps the state ---------------------------------------
+// The app has many previews alive at once - a thumbnail per effect - and one shared WLED segment.
+// Rather than give the engine a segment per preview, the caller hands in that preview's runtime
+// before each frame and takes it back afterwards, so the engine holds nothing between calls. That
+// is the same split LedBalloon's own EffectSegment already uses: it carries step, call, aux0 and
+// aux1 for exactly this reason. The only piece it does not already have is WLED's per-segment data
+// buffer, which effects allocate for themselves and which this passes through as bytes.
+// Resizes the segment without resetting it.
+//
+// setGeometry would be the obvious call and is the wrong one: it marks the segment for reset, so a
+// caller with a different length would wipe the runtime and the pixel buffer of whichever caller
+// went before it. With many previews alive at once and each a different length, that is every
+// frame. start and stop are public, and SEGLEN comes from them through virtualLength().
+EXPORT void wled_length(uint16_t length) {
+  Segment& seg = strip.getSegment(0);
+  seg.start = 0;
+  seg.stop = length > HOST_LEDS ? HOST_LEDS : length;
+}
+
+// The caller's previous frame, which is part of its state: anything that fades or trails reads the
+// buffer back through getPixelColor, and the engine's buffer belongs to whoever rendered last.
+EXPORT void wled_pixels_set(const uint32_t* in, uint16_t count) {
+  if (!in) return;
+  for (uint16_t i = 0; i < count && i < HOST_LEDS; i++) g_leds[i] = in[i];
+}
+
+EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,
+                             const uint8_t* data, uint16_t len) {
+  Segment& seg = strip.getSegment(0);
+  seg.aux0 = aux0;
+  seg.aux1 = aux1;
+  seg.step = step;
+  // call is set before allocateData below, deliberately: allocateData wipes the buffer when call is
+  // zero, which is how an effect initialises itself on its first frame. Restoring a non-zero call
+  // first is what makes a resumed frame resume rather than start again.
+  seg.call = call;
+  // The segment asks not to be redrawn until next_time; the caller decides when a frame happens.
+  seg.next_time = 0;
+
+  if (data && len > 0 && seg.allocateData(len)) {
+    memcpy(seg.data, data, len);
+  }
+}
+
+EXPORT void wled_runtime_get(uint16_t* aux0, uint16_t* aux1, uint32_t* step, uint32_t* call,
+                             uint8_t* data, uint16_t capacity, uint16_t* len) {
+  Segment& seg = strip.getSegment(0);
+  if (aux0) *aux0 = seg.aux0;
+  if (aux1) *aux1 = seg.aux1;
+  if (step) *step = seg.step;
+  if (call) *call = seg.call;
+
+  uint16_t have = seg.data ? seg.dataSize() : 0;
+  if (len) *len = have;
+  if (data && have > 0 && have <= capacity) {
+    memcpy(data, seg.data, have);
+  }
+}
+
+// Draws one frame at `now`.
+//
+// Two constraints pull against each other. service() refuses to draw twice within MIN_FRAME_DELAY
+// of its last show, measured on the clock it reads for itself - so fifty previews all asking for the
+// same millisecond would get one frame and forty-nine blanks. But the clock it reads is also the one
+// the effects read: FastLED's beat family goes through GET_MILLIS, which is millis() and not
+// strip.now, so moving that clock out from under them to satisfy the gate changes what they draw.
+// Lake and Plasma both use beatsin8_t and both came out wrong when this shifted timebase instead.
+//
+// So the clock is only ever nudged as far as the gate needs. A caller whose own clock advances
+// normally - any preview stepping at a frame time - gets exactly the millisecond it asked for. Only
+// callers that collide on the same millisecond are pushed apart, by three of them, which is
+// invisible in a preview and does not accumulate for the caller that keeps moving.
+EXPORT void wled_render(uint32_t now, uint16_t count, uint32_t* out) {
+  Segment& seg = strip.getSegment(0);
+  uint32_t before = seg.call;
+
+  g_millis = now;
+  strip.timebase = 0;
+  strip.service();
+
+  // service() declines to draw within MIN_FRAME_DELAY of its own last draw, and the counter it
+  // measures against is private. Mostly that does not bite: the comparison is unsigned, so a caller
+  // whose clock is behind the last one passes by underflow. The case it does bite is two callers on
+  // the identical millisecond, which is exactly what a screenful of previews stepping in lockstep
+  // does - and the second would be handed back its own previous frame for ever.
+  //
+  // So: if it declined, ask again three milliseconds later. Both callers then draw every frame, and
+  // the cost is that one of them is up to three milliseconds late. Which one depends on the order
+  // they arrive in, so a caller's clock is not quite its own - but three milliseconds is a fifth of
+  // a frame, and the alternative is a preview that never moves.
+  if (seg.call == before) {
+    g_millis = now + MIN_FRAME_DELAY + 1;
+    strip.service();
+  }
+
+  for (uint16_t i = 0; i < count && i < HOST_LEDS; i++) out[i] = g_leds[i];
 }
 
 // Diagnostic: the clock the effects actually see. strip.now is nowUp + timebase, and WLED re-pins
