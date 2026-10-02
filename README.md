@@ -262,4 +262,28 @@ definition with geometry; `LedBalloon.Core.Models.WledSegment` is the wire forma
 
 ## License
 
-MIT.
+**GPL-3.0.** See [LICENSE](LICENSE) for the text and [NOTICE](NOTICE) for why.
+
+The short version: LedBalloon reproduces WLED's lighting effects so it can paint a photograph of
+your house with the colors the house is about to show, and [WLED](https://github.com/wled/WLED) is
+EUPL-1.2. The EUPL permits a derivative to be licensed under the GPL-3.0, which is the route taken
+here because GPL is better understood by the tooling and the people this project would like
+contributions from.
+
+This was MIT until October 2026. That was a mistake rather than a change of heart — MIT could not
+describe the relationship honestly. Copies obtained under MIT before then were received under it.
+
+## Credits
+
+[**WLED**](https://github.com/wled/WLED), by Christian Schwinne and contributors, which this app
+drives and whose effects it reproduces. None of this exists without it.
+
+[**FastLED**](https://github.com/FastLED/FastLED), whose fixed-point integer maths WLED's effects
+are built out of — a sine that is deliberately a little wrong, because reproducing the arithmetic
+is the cheap half of reproducing the effect.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). The house rule is that measurement beats reading: twice the
+table of which controls each effect reads was built by reading code, and the second time it was
+wrong for 71 of 118 effects.

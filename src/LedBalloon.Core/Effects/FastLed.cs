@@ -11,6 +11,11 @@ namespace LedBalloon.Core.Effects;
 /// how the effects look - a run drawn with real trigonometry drifts against the same run on the
 /// wall. Reproducing the arithmetic is the cheap half of reproducing the effect.
 /// </para>
+/// <para>
+/// The originals are FastLED's, which WLED builds on - and WLED 0.15 replaces some of them with
+/// its own, so the two are not interchangeable: <c>sin16_t</c> there is a rational approximation
+/// rather than FastLED's table. FastLED is under the MIT licence. See the NOTICE file at the root.
+/// </para>
 /// </summary>
 public static class FastLed
 {

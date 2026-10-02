@@ -1,0 +1,72 @@
+LedBalloon
+Copyright (C) 2026 Chris Cooper
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License, version 3, as published by the
+Free Software Foundation. The full text is in LICENSE.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+LedBalloon was published under the MIT licence until October 2026. That was a
+mistake rather than a change of heart: parts of it stand in a relationship to
+WLED that MIT could not describe honestly, and this file sets out which parts
+and why. Copies obtained under the MIT licence before that date were received
+under it; everything from here on is GPL-3.0.
+
+
+WLED
+----
+
+LedBalloon drives WLED controllers and reproduces WLED's behaviour, and could
+not exist without it.
+
+    https://github.com/wled/WLED
+    Copyright (c) 2016 Christian Schwinne and contributors
+    Licensed under the EUPL-1.2
+
+The EUPL's compatibility clause permits a derivative work to be licensed under
+the GPL-3.0, and that is the route taken here.
+
+Two parts of this project stand in different relationships to WLED, and the
+difference is worth stating plainly.
+
+  src/LedBalloon.Core/Effects/
+
+      Implementations of WLED's lighting effects, so that the app can draw on a
+      photograph of the house what the controller is about to draw on the house
+      itself. How closely these follow WLED's own FX.cpp is not recorded in this
+      project's history, and the people who would know cannot now reconstruct it
+      with confidence. They are therefore treated as derivative works of WLED.
+      That is the conservative reading, it is the one this licence reflects, and
+      it costs nothing to be wrong about in this direction.
+
+  everything else
+
+      Interoperability rather than derivation: the JSON API, the audio sync
+      packet layout, the custom palette file format and the pixel order on the
+      wire. Those are how two programs talk to each other, not a copy of either.
+
+
+FastLED
+-------
+
+WLED's effects are built on FastLED's fixed-point integer maths, and
+src/LedBalloon.Core/Effects/FastLed.cs reproduces the parts of it the effects
+read - the sine approximation, the 8-bit scaling, the beat generators.
+
+    https://github.com/FastLED/FastLED
+    Copyright (c) 2013 FastLED
+    Licensed under the MIT licence, which is compatible with the GPL-3.0
+
+
+Why any of this is copied at all
+--------------------------------
+
+The app paints a photograph of the house with the colors the house is about to
+show, which means it has to arrive at the same picture the controller does. An
+effect that is close but not exact is worse than no preview, because it is a
+preview you cannot trust and have no way to check. So the arithmetic is
+reproduced rather than approximated, down to a sine that is deliberately a
+little wrong in the way the firmware's is.
