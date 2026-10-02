@@ -92,6 +92,15 @@ int check3 = Number("o3", 0);
 int reverse = Number("rev", 0);
 int mirror = Number("mi", 0);
 
+// Where the clock starts, in milliseconds. Normally 0, because an effect's own counters restart when
+// it does. But a few effects are not functions of elapsed time alone: Pacifica computes
+// strip.now = (strip.now>>2) + ((strip.now * speed)>>7), and that multiply wraps at 32 bits, so what
+// it draws depends on the controller's absolute uptime. To compare one against a controller that has
+// been up for days, the clock has to start where that controller's clock is.
+long clockFrom = options.TryGetValue("at", out string? from)
+    && long.TryParse(from, NumberStyles.Integer, CultureInfo.InvariantCulture, out long parsedFrom)
+        ? parsedFrom : 0;
+
 Engine.Begin((ushort)leds, (byte)fps);
 
 var names = new string[Engine.ModeCount()];
@@ -119,13 +128,13 @@ switch (args[0])
         int mode = Mode(options.TryGetValue("fx", out string? wanted) ? wanted : "Colorwaves");
         if (mode < 0) return 1;
 
-        string[] lines = Render(mode, palette, speed, intensity, stepMs, settle, frames, sound, bpm, leds);
+        string[] lines = Render(mode, palette, speed, intensity, stepMs, settle, frames, sound, bpm, leds, clockFrom);
 
         Console.Error.WriteLine(
             $"{names[mode]} (fx {mode}), palette {palette}, sx {speed}, ix {intensity}, " +
             $"colours {colour0:x6}/{colour1:x6}/{colour2:x6}, " +
             $"c1 {custom1} c2 {custom2} c3 {custom3} o1 {check1} o2 {check2} o3 {check3}, " +
-            $"rev {reverse} mi {mirror}, " +
+            $"rev {reverse} mi {mirror}, clock from {clockFrom} ms, " +
             $"{frames} frames of {stepMs:F2} ms at fps {fps} after {settle} settling{(sound ? $", sound at {bpm} bpm" : "")}");
 
         foreach (string line in lines) Console.WriteLine(line);
@@ -138,7 +147,7 @@ switch (args[0])
 
         for (int mode = 0; mode < names.Length; mode++)
         {
-            string[] lines = Render(mode, palette, speed, intensity, stepMs, settle, 2, sound, bpm, leds);
+            string[] lines = Render(mode, palette, speed, intensity, stepMs, settle, 2, sound, bpm, leds, clockFrom);
             (int lit, int distinct, int moving, double mean) = Measure(lines);
             Console.WriteLine($"{mode,3}  {names[mode],-22} {lit,4} {distinct,8} {moving,6} {mean,5:F1}");
         }
@@ -170,7 +179,7 @@ int Mode(string wanted)
 }
 
 string[] Render(int mode, int pal, int sx, int ix, double ms, int warm, int count,
-                bool withSound, int beats, int pixels)
+                bool withSound, int beats, int pixels, long from)
 {
     // Each render starts the clock at zero, because the clock an effect sees restarts when the
     // effect does - an effect that waits before its first change sits black until it has.
@@ -182,7 +191,7 @@ string[] Render(int mode, int pal, int sx, int ix, double ms, int warm, int coun
 
     var output = new uint[pixels];
     var lines = new List<string>(count);
-    double clock = 0;
+    double clock = from;
 
     for (int frame = 0; frame < warm + count; frame++)
     {
