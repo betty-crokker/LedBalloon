@@ -152,7 +152,24 @@ void BusManager::useParallelOutput() {}
 // which makes color_from_palette hand back the colour slot instead of the palette.
 class HostBus : public Bus {
  public:
-  HostBus(uint16_t len) : Bus(TYPE_WS2812_RGB, 0, AW_GLOBAL_DISABLED, len) { _valid = true; }
+  HostBus(uint16_t len) : Bus(TYPE_WS2812_RGB, 0, AW_GLOBAL_DISABLED, len) {
+    _valid = true;
+
+    // What the bus can show, which the base constructor does not set. It initialises _type, _bri,
+    // _start, _len, _reversed, _valid, _needsRefresh and _data, and leaves these three alone,
+    // because every real bus is a derived class that sets them itself from its own BusConfig. A bus
+    // that skips that step does not report "no colour" - it reports whatever was in that memory.
+    //
+    // Which is worse than a wrong answer, because it is a different wrong answer in each process.
+    // refreshLightCapabilities asks the bus whether it has RGB and records the segment as able to
+    // show nothing when it says no; color_from_palette then gives up at its second line and returns
+    // the colour slot for every pixel. So the whole run comes out one flat colour that no palette,
+    // no effect and no amount of elapsed time can move - on the machines where the garbage happens
+    // to be zero, and nowhere else. It read 105 here and 0 on the house's machine.
+    _hasRgb   = Bus::hasRGB(TYPE_WS2812_RGB);
+    _hasWhite = Bus::hasWhite(TYPE_WS2812_RGB);
+    _hasCCT   = Bus::hasCCT(TYPE_WS2812_RGB);
+  }
   void show() override {}
   void setPixelColor(unsigned pix, uint32_t c) override { if (pix < HOST_LEDS) g_leds[pix] = c; }
   uint32_t getPixelColor(unsigned pix) const override { return pix < HOST_LEDS ? g_leds[pix] : 0; }
@@ -362,6 +379,54 @@ EXPORT uint8_t wled_capabilities() {
 // taken from it means nothing. Asking color_from_palette is not a guess about memory: it is the
 // answer the effect gets. Four samples that come back equal is a run that will be one flat colour
 // whatever the palette says, and comparing them against the colour slot says which branch took it.
+// Walks refreshLightCapabilities' own reasoning, step by step, and reports what each test saw.
+//
+// It computes zero for a segment whose bounds and bus both look right from here, so the useful thing
+// is no longer the answer but which line reaches it: the bus that breaks the loop, the overlap test
+// that rejects it, or an index range that never gets built.
+EXPORT void wled_capability_trace(uint32_t* out) {
+  if (!out) return;
+  for (int i = 0; i < 12; i++) out[i] = 0;
+  if (g_begins == 0 || strip.getSegmentsNum() == 0) return;
+
+  Segment& seg = strip.getSegment(0);
+
+  unsigned segStartIdx = 0xFFFFU;
+  unsigned segStopIdx  = 0;
+
+  out[0] = seg.isActive() ? 1 : 0;
+  out[1] = (uint32_t)(Segment::maxWidth * Segment::maxHeight);
+
+  if (seg.start < Segment::maxWidth * Segment::maxHeight) {
+    for (int y = seg.startY; y < seg.stopY; y++) for (int x = seg.start; x < seg.stop; x++) {
+      unsigned index = strip.getMappedPixelIndex(x + Segment::maxWidth * y);
+      if (index < 0xFFFFU) {
+        if (segStartIdx > index) segStartIdx = index;
+        if (segStopIdx  < index) segStopIdx  = index;
+      }
+      if (segStartIdx == segStopIdx) segStopIdx++;
+    }
+    out[2] = 1;             // took the mapped branch
+  } else {
+    segStartIdx = seg.start;
+    segStopIdx  = seg.stop;
+  }
+
+  out[3] = segStartIdx;
+  out[4] = segStopIdx;
+  out[5] = BusManager::getNumBusses();
+
+  Bus* bus = BusManager::getBus(0);
+  if (bus == nullptr) { out[6] = 0xFFFFFFFFu; return; }
+
+  out[6] = bus->getLength();
+  out[7] = bus->isOk() ? 1 : 0;
+  out[8] = bus->getStart();
+  out[9] = bus->hasRGB() ? 1 : 0;
+  out[10] = (bus->getStart() >= segStopIdx) ? 1 : 0;                        // rejected as past the end
+  out[11] = (bus->getStart() + bus->getLength() <= segStartIdx) ? 1 : 0;    // rejected as before the start
+}
+
 EXPORT uint32_t wled_palette_sample(uint8_t index) {
   if (g_begins == 0 || strip.getSegmentsNum() == 0) return 0;
   return strip.getSegment(0).color_from_palette(index, false, true, 255);

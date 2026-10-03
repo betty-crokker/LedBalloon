@@ -91,6 +91,28 @@ public static class NativeEngine
         }
     }
 
+    /// <summary>
+    /// What each step of the engine's capability reasoning saw: active, maxWidth*maxHeight, whether
+    /// the mapped branch was taken, segStartIdx, segStopIdx, busses, bus length, isOk, bus start,
+    /// hasRGB, and the two overlap rejections.
+    /// </summary>
+    public static uint[] CapabilityTrace()
+    {
+        if (!IsReady)
+        {
+            return [];
+        }
+
+        var into = new uint[12];
+
+        lock (Gate)
+        {
+            Native.CapabilityTrace(into);
+        }
+
+        return into;
+    }
+
     /// <summary>How many effects the engine registered. 187 on WLED 0.15.3.</summary>
     public static int EffectCount => IsReady ? Native.ModeCount() : 0;
 
@@ -381,6 +403,9 @@ public static class NativeEngine
 
         [DllImport(Dll, EntryPoint = "wled_palette_sample")]
         public static extern uint PaletteSample(byte index);
+
+        [DllImport(Dll, EntryPoint = "wled_capability_trace")]
+        public static extern void CapabilityTrace(uint[] into);
 
         [DllImport(Dll, EntryPoint = "wled_mode_count")]
         public static extern byte ModeCount();
