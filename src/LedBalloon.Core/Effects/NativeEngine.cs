@@ -59,7 +59,7 @@ public static class NativeEngine
             return [];
         }
 
-        var into = new uint[9];
+        var into = new uint[11];
 
         lock (Gate)
         {
