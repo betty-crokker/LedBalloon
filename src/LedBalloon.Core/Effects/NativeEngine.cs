@@ -110,7 +110,7 @@ public static class NativeEngine
 
             Native.Segment(
                 (byte)mode,
-                (byte)Math.Clamp(segment.PaletteId, 0, 255),
+                PaletteFor(segment),
                 segment.Speed,
                 segment.Intensity,
                 Pack(segment, 0),
@@ -164,6 +164,50 @@ public static class NativeEngine
     /// another's. Length is set per render instead, through <c>wled_length</c>, which does not reset.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// The palette id to hand the engine, which is not always the one the segment names.
+    /// <para>
+    /// Custom palettes live on the controller's filesystem, which is not here, so the engine has
+    /// none of its own and a segment set to one would fall back to palette 0 - and palette 0 means
+    /// "use the colour slot", so a palette-driven effect came out a flat wash of the primary colour,
+    /// or black if the primary is black, while the house drew the palette properly. The app has the
+    /// gradient, so it is pushed in and the id kept.
+    /// </para>
+    /// <para>
+    /// Anything else out of the engine's range is refused rather than passed on. Ids from the
+    /// palette count up to 245 index past the end of WLED's gradient table - 71 reads one past it
+    /// and segfaults - and taking the whole process down is a poor way to draw a preview.
+    /// </para>
+    /// </summary>
+    private static byte PaletteFor(EffectSegment segment)
+    {
+        int id = segment.PaletteId;
+
+        // WLED addresses custom palettes as 255 minus the slot.
+        if (id > 245 && segment.Palette is { IsGradient: true } gradient)
+        {
+            int slot = 255 - id;
+            var entries = new uint[16];
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                RgbColor c = gradient.ColorAt(
+                    i / 15d, segment.Colors[0], segment.Colors[1], segment.Colors[2]);
+                entries[i] = ((uint)c.R << 16) | ((uint)c.G << 8) | c.B;
+            }
+
+            Native.CustomPalette((byte)slot, entries);
+            return (byte)id;
+        }
+
+        if (id < 0 || (id >= Native.PaletteCount() && id <= 245))
+        {
+            return 0;
+        }
+
+        return (byte)Math.Clamp(id, 0, 255);
+    }
+
     private static void Prepare(int length)
     {
         if (_scratchPixels.Length < length)
@@ -264,6 +308,12 @@ public static class NativeEngine
 
         [DllImport(Dll, EntryPoint = "wled_render")]
         public static extern void Render(uint now, ushort count, uint[] pixels);
+
+        [DllImport(Dll, EntryPoint = "wled_custom_palette")]
+        public static extern void CustomPalette(byte slot, uint[] entries);
+
+        [DllImport(Dll, EntryPoint = "wled_palette_count")]
+        public static extern byte PaletteCount();
 
         [DllImport(Dll, EntryPoint = "wled_mode_count")]
         public static extern byte ModeCount();
