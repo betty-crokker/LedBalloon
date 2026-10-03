@@ -32,15 +32,19 @@ the GPL-3.0, and that is the route taken here.
 Two parts of this project stand in different relationships to WLED, and the
 difference is worth stating plainly.
 
-  src/LedBalloon.Core/Effects/
+  native/vendor/wled/
 
-      Implementations of WLED's lighting effects, so that the app can draw on a
-      photograph of the house what the controller is about to draw on the house
-      itself. How closely these follow WLED's own FX.cpp is not recorded in this
-      project's history, and the people who would know cannot now reconstruct it
-      with confidence. They are therefore treated as derivative works of WLED.
-      That is the conservative reading, it is the one this licence reflects, and
-      it costs nothing to be wrong about in this direction.
+      WLED's own source, copied verbatim and compiled, so that the app can draw
+      on a photograph of the house what the controller is about to draw on the
+      house itself. This is not a reading of WLED or a reimplementation of it; it
+      is WLED, and the licence reflects that without needing a judgement call.
+      native/verify-vendor.sh checks every file against the upstream tag it
+      claims to come from, so the claim is testable rather than asserted.
+
+      This used to be a folder of hand-written implementations instead, whose
+      fidelity to FX.cpp nobody could reconstruct with confidence. They were
+      treated as derivative works for the same conservative reason. They have
+      been deleted; the relationship is now plainer, not looser.
 
   everything else
 
@@ -52,9 +56,13 @@ difference is worth stating plainly.
 FastLED
 -------
 
-WLED's effects are built on FastLED's fixed-point integer maths, and
-src/LedBalloon.Core/Effects/FastLed.cs reproduces the parts of it the effects
-read - the sine approximation, the 8-bit scaling, the beat generators.
+WLED's effects are built on FastLED's fixed-point integer maths. FastLED is
+copied verbatim into native/vendor/fastled/ and compiled alongside WLED, and
+native/verify-vendor.sh checks it too.
+
+src/LedBalloon.Core/Effects/FastLed.cs separately reproduces the parts the app
+needs for its own drawing - the 8-bit scaling, the sine approximation - and is a
+reimplementation rather than a copy.
 
     https://github.com/FastLED/FastLED
     Copyright (c) 2013 FastLED
@@ -67,6 +75,9 @@ Why any of this is copied at all
 The app paints a photograph of the house with the colors the house is about to
 show, which means it has to arrive at the same picture the controller does. An
 effect that is close but not exact is worse than no preview, because it is a
-preview you cannot trust and have no way to check. So the arithmetic is
-reproduced rather than approximated, down to a sine that is deliberately a
-little wrong in the way the firmware's is.
+preview you cannot trust and have no way to check.
+
+Reproducing the arithmetic by hand got close and was wrong in ways that took a
+house and a camera to find. Compiling the firmware's own code instead is both
+less work and exact: on the effects the house can reproduce at all, most now
+agree to nought out of 255.

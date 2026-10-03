@@ -34,7 +34,12 @@ $flags = @(
     # app filters matrix-only effects out anyway. Turning it on needs vendor/wled/FX_2Dfcn.cpp
     # vendored for the drawing primitives (setPixelColorXY, blur2D, drawCircle and the rest) and
     # crc16 extracted from util.cpp; FX.cpp and FX_fcn.cpp themselves already compile with it.
-    '-std=c++17', '-O2', '-DWLED_DISABLE_2D',
+    # The target is an ESP32 - both controllers are - and saying so matters beyond tidiness.
+    # MIN_FRAME_DELAY is 2 on an ESP32 and 8 on the 8266 that FX.h falls back to, and in unlimited
+    # frame rate mode FRAMETIME *is* MIN_FRAME_DELAY. Every effect that reads FRAMETIME was running
+    # on the wrong constant: Blink at full speed went dark 44% of frames where the strip never
+    # goes dark at all.
+    '-std=c++17', '-O2', '-DARDUINO_ARCH_ESP32', '-DWLED_DISABLE_2D',
     "-I$here", "-I$here/shim", "-I$here/vendor/wled", "-I$here/vendor/fastled",
     '-shared', '-o', (Join-Path $here 'wledfx.dll'),
     # -static so the result carries no MSYS2 runtime of its own.

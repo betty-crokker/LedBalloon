@@ -12,22 +12,26 @@ namespace LedBalloon.Core.Tests;
 /// these are the readings that were checked by hand against the source rather than extracted.
 /// </para>
 /// </summary>
-public class PortedEffectUseTests
+public class EffectUsesTests
 {
     [Fact]
-    public void Every_ported_effect_has_been_read()
+    public void Every_effect_that_has_been_read_is_one_the_engine_offers()
     {
-        // The audit covers the library. If a new effect is ported and not read, this says so rather
-        // than letting it quietly fall back to the firmware's guess.
-        Assert.Equal(EffectLibrary.PortedCount, PortedEffectUse.Count);
+        // This used to assert that the table covered every ported effect, one entry per port. The
+        // ports are gone, so the invariant turns around: the table is a reading of WLED's source and
+        // what it must not contain is an effect that does not exist. A name that has drifted - and
+        // WLED does rename them - would otherwise sit here describing nothing.
+        string[] unknown = [.. EffectUses.Names.Where(name => EffectLibrary.Find(name) is null)];
+
+        Assert.Empty(unknown);
     }
 
     [Fact]
     public void An_effect_nobody_has_ported_is_not_claimed()
     {
-        Assert.Null(PortedEffectUse.For("Akemi"));
-        Assert.Null(PortedEffectUse.For(""));
-        Assert.Null(PortedEffectUse.For(null));
+        Assert.Null(EffectUses.For("Akemi"));
+        Assert.Null(EffectUses.For(""));
+        Assert.Null(EffectUses.For(null));
     }
 
     [Fact]
@@ -36,7 +40,7 @@ public class PortedEffectUseTests
         // The whole reason for this table. RgbColor background = segment.Colors[1], and the
         // twinkles come from segment.ColorFromPalette - so slot 0 is only ever reached when the
         // palette is Default and that call falls back to it.
-        EffectUse use = PortedEffectUse.For("Twinklecat")!;
+        EffectUse use = EffectUses.For("Twinklecat")!;
 
         Assert.Equal([1], use.Direct);
         Assert.True(use.UsesPalette);
@@ -48,7 +52,7 @@ public class PortedEffectUseTests
     [Fact]
     public void Solid_reads_one_color_and_no_palette()
     {
-        EffectUse use = PortedEffectUse.For("Solid")!;
+        EffectUse use = EffectUses.For("Solid")!;
 
         Assert.Equal([0], use.Direct);
         Assert.False(use.UsesPalette);
@@ -60,7 +64,7 @@ public class PortedEffectUseTests
     {
         // colorSlot: segment.Random8(0, 3) - one of the three, decided per wave. Computed rather
         // than named, so this one was read by hand.
-        EffectUse use = PortedEffectUse.For("Aurora")!;
+        EffectUse use = EffectUses.For("Aurora")!;
 
         Assert.Empty(use.Direct);
         Assert.Equal([0, 1, 2], use.SlotsFor(paletteId: 0));
@@ -70,7 +74,7 @@ public class PortedEffectUseTests
     [Fact]
     public void Colortwinkles_reads_no_color_of_its_own()
     {
-        EffectUse use = PortedEffectUse.For("Colortwinkles")!;
+        EffectUse use = EffectUses.For("Colortwinkles")!;
 
         Assert.Empty(use.Direct);
         Assert.True(use.UsesPalette);
@@ -90,14 +94,14 @@ public class PortedEffectUseTests
     [Fact]
     public void Scan_and_scan_dual_do_not_read_the_same_slots()
     {
-        EffectUse scan = PortedEffectUse.For("Scan")!;
+        EffectUse scan = EffectUses.For("Scan")!;
 
         Assert.Equal([1], scan.Direct);
         Assert.Equal([0, 1], scan.SlotsFor(paletteId: 0));
 
         // Its twin takes the branch, so the third slot is live there - and only while the palette is
         // Default, because on a real one that call comes back as the gradient.
-        EffectUse dual = PortedEffectUse.For("Scan Dual")!;
+        EffectUse dual = EffectUses.For("Scan Dual")!;
 
         Assert.Contains(2, dual.SlotsFor(paletteId: 0));
         Assert.DoesNotContain(2, dual.SlotsFor(paletteId: 11));
@@ -115,7 +119,7 @@ public class PortedEffectUseTests
     [Fact]
     public void Solid_reads_neither_slider()
     {
-        EffectUse use = PortedEffectUse.For("Solid")!;
+        EffectUse use = EffectUses.For("Solid")!;
 
         Assert.False(use.UsesSpeed);
         Assert.False(use.UsesIntensity);
@@ -127,11 +131,11 @@ public class PortedEffectUseTests
         // Both corroborated by the firmware, which declares exactly the same thing: Breathe is
         // "!;!,!;!;01" - a speed and no intensity - and Fireworks is ",Frequency;!,!;!;12", an
         // intensity named Frequency and no speed.
-        Assert.True(PortedEffectUse.For("Breathe")!.UsesSpeed);
-        Assert.False(PortedEffectUse.For("Breathe")!.UsesIntensity);
+        Assert.True(EffectUses.For("Breathe")!.UsesSpeed);
+        Assert.False(EffectUses.For("Breathe")!.UsesIntensity);
 
-        Assert.False(PortedEffectUse.For("Fireworks")!.UsesSpeed);
-        Assert.True(PortedEffectUse.For("Fireworks")!.UsesIntensity);
+        Assert.False(EffectUses.For("Fireworks")!.UsesSpeed);
+        Assert.True(EffectUses.For("Fireworks")!.UsesIntensity);
     }
 
     [Fact]
@@ -140,8 +144,8 @@ public class PortedEffectUseTests
         // Wipe Random's fxdata is "!;;!" - no intensity slider - but the wipe it shares with Sweep
         // divides its remainder by exactly that, for every one of its callers. fxdata is wrong in
         // both directions, and this is the direction that costs somebody a control that works.
-        Assert.True(PortedEffectUse.For("Wipe Random")!.UsesIntensity);
-        Assert.True(PortedEffectUse.For("Sweep Random")!.UsesIntensity);
+        Assert.True(EffectUses.For("Wipe Random")!.UsesIntensity);
+        Assert.True(EffectUses.For("Sweep Random")!.UsesIntensity);
     }
 
     [Fact]
@@ -156,7 +160,7 @@ public class PortedEffectUseTests
     }
 
     private static int Counted(Func<EffectUse, bool> match) =>
-        EffectLibrary.All.Count(e => PortedEffectUse.For(e.Name) is { } use && match(use));
+        EffectLibrary.All.Count(e => EffectUses.For(e.Name) is { } use && match(use));
 
     /// <summary>
     /// The hand-read entry that was read wrong, and how it showed.
@@ -172,7 +176,7 @@ public class PortedEffectUseTests
     {
         foreach (string name in new[] { "Meteor", "Meteor Smooth" })
         {
-            EffectUse use = PortedEffectUse.For(name)!;
+            EffectUse use = EffectUses.For(name)!;
 
             Assert.Empty(use.Direct);
             Assert.Empty(use.SlotsFor(paletteId: 18));
@@ -186,7 +190,7 @@ public class PortedEffectUseTests
     {
         // Two Dots draws from its slots and nothing else, so the palette picker has no business
         // being offered for it.
-        EffectUse use = PortedEffectUse.For("Two Dots")!;
+        EffectUse use = EffectUses.For("Two Dots")!;
 
         Assert.False(use.UsesPalette);
         Assert.NotEmpty(use.Direct);
@@ -199,7 +203,7 @@ public class PortedEffectUseTests
         // is not. Every effect that reads a slot outright must keep reading it on a real palette.
         foreach (string name in new[] { "Twinklecat", "Solid", "Scan", "Two Dots" })
         {
-            EffectUse use = PortedEffectUse.For(name)!;
+            EffectUse use = EffectUses.For(name)!;
 
             Assert.All(use.Direct, slot => Assert.Contains(slot, use.SlotsFor(paletteId: 11)));
         }

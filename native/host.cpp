@@ -22,6 +22,7 @@ bool gammaCorrectCol = true;
 uint8_t randomPaletteChangeTime = 5;
 bool useHarmonicRandomPalette = true;
 bool useGlobalLedBuffer = false;
+bool useParallelI2S = false;
 bool stateChanged = false;
 bool realtimeRespectLedMaps = false;
 byte realtimeMode = 0;
@@ -143,6 +144,9 @@ void BusManager::setBrightness(uint8_t b) { g_brightness = b; }
 void BusManager::setSegmentCCT(int16_t, bool) {}
 void BusManager::show() {}
 bool BusManager::canAllShow() { return true; }
+// Several strips from one I2S peripheral. finalizeInit's ESP32 branch only reaches this with more
+// than one digital bus, and there is one, so it is never called - but it has to link.
+void BusManager::useParallelOutput() {}
 // One bus, reporting RGB over the whole run. Segment::refreshLightCapabilities walks the busses to
 // decide whether a segment can show colour at all, and with no bus at all it decides it cannot -
 // which makes color_from_palette hand back the colour slot instead of the palette.

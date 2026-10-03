@@ -276,11 +276,12 @@ contributions from.
 drives and whose effects it reproduces. None of this exists without it.
 
 [**FastLED**](https://github.com/FastLED/FastLED), whose fixed-point integer maths WLED's effects
-are built out of — a sine that is deliberately a little wrong, because reproducing the arithmetic
-is the cheap half of reproducing the effect.
+are built out of — a sine that is deliberately a little wrong, and which this no longer reproduces
+by hand: both are compiled from their own source under [`native/`](native/README.md).
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). The house rule is that measurement beats reading: twice the
 table of which controls each effect reads was built by reading code, and the second time it was
-wrong for 71 of 118 effects.
+wrong for 71 of 118 effects. Those 118 hand-written effects are gone now — the app compiles
+WLED's own source and calls it, which is less code and exact rather than close.

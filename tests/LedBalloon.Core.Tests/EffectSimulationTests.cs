@@ -108,7 +108,7 @@ public class ChunchunTests
     [Fact]
     public void The_flock_is_two_birds_plus_an_eighth_of_the_run()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
         EffectSegment segment = Run();
 
         effect.Render(segment, 1000);
@@ -120,7 +120,7 @@ public class ChunchunTests
     [Fact]
     public void A_shorter_run_carries_a_smaller_flock()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
 
         EffectSegment porch = Run();
         EffectSegment stairs = Run(length: 48);
@@ -136,7 +136,7 @@ public class ChunchunTests
     [Fact]
     public void The_sweep_repeats_on_the_period_the_speed_asks_for()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
 
         // counter = now * (6 + speed>>4); at speed 172 that is 16 a millisecond, and the sine
         // wraps at 65536, so the flock is back where it started after 65536/16 = 4096 ms.
@@ -152,7 +152,7 @@ public class ChunchunTests
     [Fact]
     public void A_slower_setting_really_is_slower()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
 
         // speed 16 gives 6 + 1 = 7 a millisecond: a 9362 ms sweep, not 4096.
         EffectSegment slow = Run(speed: 16);
@@ -167,7 +167,7 @@ public class ChunchunTests
     [Fact]
     public void Without_a_palette_the_whole_flock_is_the_primary_color()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
         EffectSegment segment = Run();
 
         effect.Render(segment, 1000);
@@ -181,7 +181,7 @@ public class ChunchunTests
     [Fact]
     public void Each_frame_leaves_a_trail_that_fades_by_half()
     {
-        var effect = new ChunchunEffect();
+        var effect = EffectLibrary.Find("Chunchun")!;
         EffectSegment segment = Run();
 
         effect.Render(segment, 1000);
@@ -201,7 +201,7 @@ public class ChunchunTests
     public void The_trail_dies_out_when_the_flock_stops_being_drawn()
     {
         EffectSegment segment = Run();
-        new ChunchunEffect().Render(segment, 1000);
+        EffectLibrary.Find("Chunchun")!.Render(segment, 1000);
 
         // fade_out(254) halves the distance to the secondary color each frame, so a trail is gone
         // in single-figure frames rather than lingering.
@@ -229,7 +229,7 @@ public class EffectSimulationHarnessTests
             Colors = [new RgbColor(255, 0, 0), RgbColor.Black, RgbColor.Black],
         };
 
-        return new EffectSimulation(new ChunchunEffect(), segment, frameMs);
+        return new EffectSimulation(EffectLibrary.Find("Chunchun")!, segment, frameMs);
     }
 
     [Fact]

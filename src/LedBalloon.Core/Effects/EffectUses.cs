@@ -64,7 +64,7 @@ public sealed record EffectUse(
 /// ported and for a fork's extra ones.
 /// </para>
 /// </remarks>
-public static class PortedEffectUse
+public static class EffectUses
 {
     private static readonly Dictionary<string, EffectUse> Known = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -188,10 +188,10 @@ public static class PortedEffectUse
         ["Wipe Random"] = new([], [], true, true, true),
     };
 
-    /// <summary>What this effect reads, or null when no port of it has been read.</summary>
+    /// <summary>What this effect reads, or null when it has not been read.</summary>
     public static EffectUse? For(string? effectName) =>
         effectName is { Length: > 0 } name && Known.TryGetValue(name, out EffectUse? use) ? use : null;
 
-    /// <summary>How many effects have been measured, for the test that guards the count.</summary>
-    public static int Count => Known.Count;
+    /// <summary>The effects that have been read, for the test that checks they all still exist.</summary>
+    public static IReadOnlyCollection<string> Names => Known.Keys;
 }

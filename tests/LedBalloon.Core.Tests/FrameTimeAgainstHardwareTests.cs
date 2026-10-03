@@ -27,7 +27,7 @@ public class FrameTimeAgainstHardwareTests(ITestOutputHelper output)
     {
         List<bool> on = [];
 
-        Strip.Sample(new BlinkEffect(), Strip.Run(speed), milliseconds, (frame, _) =>
+        Strip.Sample(EffectLibrary.Find("Blink")!, Strip.Run(speed), milliseconds, (frame, _) =>
             on.Add(frame[0].R > frame[0].B));
 
         int flips = on.Zip(on.Skip(1)).Count(p => p.First != p.Second);

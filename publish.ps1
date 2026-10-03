@@ -10,10 +10,10 @@
   win-x64 (default), win-arm64, linux-x64, osx-x64 or osx-arm64.
   Publishing for a runtime is cross-platform: you can build the Linux one from Windows.
 
-  WLED's effect engine is not. native/wledfx.dll is built for win-x64 only, so that is the one
-  runtime whose build draws effects with the firmware's own code; the others fall back to the
-  ported effects in src/LedBalloon.Core/Effects. Run `pwsh native/build.ps1` before publishing, or
-  the win-x64 build falls back too - the app says which it is using.
+  WLED's effect engine is not. native/wledfx.dll is built for win-x64 only, and there is nothing
+  behind it: a build for any other runtime draws no effects at all, and neither does a win-x64 build
+  made without running `pwsh native/build.ps1` first. EffectLibrary.EngineUnavailable says so when
+  it happens.
 
   IncludeAllContentForSelfExtract is what unpacks the engine. It rides along as content rather than
   as a runtime pack's native library, so IncludeNativeLibrariesForSelfExtract alone leaves it

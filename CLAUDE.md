@@ -55,13 +55,32 @@ Two rules that are not negotiable:
   do it yourself.
 - **South only.** North is not to be changed, configured or lit.
 
-## Porting effects
+## Checking effects against the house
 
-Each ported effect has a test in `tests/LedBalloon.Core.Tests/*AgainstHardwareTests.cs` carrying the
-numbers measured on the strip alongside the numbers the port produces. The measured figures are
-evidence and belong in the test, not in a commit message that scrolls away.
+Effects are not written here any more. `native/` compiles WLED's own source and the app calls it -
+see `native/README.md`. There used to be 118 hand-written ports with a test each; they are gone.
+
+`native/against-house-all.py` captures every effect off south twice and compares both runs against
+the engine. Measured figures are evidence and belong in a test or in that README, not in a commit
+message that scrolls away.
 
 A few things learned the hard way, all of which have cost a rewrite at least once:
+
+- **Ask whether the house agrees with itself before blaming the engine.** Many effects accumulate
+  state once per rendered frame from a beat function of the controller's absolute clock, which has
+  been running for days - Colorwaves adds `duration * beatsin88_t(400,5,9)` to its hue every frame.
+  Two captures of such an effect minutes apart differ, so nothing can match it from a single
+  capture, the controller included. Capturing twice is cheap, and it turns "the engine is wrong"
+  into "nothing could have been right".
+- **A batch sweep is not N individual captures.** Colorwaves measures 1.33 against the engine
+  captured on its own and 30.06 captured inside a 187-effect sweep. Sweeps of one and three effects
+  are fine. Not the controller slowing down, not the previous effect's state, not the clock origin -
+  all three ruled out by measurement, cause still unknown. Re-capture anything that fails.
+- **When the engine looks wrong, suspect `native/shim/` first.** Every bug found in it so far has
+  been there, rather than in the vendored source or in the architecture: `map` written as a macro so
+  that an unsigned subtraction underflowed, `pgm_read_dword` truncating a 64-bit pointer,
+  `fastled_config.h` never included so three behaviour switches were off, and no `ARDUINO_ARCH_ESP32`
+  so `MIN_FRAME_DELAY` fell through to the 8266's 8 instead of the ESP32's 2.
 
 - **Brightness is usually the wrong signal.** An effect that blends one colour into another is
   brightest at *both* ends of its swing, so `max(r, g, b)` reports twice as many bands as there are
@@ -82,9 +101,10 @@ A few things learned the hard way, all of which have cost a rewrite at least onc
   capture against a single seed can read as a fourteen percent error in either direction. Worse, its
   first capture had no saturated pixels at all and nearly went into a test as "never saturates"; the
   second had 0.62%.
-- **Never write a test around something being absent.** Twice now a test here has used an unported
-  effect as an example and broken the day it was ported, and the second time the comment on it
-  already said so.
+- **Never write a test around something being absent.** Twice a test here used an unported effect
+  as an example and broke the day it was ported, and the second time the comment on it already said
+  so. The engine offers every effect that is not matrix-only, so there is nothing absent left to
+  lean on.
 - **`aux0` and `aux1` are sixteen bits wide, `step` is thirty-two.** The width is behaviour: Pacifica
   adds tens of thousands to its counters every frame and needs them to wrap at 65536 to stay
   periodic.

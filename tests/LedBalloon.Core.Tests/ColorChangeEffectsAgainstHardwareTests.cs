@@ -59,7 +59,7 @@ public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Fade_washes_the_whole_run_on_a_triangle()
     {
-        Wash measured = Measure(new FadeEffect(), 128, 14_000);
+        Wash measured = Measure(EffectLibrary.Find("Fade")!, 128, 14_000);
 
         output.WriteLine($"simulated: brightness {measured.Brightness:F2}, spread {measured.Deviation:F2}, " +
             $"{measured.MostColors} color at most, changing on {measured.Changes} of {measured.Frames} frames");
@@ -122,7 +122,7 @@ public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Blink_Rainbow_takes_a_new_color_off_the_wheel_each_frame()
     {
-        Wash measured = Measure(new BlinkRainbowEffect(), 128, 14_000);
+        Wash measured = Measure(EffectLibrary.Find("Blink Rainbow")!, 128, 14_000);
 
         output.WriteLine($"simulated: brightness {measured.Brightness:F2}, " +
             $"{measured.MostColors} color at most, a change every " +
@@ -141,7 +141,7 @@ public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Random_Colors_crossfades_the_whole_run()
     {
-        Wash measured = Measure(new RandomColorEffect(), 128, 16_000);
+        Wash measured = Measure(EffectLibrary.Find("Random Colors")!, 128, 16_000);
 
         output.WriteLine($"simulated: brightness {measured.Brightness:F2}, " +
             $"{measured.MostColors} color at most, a change every " +
@@ -165,8 +165,8 @@ public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Dynamic_cuts_to_its_colors_where_Dynamic_Smooth_creeps()
     {
-        Wash cut = Measure(new DynamicEffect(), 128, 14_000);
-        Wash creep = Measure(new DynamicSmoothEffect(), 128, 14_000);
+        Wash cut = Measure(EffectLibrary.Find("Dynamic")!, 128, 14_000);
+        Wash creep = Measure(EffectLibrary.Find("Dynamic Smooth")!, 128, 14_000);
 
         output.WriteLine($"simulated cut   : {cut.Colors:F1} colors, a change every " +
             $"{14_000.0 / cut.Changes:F0} ms, brightness {cut.Brightness:F1}");
@@ -197,7 +197,7 @@ public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Colorful_repeats_four_fixed_colors_and_steps_them_round()
     {
-        Wash measured = Measure(new ColorfulEffect(), 128, 16_000);
+        Wash measured = Measure(EffectLibrary.Find("Colorful")!, 128, 16_000);
 
         output.WriteLine($"simulated: {measured.MostColors} colors, spread {measured.Deviation:F2}, " +
             $"brightness {measured.Brightness:F2}, a step every {16_000.0 / measured.Changes:F0} ms");
