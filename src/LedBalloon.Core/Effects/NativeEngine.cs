@@ -14,8 +14,9 @@ namespace LedBalloon.Core.Effects;
 /// which lives in <see cref="EffectSegment.Scratch{T}"/> as bytes.
 /// </para>
 /// <para>
-/// Windows only, for now. The engine is a native DLL built by native/build.ps1; <see cref="IsReady"/>
-/// is false anywhere it cannot be loaded, and callers fall back to the ported effects.
+/// Windows only, for now. The engine is a native DLL built by native/build.ps1, and there is
+/// nothing behind it: <see cref="IsReady"/> is false anywhere it cannot be loaded, and then nothing
+/// can be drawn. <see cref="EffectLibrary.EngineUnavailable"/> is how that gets said out loud.
 /// </para>
 /// </summary>
 public static class NativeEngine

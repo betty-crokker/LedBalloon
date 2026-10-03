@@ -317,7 +317,7 @@ public sealed class StripPreview : Control
             return new RgbColor((byte)(r / count), (byte)(g / count), (byte)(b / count));
         }
 
-        // An effect nobody has ported. Its colors are known and its movement is not, so the palette
+        // An effect the engine does not have. Its colors are known and its movement is not, so the palette
         // is laid across the run and left there.
         //
         // It used to slide, at the pace the speed slider asked for. That was a mistake, and an

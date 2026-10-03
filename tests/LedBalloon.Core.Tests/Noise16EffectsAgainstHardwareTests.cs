@@ -105,10 +105,10 @@ public class Noise16EffectsAgainstHardwareTests(ITestOutputHelper output)
     [Fact]
     public void Only_Noise_4_walks_the_palette_without_a_sine()
     {
-        Field one = Measure(new Noise16_1Effect());
-        Field two = Measure(new Noise16_2Effect());
-        Field three = Measure(new Noise16_3Effect());
-        Field four = Measure(new Noise16_4Effect());
+        Field one = Measure(EffectLibrary.Find("Noise 1")!);
+        Field two = Measure(EffectLibrary.Find("Noise 2")!);
+        Field three = Measure(EffectLibrary.Find("Noise 3")!);
+        Field four = Measure(EffectLibrary.Find("Noise 4")!);
 
         output.WriteLine($"simulated bands: {one.Bands:F1}, {two.Bands:F1}, {three.Bands:F1}, {four.Bands:F1}");
         output.WriteLine("measured bands : 11.1, 23.2, 22.2, 93.6");
@@ -131,8 +131,8 @@ public class Noise16EffectsAgainstHardwareTests(ITestOutputHelper output)
     public void Noise_4_is_the_only_one_that_stands_still_at_speed_zero()
     {
         foreach (IWledEffect effect in (IWledEffect[])[
-            new Noise16_1Effect(), new Noise16_2Effect(),
-            new Noise16_3Effect(), new Noise16_4Effect()])
+            EffectLibrary.Find("Noise 1")!, EffectLibrary.Find("Noise 2")!,
+            EffectLibrary.Find("Noise 3")!, EffectLibrary.Find("Noise 4")!])
         {
             EffectSegment segment = Run();
             segment.Speed = 0;
@@ -144,7 +144,7 @@ public class Noise16EffectsAgainstHardwareTests(ITestOutputHelper output)
 
             output.WriteLine($"{effect.Name} at speed zero: {(still ? "still" : "moving")}");
 
-            Assert.Equal(effect is Noise16_4Effect, still);
+            Assert.Equal(effect.Name == "Noise 4", still);
         }
     }
 }

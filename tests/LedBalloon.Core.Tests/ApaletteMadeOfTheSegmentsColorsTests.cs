@@ -95,7 +95,7 @@ public class ApaletteMadeOfTheSegmentsColorsTests
         // The pairing the bug lived in. Colortwinkles asks the palette for everything, so on a real
         // palette no color box belongs to it - and on this palette two do, because the palette is
         // made of them.
-        EffectUse twinkles = PortedEffectUse.For("Colortwinkles")!;
+        EffectUse twinkles = EffectUses.For("Colortwinkles")!;
 
         Assert.Empty(twinkles.SlotsFor(paletteId: 3));
         Assert.Equal([0, 1], Recipe("c1", "c1", "c2", "c2").ColorSlots);

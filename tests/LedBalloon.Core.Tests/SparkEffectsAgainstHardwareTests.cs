@@ -121,7 +121,7 @@ public class SparkEffectsAgainstHardwareTests(ITestOutputHelper output)
         int changes = 0;
         RgbColor[]? previous = null;
 
-        Strip.Sample(new OscillateEffect(), Strip.Run(), 16_000, (frame, _) =>
+        Strip.Sample(EffectLibrary.Find("Oscillate")!, Strip.Run(), 16_000, (frame, _) =>
         {
             lit.Add(frame.Count(p => p != RgbColor.Black));
             colors.Add(frame.Where(p => p != RgbColor.Black).Distinct().Count());
@@ -163,7 +163,7 @@ public class SparkEffectsAgainstHardwareTests(ITestOutputHelper output)
         int changes = 0;
         RgbColor[]? previous = null;
 
-        Strip.Sample(new TrafficLightEffect(), Strip.Run(255), 16_000, (frame, _) =>
+        Strip.Sample(EffectLibrary.Find("Traffic Light")!, Strip.Run(255), 16_000, (frame, _) =>
         {
             red.Add((double)frame.Count(p => Strip.Dominant(p) == 0) / frame.Length);
             green.Add((double)frame.Count(p => Strip.Dominant(p) == 1) / frame.Length);
@@ -200,7 +200,7 @@ public class SparkEffectsAgainstHardwareTests(ITestOutputHelper output)
     {
         List<double> filled = [];
 
-        Strip.Sample(new PercentEffect(), Strip.Run(), 14_000, (frame, _) =>
+        Strip.Sample(EffectLibrary.Find("Percent")!, Strip.Run(), 14_000, (frame, _) =>
             filled.Add((double)frame.Count(p => Strip.Dominant(p) == 0) / frame.Length));
 
         output.WriteLine($"simulated: {filled.Average():F3} filled " +

@@ -3688,16 +3688,16 @@ public sealed partial class MainViewModel : ViewModelBase
             : EffectMetadata.Unknown;
 
     /// <summary>
-    /// What the ported effect reads, when there is a port of it to read.
+    /// What the effect reads, when its controls have been read and recorded.
     /// </summary>
     /// <remarks>
     /// Preferred over the firmware's own metadata because that is hand-maintained and over-declares:
     /// it says Twinklecat reads two color slots, and the code reads one - the background - taking
     /// the twinkles from the palette. A box that does nothing is worse than no box.
     /// </remarks>
-    private EffectUse? PortedUse =>
+    private EffectUse? KnownUse =>
         SegmentEffectChoice is { } chosen && SegmentController is { } device
-            ? PortedEffectUse.For(device.Device.EffectName(chosen.Id))
+            ? EffectUses.For(device.Device.EffectName(chosen.Id))
             : null;
 
     /// <summary>The palette the chosen segment is on, which decides whether a slot is read at all.</summary>
@@ -3720,8 +3720,8 @@ public sealed partial class MainViewModel : ViewModelBase
             : null;
 
     /// <summary>True when the chosen effect draws from the palette at all.</summary>
-    public bool SegmentUsesPalette => PortedUse is { } ported
-        ? ported.UsesPalette
+    public bool SegmentUsesPalette => KnownUse is { } known
+        ? known.UsesPalette
         : !ChosenEffect.Declared || ChosenEffect.UsesPalette;
 
     /// <summary>
@@ -3750,13 +3750,13 @@ public sealed partial class MainViewModel : ViewModelBase
     /// that its four lines of code never look at. The label still comes from fxdata, because naming
     /// a slider is the one thing the firmware does better than the code does.
     /// </remarks>
-    public bool SegmentUsesSpeed => PortedUse is { } ported
-        ? ported.UsesSpeed
+    public bool SegmentUsesSpeed => KnownUse is { } known
+        ? known.UsesSpeed
         : ChosenEffect.UsesSpeed;
 
     /// <inheritdoc cref="SegmentUsesSpeed"/>
-    public bool SegmentUsesIntensity => PortedUse is { } ported
-        ? ported.UsesIntensity
+    public bool SegmentUsesIntensity => KnownUse is { } known
+        ? known.UsesIntensity
         : ChosenEffect.UsesIntensity;
 
     partial void OnSegmentSpeedChanged(double value) => SendSlider(seg => seg.Speed = Clamped(value));
@@ -4198,7 +4198,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <remarks>
     /// These five are recipes rather than gradients - "* Colors 1&amp;2" is c1, c1, c2, c2 - and the
     /// shorthand only reads as an instruction if you already know that. Said plainly they are the
-    /// obvious way to put your own colors on one of the 22 ported effects that read no color slot of
+    /// obvious way to put your own colors on one of the 22 effects that read no color slot of
     /// their own, which until now meant choosing something called "* Color 1" and hoping.
     /// <para>
     /// Matched on the name the controller reports rather than on the index, because the indices are
@@ -4350,9 +4350,9 @@ public sealed partial class MainViewModel : ViewModelBase
         int? palette,
         IReadOnlyList<int> whenNothingIsKnown)
     {
-        if (PortedEffectUse.For(effectName) is { } ported)
+        if (EffectUses.For(effectName) is { } known)
         {
-            return ported.SlotsFor(palette);
+            return known.SlotsFor(palette);
         }
 
         return declared.Declared
@@ -4405,14 +4405,15 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Withheld from the stand-in for an effect that reads no palette. The stand-in has nothing to
     /// draw but the palette, and drawing it for Freqwave - which builds a hue out of whatever
     /// frequency it is hearing and reads neither the palette nor the color slots - put the chosen
-    /// gradient on screen directly under a line saying the effect does not use one. A ported effect
-    /// is given it either way, since one that ignores the palette ignores it in the drawing too.
+    /// gradient on screen directly under a line saying the effect does not use one. An effect the
+    /// engine knows is given it either way, since one that ignores the palette ignores it in the
+    /// drawing too.
     /// </remarks>
     public WledPalette? PreviewPalette
     {
         get
         {
-            if (PortedUse is null && !SegmentUsesPalette)
+            if (KnownUse is null && !SegmentUsesPalette)
             {
                 return null;
             }
@@ -4432,7 +4433,8 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Said only when the strip is not the effect itself, which is the case for 69 of the 187.
     /// </summary>
     /// <remarks>
-    /// An unported effect still has known colors and unknown movement, so the strip slides its
+    /// An effect the engine does not have - a fork's own, or a usermod's - still has known colors
+    /// and unknown movement, so the strip slides its
     /// palette along - a family resemblance to most WLED effects and an impersonation of none of
     /// them. Worth one line, because a preview that is lying is worse than no preview, and the
     /// difference is not visible from the picture.
@@ -4465,7 +4467,7 @@ public sealed partial class MainViewModel : ViewModelBase
                       "controller can hear rather than on anything here.";
             }
 
-            if (PortedUse is not null)
+            if (KnownUse is not null)
             {
                 return string.Empty;
             }

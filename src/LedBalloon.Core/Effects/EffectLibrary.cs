@@ -3,7 +3,7 @@ using LedBalloon.Core.Models;
 namespace LedBalloon.Core.Effects;
 
 /// <summary>
-/// The effects LedBalloon can draw for itself, looked up the way a controller names them.
+/// The effects LedBalloon can draw, looked up the way a controller names them.
 /// <para>
 /// By name, never by number. WLED's effect ids are stable but not fixed: id 48 was Police through
 /// 0.13 and is Rolling Balls now, and id 114 changed from Candy Cane to a 2D effect in 0.15. A
@@ -17,180 +17,37 @@ namespace LedBalloon.Core.Effects;
 /// source describes code that was never in it.
 /// </para>
 /// <para>
-/// <b>Provenance.</b> Everything in this folder reproduces the behaviour of WLED's own effects,
-/// and how closely any one of them follows WLED's <c>FX.cpp</c> is not recorded in this project's
-/// history. They are treated as derivative works of WLED, which is why this project is GPL-3.0
-/// rather than MIT. See the NOTICE file at the root.
+/// <b>Provenance.</b> These are WLED's own effects, compiled from WLED's own source - see
+/// native/README.md. This project is GPL-3.0 because of that; see the NOTICE file at the root.
 /// </para>
 /// </summary>
 public static class EffectLibrary
 {
-    /// <summary>How many effects are drawn here, for the audit that has to cover all of them.</summary>
-    public static int PortedCount => Ported.Length;
-
-    private static readonly IWledEffect[] Ported =
-    [
-        new SolidEffect(),
-        new BlinkEffect(),
-        new BreatheEffect(),
-        new BpmEffect(),
-        new FlowEffect(),
-        new ChunchunEffect(),
-        new ColorwavesEffect(),
-        new StaticPatternEffect(),
-        new TriStaticPatternEffect(),
-        new LakeEffect(),
-        new HeartbeatEffect(),
-        new ColorloopEffect(),
-        new RainbowEffect(),
-        new StrobeMegaEffect(),
-        new TriFadeEffect(),
-        new Pride2015Effect(),
-        new TriWipeEffect(),
-        new SparkleEffect(),
-        new FlashSparkleEffect(),
-        new HyperSparkleEffect(),
-        new TwinkleEffect(),
-        new FireFlickerEffect(),
-        new WipeEffect(),
-        new SweepEffect(),
-        new WipeRandomEffect(),
-        new SweepRandomEffect(),
-        new ScanEffect(),
-        new DualScanEffect(),
-        new RunningLightsEffect(),
-        new RunningDualEffect(),
-        new SawEffect(),
-        new ChaseColorEffect(),
-        new ChaseRandomEffect(),
-        new ChaseRainbowEffect(),
-        new RainbowRunnerEffect(),
-        new DissolveEffect(),
-        new DissolveRandomEffect(),
-        new TricolorChaseEffect(),
-        new GradientEffect(),
-        new LoadingEffect(),
-        new ScannerEffect(),
-        new DualScannerEffect(),
-        new LighthouseEffect(),
-        new SpotsEffect(),
-        new SpotsFadeEffect(),
-        new TwoDotsEffect(),
-        new TheaterChaseEffect(),
-        new TheaterRainbowEffect(),
-        new RunningColorEffect(),
-        new RunningRandomEffect(),
-        new AndroidEffect(),
-        new IcuEffect(),
-        new ChaseFlashEffect(),
-        new ChaseFlashRandomEffect(),
-        new SinelonEffect(),
-        new SinelonDualEffect(),
-        new SinelonRainbowEffect(),
-        new JuggleEffect(),
-        new CandleEffect(),
-        new CandleMultiEffect(),
-        new PhasedEffect(),
-        new GlitterEffect(),
-        new SolidGlitterEffect(),
-        new OscillateEffect(),
-        new FireworksEffect(),
-        new RainEffect(),
-        new TrafficLightEffect(),
-        new PercentEffect(),
-        new PhasedNoiseEffect(),
-        new FillNoiseEffect(),
-        new Fire2012Effect(),
-        new Noise16_1Effect(),
-        new Noise16_2Effect(),
-        new Noise16_3Effect(),
-        new Noise16_4Effect(),
-        new BlinkRainbowEffect(),
-        new StrobeEffect(),
-        new StrobeRainbowEffect(),
-        new FadeEffect(),
-        new RandomColorEffect(),
-        new DynamicEffect(),
-        new DynamicSmoothEffect(),
-        new ColorfulEffect(),
-        new RippleRainbowEffect(),
-        new MultiCometEffect(),
-        new MeteorEffect(),
-        new MeteorSmoothEffect(),
-        new PerlinMoveEffect(),
-        new WavesinsEffect(),
-        new SineEffect(),
-        new FlowStripeEffect(),
-        new BouncingBallsEffect(),
-        new RailwayEffect(),
-        new WashingMachineEffect(),
-        new BlendsEffect(),
-        new TwinkleFoxEffect(),
-        new TwinkleUpEffect(),
-        new RandomChaseEffect(),
-        new ColorTwinklesEffect(),
-        new TwinkleCatEffect(),
-        new FairyEffect(),
-        new FairyTwinkleEffect(),
-        new PopcornEffect(),
-        new DripEffect(),
-        new LightningEffect(),
-        new HalloweenEyesEffect(),
-        new PlasmaEffect(),
-        new SunriseEffect(),
-        new DancingShadowsEffect(),
-        new RollingBallsEffect(),
-        new TetrixEffect(),
-        new AuroraEffect(),
-        new Fireworks1DEffect(),
-        new StarburstEffect(),
-        new PacificaEffect(),
-        new NoisePalEffect(),
-        new TvSimulatorEffect(),
-        new RippleEffect(),
-    ];
-
     /// <summary>
-    /// WLED's own effect engine, when it is available: see <see cref="NativeEngine"/>. It is
-    /// preferred over everything in this folder, because it is the firmware's code rather than a
-    /// reading of it - all 187 effects instead of this folder's handful, and measured against the
-    /// house at nought out of 255 on most of them.
+    /// WLED's own effect engine: see <see cref="NativeEngine"/> and native/README.md. There is
+    /// nothing else now - this used to hold a hand-written port of each effect, and those are gone,
+    /// because the firmware's own code is both more of them and more right.
     /// </summary>
     private static readonly IWledEffect[] FromEngine = NativeEngine.All().ToArray();
 
-    /// <summary>
-    /// What a name resolves to: the engine first, then this folder's ports for anything the engine
-    /// does not offer. The ports remain the fallback for a build with no engine beside it, which is
-    /// every platform the engine has not been built for.
-    /// </summary>
-    private static readonly Dictionary<string, IWledEffect> ByName = Build();
+    private static readonly Dictionary<string, IWledEffect> ByName =
+        FromEngine.ToDictionary(effect => effect.Name, StringComparer.OrdinalIgnoreCase);
 
-    private static Dictionary<string, IWledEffect> Build()
-    {
-        var byName = new Dictionary<string, IWledEffect>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (IWledEffect effect in Ported)
-        {
-            byName[effect.Name] = effect;
-        }
-
-        foreach (IWledEffect effect in FromEngine)
-        {
-            byName[effect.Name] = effect;
-        }
-
-        return byName;
-    }
-
-    /// <summary>True when the effects come from WLED's own compiled engine.</summary>
+    /// <summary>True when the engine loaded. False means nothing here can draw anything.</summary>
     public static bool UsingEngine => FromEngine.Length > 0;
 
-    /// <summary>Why the engine is not in use, when it is not. Null when it is.</summary>
+    /// <summary>
+    /// Why there are no effects, when there are none. Null when the engine loaded.
+    /// <para>
+    /// Worth surfacing rather than swallowing: there is no longer a fallback behind this, so a build
+    /// without the engine beside it draws nothing at all. <c>pwsh native/build.ps1</c> is the fix,
+    /// and <c>publish.ps1</c> needs it to have been run.
+    /// </para>
+    /// </summary>
     public static string? EngineUnavailable => UsingEngine ? null : NativeEngine.Unavailable;
 
-    /// <summary>Every effect that can be drawn exactly rather than approximated.</summary>
-    public static IReadOnlyList<IWledEffect> All =>
-        FromEngine.Length > 0 ? ByName.Values.ToArray() : Ported;
+    /// <summary>Every effect that can be drawn.</summary>
+    public static IReadOnlyList<IWledEffect> All => FromEngine;
 
     /// <summary>The effect a controller calls <paramref name="name"/>, if it is one we can draw.</summary>
     public static IWledEffect? Find(string? name) =>
@@ -206,7 +63,7 @@ public static class EffectLibrary
             : null;
 
     /// <summary>
-    /// Sets up a run to be drawn by a ported effect, or returns null when there is not one.
+    /// Sets up a run to be drawn, or returns null when this is not an effect the engine has.
     /// </summary>
     /// <param name="wled">The segment as a preset or live state describes it.</param>
     /// <param name="length">How many LEDs the run has here, which is not always what the preset says.</param>

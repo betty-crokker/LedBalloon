@@ -279,7 +279,7 @@ public sealed class HouseCanvas : Control
                 segment.Effect is > 0 &&
                 (segment.Palette is > 0 || CanDraw(segment, controller.Key))));
 
-    /// <summary>True when the effect is one of the ported ones, which animate on their own.</summary>
+    /// <summary>True when the engine has this effect, so it animates on its own.</summary>
     private bool CanDraw(WledSegment segment, string controllerKey) =>
         EffectLibrary.Find(segment.Effect, EffectNames?.GetValueOrDefault(controllerKey)) is not null;
 

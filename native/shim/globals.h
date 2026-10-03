@@ -57,6 +57,10 @@ extern StaticJsonDocument<4096>* pDoc;
 // WLED's clock effects (Analog Clock among them) read the local time through the Time library.
 // Told rather than read, like the millisecond clock: an effect asked for the same moment twice
 // draws the same thing, which a real clock would not give.
+// Whether WLED drives several strips from one I2S peripheral. There is one bus here and it is an
+// array, so no, and finalizeInit's ESP32 branch reads it to decide not to.
+extern bool useParallelI2S;
+
 extern time_t localTime;
 extern bool useAMPM;
 
