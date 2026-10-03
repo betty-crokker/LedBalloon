@@ -202,6 +202,13 @@ public sealed record PaletteOption(int Id, string Name, IBrush? Gradient)
     /// </remarks>
     public byte[]? Content { get; init; }
 
+    /// <summary>
+    /// True for the palettes WLED builds out of the segment's own color slots rather than from a
+    /// stored gradient - "* Colors 1&amp;2" is c1, c1, c2, c2. Their swatches have to be redrawn
+    /// when a color box changes, because the swatch is the only place the recipe becomes visible.
+    /// </summary>
+    public bool FromOwnColors { get; init; }
+
     public bool IsSeparator => Kind == PaletteKind.Rule;
 
     public bool HasGradient => Gradient is not null && Kind != PaletteKind.Rule;
@@ -4710,6 +4717,76 @@ public sealed partial class MainViewModel : ViewModelBase
             DeviceFor(segment),
             WledState.ForSegment(
                 Project.WledSegmentIdFor(segment), seg => seg.SetColorSlot(slot, rgb)));
+
+        RefreshOwnColorSwatches(slot, rgb);
+    }
+
+    /// <summary>
+    /// Redraws the swatches of the palettes that are made out of the segment's own colors.
+    /// <para>
+    /// They are built once, when the pickers are filled for a segment, and nothing filled them
+    /// again when a color box changed - so "My two colors" went on showing the two colors it had
+    /// when the editor opened. That is worse than no swatch: the row is a recipe, and the swatch is
+    /// the only thing that says what the recipe currently comes out as.
+    /// </para>
+    /// <para>
+    /// The color that was just set is passed in rather than read back, because the controller has
+    /// not echoed it yet and reading in that window would redraw the swatch with the old color.
+    /// </para>
+    /// </summary>
+    private void RefreshOwnColorSwatches(int changedSlot, RgbColor changed)
+    {
+        if (SelectedSegment is not { } segment
+            || PalettesOn(segment.ControllerKey) is not { } gradients)
+        {
+            return;
+        }
+
+        WledSegment? shown = LiveSegmentFor(segment);
+
+        RgbColor slot(int i) => i == changedSlot
+            ? changed
+            : shown?.Colors is { } c && i < c.Length ? RgbColor.FromWledArray(c[i]) : RgbColor.Black;
+
+        bool suppressed = _suppressPush;
+        _suppressPush = true;
+
+        try
+        {
+            for (int at = 0; at < SegmentPalettes.Count; at++)
+            {
+                PaletteOption row = SegmentPalettes[at];
+
+                if (!row.FromOwnColors || !gradients.TryGetValue(row.Id, out WledPalette? found))
+                {
+                    continue;
+                }
+
+                PaletteOption redrawn = row with
+                {
+                    Gradient = GradientOf(found, slot(0), slot(1), slot(2)),
+                };
+
+                bool wasChosen = ReferenceEquals(SegmentPaletteChoice, row);
+                SegmentPalettes[at] = redrawn;
+
+                // Replacing an item drops the ComboBox's selection, so it goes back on the row that
+                // replaced it - the same dance RenameDefaultPalette does, and for the same reason.
+                if (wasChosen)
+                {
+                    SegmentPaletteChoice = redrawn;
+                }
+
+                if (ReferenceEquals(_paletteBefore, row))
+                {
+                    _paletteBefore = redrawn;
+                }
+            }
+        }
+        finally
+        {
+            _suppressPush = suppressed;
+        }
     }
 
     partial void OnSegmentEffectChoiceChanged(PickerOption? value)
@@ -5387,7 +5464,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             foreach (PaletteOption option in mine
                 .OrderBy(o => Rank(o.Name)).ThenBy(o => o.Id)
-                .Select(o => o with { Name = PlainName(o.Name) }))
+                .Select(o => o with { Name = PlainName(o.Name), FromOwnColors = true }))
             {
                 SegmentPalettes.Add(option);
             }
