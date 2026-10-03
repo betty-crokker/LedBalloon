@@ -288,6 +288,15 @@ EXPORT void wled_length(uint16_t length) {
   seg.start = 0;
   seg.stop = stop;
 
+  // All four bounds, not two. This stands in for setGeometry, and setGeometry sets startY and stopY
+  // as well - it writes stopY = 1 unconditionally, even with 2D compiled out. That is not a detail
+  // about matrices: refreshLightCapabilities walks the segment as `for (y = startY; y < stopY; y++)
+  // for (x = start; x < stop; x++)`, so a stopY of 0 runs the body no times at all, leaves
+  // segStopIdx at 0, and then every bus fails its `getStart() >= segStopIdx` test and the segment is
+  // recorded as being able to show nothing.
+  seg.startY = 0;
+  seg.stopY = 1;
+
   // The bounds decide what the segment can show, and nothing else recomputes it. Segment capabilities
   // are worked out from the busses the segment covers, and the only place that happens is
   // refreshLightCapabilities - which setGeometry calls and this does not, because setGeometry marks
@@ -367,7 +376,7 @@ EXPORT void wled_probe(uint32_t* out) {
   // Before wled_begin there are no segments at all, and getSegment(0) on an empty vector takes the
   // process down - which a diagnostic has no business doing.
   if (g_begins == 0 || strip.getSegmentsNum() == 0) {
-    for (int i = 0; i < 9; i++) out[i] = 0;
+    for (int i = 0; i < 11; i++) out[i] = 0;
     return;
   }
 
@@ -381,6 +390,8 @@ EXPORT void wled_probe(uint32_t* out) {
   out[6] = strip.getLengthTotal();
   out[7] = g_bus ? (uint32_t)(g_bus->isOk() ? g_bus->getLength() : 0) : 0xFFFFFFFFu;
   out[8] = g_refreshes;
+  out[9] = seg.startY;
+  out[10] = seg.stopY;
 }
 
 EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,
