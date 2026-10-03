@@ -277,6 +277,107 @@ public sealed class WledConfigClient
     }
 
     /// <summary>
+    /// Where the controller thinks it is, and which clock it keeps.
+    /// </summary>
+    /// <returns>
+    /// The location, the time zone, and whether it is syncing its clock at all. A controller that
+    /// is not syncing has no idea what time it is, so its sun timers are not late - they are
+    /// arbitrary.
+    /// </returns>
+    public async Task<(HouseLocation? Where, int? TimeZone, bool Syncing)> GetLocationAsync(
+        CancellationToken cancellationToken = default)
+    {
+        using JsonDocument config = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!config.RootElement.TryGetProperty("if", out JsonElement network) ||
+            !network.TryGetProperty("ntp", out JsonElement ntp))
+        {
+            return (null, null, false);
+        }
+
+        HouseLocation? where =
+            ntp.TryGetProperty("lt", out JsonElement lt) && lt.TryGetDouble(out double latitude) &&
+            ntp.TryGetProperty("ln", out JsonElement ln) && ln.TryGetDouble(out double longitude)
+                ? new HouseLocation(latitude, longitude)
+                : null;
+
+        int? zone = ntp.TryGetProperty("tz", out JsonElement tz) && tz.TryGetInt32(out int id)
+            ? id
+            : null;
+
+        bool syncing = ntp.TryGetProperty("en", out JsonElement en) &&
+                       en.ValueKind is JsonValueKind.True;
+
+        return (where, zone, syncing);
+    }
+
+    /// <summary>
+    /// Tells the controller where it is and which clock to keep, and turns its clock sync on.
+    /// <para>
+    /// The clock as well as the place, because sunrise is computed from the one and applied in the
+    /// other: the right latitude in the wrong zone puts the lights on an hour out, every day,
+    /// which looks like a broken timer rather than a wrong setting.
+    /// </para>
+    /// <para>
+    /// Written the same way as the timetable - the whole configuration read and posted back with
+    /// only these keys changed - because a partial post is not safe on 0.15.3. See
+    /// <see cref="SetScheduleAsync"/>, where leaving out hw.led.fps uncapped the frame rate.
+    /// </para>
+    /// </summary>
+    public async Task SetLocationAsync(
+        HouseLocation where,
+        int timeZone,
+        CancellationToken cancellationToken = default)
+    {
+        if (!where.IsOnEarth)
+        {
+            throw new ArgumentOutOfRangeException(nameof(where), where, "That is not a place.");
+        }
+
+        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+            .ConfigureAwait(false);
+
+        if (JsonNode.Parse(current) is not JsonObject configuration)
+        {
+            throw new WledException("That controller returned a configuration that is not an object.");
+        }
+
+        if (configuration["if"] is not JsonObject network)
+        {
+            network = [];
+            configuration["if"] = network;
+        }
+
+        if (network["ntp"] is not JsonObject ntp)
+        {
+            ntp = [];
+            network["ntp"] = ntp;
+        }
+
+        // Without this the controller never learns the time, and a sun timer on a controller that
+        // does not know the date fires whenever its uptime clock happens to say.
+        ntp["en"] = true;
+        ntp["lt"] = where.Latitude;
+        ntp["ln"] = where.Longitude;
+        ntp["tz"] = timeZone;
+
+        using var content = new StringContent(
+            configuration.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage response = await _http
+            .PostAsync("json/cfg", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"That controller would not take the location ({(int)response.StatusCode}). " +
+                "A settings PIN will block this.");
+        }
+    }
+
+    /// <summary>
     /// Makes the controller's LED outputs as long as the runs plugged into them.
     /// <para>
     /// The direction that took a while to see: a controller's configured length is not a limit the

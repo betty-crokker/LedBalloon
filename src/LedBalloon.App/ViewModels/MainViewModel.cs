@@ -6273,9 +6273,130 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>True once a row has been touched and the controllers have not been told.</summary>
     [ObservableProperty] private bool _scheduleChanged;
 
+    /// <summary>
+    /// Where the house is, as something to paste into.
+    /// <para>
+    /// Only the sun timers read it, and only the controllers compute them - so this is a setting
+    /// that does nothing at all until "at sunrise" is picked, and then decides everything about
+    /// when it fires. A house with no location gets a sun timer that never fires, and nothing
+    /// anywhere says why.
+    /// </para>
+    /// <para>
+    /// Pasting rather than two numeric fields because that is how the number is actually come by:
+    /// right-click a spot in Google Maps and it puts "22.694768, 114.283689" on the clipboard. A
+    /// copied map link carries the same pair, so both are taken.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private string _locationPasted = string.Empty;
+
+    /// <summary>What the controllers will be told, once it has been read out of the paste.</summary>
+    public HouseLocation? LocationMeant =>
+        HouseLocation.TryParse(LocationPasted, out HouseLocation where) ? where : null;
+
+    /// <summary>True once something has been pasted that is not a place.</summary>
+    public bool LocationIsNotAPlace => LocationPasted.Trim().Length > 0 && LocationMeant is null;
+
+    partial void OnLocationPastedChanged(string value)
+    {
+        OnPropertyChanged(nameof(LocationMeant));
+        OnPropertyChanged(nameof(LocationIsNotAPlace));
+        SaveLocationCommand.NotifyCanExecuteChanged();
+    }
+
+    /// <summary>Every zone WLED understands, which is the only list that can be offered.</summary>
+    public IReadOnlyList<WledTimeZone> TimeZones => WledTimeZone.All;
+
+    [ObservableProperty] private WledTimeZone? _timeZone;
+
+    partial void OnTimeZoneChanged(WledTimeZone? value) =>
+        SaveLocationCommand.NotifyCanExecuteChanged();
+
+    /// <summary>What the controllers say about it now, or why they could not be asked.</summary>
+    [ObservableProperty] private string _locationNotice = string.Empty;
+
+    /// <summary>Reads the location back off the controllers, so the boxes are what is shown.</summary>
+    private async Task LoadLocationAsync()
+    {
+        var said = new List<string>();
+        HouseLocation? found = null;
+        int? zone = null;
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            try
+            {
+                (HouseLocation? where, int? tz, bool syncing) =
+                    await new WledConfigClient(device.Host).GetLocationAsync();
+
+                found ??= where;
+                zone ??= tz;
+
+                if (!syncing)
+                {
+                    said.Add($"{device.DisplayName} is not syncing its clock, so its sun timers cannot be right.");
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // A controller that will not say where it is does not stop the others being read.
+            }
+        }
+
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (found is { } where && LocationPasted.Trim().Length == 0)
+            {
+                LocationPasted = where.ToString();
+            }
+
+            TimeZone ??= WledTimeZone.ById(zone);
+            LocationNotice = string.Join(" ", said);
+        });
+    }
+
+    /// <summary>True once there is somewhere to send and somewhere to send it to.</summary>
+    private bool CanSaveLocation => LocationMeant is not null && TimeZone is not null && !IsBusy;
+
+    /// <summary>
+    /// Writes the location to every controller, because the house is in one place.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanSaveLocation))]
+    private async Task SaveLocationAsync()
+    {
+        if (LocationMeant is not { } where || TimeZone is not { } zone)
+        {
+            return;
+        }
+
+        IsBusy = true;
+
+        try
+        {
+            foreach (DeviceViewModel device in Devices)
+            {
+                await new WledConfigClient(device.Host).SetLocationAsync(where, zone.Id);
+            }
+
+            Status = $"The controllers know where they are: {where}, {zone.Name}.";
+            await LoadLocationAsync();
+        }
+        catch (Exception ex)
+        {
+            Status = $"Could not set the location: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     /// <summary>Reads each controller's timetable and the presets its entries can point at.</summary>
     private async Task LoadScheduleAsync()
     {
+        // The location belongs with this: it is the thing the sun timers on this screen run on, and
+        // reading it at the same moment means the two cannot disagree about which controllers exist.
+        await LoadLocationAsync();
+
         var rows = new List<ScheduleRow>();
         var said = new List<string>();
 
