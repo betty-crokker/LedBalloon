@@ -37,6 +37,16 @@ public static class NativeEngine
     /// <summary>Why the engine is not available, when it is not.</summary>
     public static string? Unavailable { get; private set; }
 
+    /// <summary>
+    /// What the engine was last asked to draw, for the preview's diagnostics: the palette id handed
+    /// over, and what the segment reports it can show.
+    /// </summary>
+    /// <remarks>
+    /// The two together are what tells a flat, unmoving run apart from a palette that is flat by
+    /// definition. Both produce one colour everywhere; only this says which.
+    /// </remarks>
+    public static (int Palette, int Capabilities) LastDrawn { get; private set; }
+
     /// <summary>How many effects the engine registered. 187 on WLED 0.15.3.</summary>
     public static int EffectCount => IsReady ? Native.ModeCount() : 0;
 
@@ -108,9 +118,11 @@ public static class NativeEngine
 
             Native.PixelsSet(_scratchPixels, (ushort)segment.Length);
 
+            byte palette = PaletteFor(segment);
+
             Native.Segment(
                 (byte)mode,
-                PaletteFor(segment),
+                palette,
                 segment.Speed,
                 segment.Intensity,
                 Pack(segment, 0),
@@ -132,6 +144,8 @@ public static class NativeEngine
                 state.Data, (ushort)state.Length);
 
             Native.Render(now, (ushort)segment.Length, _scratchPixels);
+
+            LastDrawn = (palette, Native.Capabilities());
 
             Native.RuntimeGet(
                 out ushort aux0, out ushort aux1, out uint step, out uint call,
@@ -314,6 +328,9 @@ public static class NativeEngine
 
         [DllImport(Dll, EntryPoint = "wled_palette_count")]
         public static extern byte PaletteCount();
+
+        [DllImport(Dll, EntryPoint = "wled_capabilities")]
+        public static extern byte Capabilities();
 
         [DllImport(Dll, EntryPoint = "wled_mode_count")]
         public static extern byte ModeCount();
