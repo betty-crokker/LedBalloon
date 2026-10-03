@@ -24,7 +24,11 @@ public sealed class WledSegment
     [JsonPropertyName("cct")] public int? ColorTemperature { get; set; }
 
     /// <summary>Up to three color slots (primary, secondary, tertiary), each 3 or 4 channels.</summary>
-    [JsonPropertyName("col")] public int[][]? Colors { get; set; }
+    /// <summary>
+    /// The segment's three color slots, as WLED's <c>col</c> array. A null entry means "leave this
+    /// slot alone" - see <see cref="SetColorSlot"/>.
+    /// </summary>
+    [JsonPropertyName("col")] public int[]?[]? Colors { get; set; }
 
     [JsonPropertyName("fx")] public int? Effect { get; set; }
     [JsonPropertyName("sx")] public byte? Speed { get; set; }
@@ -76,19 +80,32 @@ public sealed class WledSegment
     }
 
     /// <summary>
-    /// Writes one color slot, leaving the others untouched. WLED will not accept a sparse array,
-    /// so slots below the one being set are back-filled with whatever is already there.
+    /// Writes one color slot, saying nothing about the others.
+    /// <para>
+    /// WLED does accept a sparse array, and null is how it is spelled: deserializeSegment walks all
+    /// three slots, and an entry that is not an array, an object, a hex string or a Kelvin number
+    /// is skipped by its <c>continue</c>. Back-filling the lower slots with black instead - which
+    /// this used to do - meant that setting the background sent <c>[[0,0,0],[r,g,b]]</c> and really
+    /// did turn the primary off, on the controller and not only on screen.
+    /// </para>
+    /// <para>
+    /// Only below, because the array stops at the slot being written, so setting the primary
+    /// dropped the background instead of blacking it: on the wire that is harmless, since WLED
+    /// leaves a slot it was not told about, but <see cref="MergeFrom"/> laid the short array over
+    /// the long one and the editor read the missing slots back as black.
+    /// </para>
     /// </summary>
     public void SetColorSlot(int slot, RgbColor color)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(slot);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(slot, 2);
 
-        int[][] existing = Colors ?? [];
-        var next = new int[Math.Max(existing.Length, slot + 1)][];
+        int[]?[] existing = Colors ?? [];
+        int[]?[] next = new int[]?[Math.Max(existing.Length, slot + 1)];
+
         for (int i = 0; i < next.Length; i++)
         {
-            next[i] = i < existing.Length ? existing[i] : [0, 0, 0];
+            next[i] = i < existing.Length ? existing[i] : null;
         }
 
         next[slot] = color.ToWledArray();
@@ -105,7 +122,7 @@ public sealed class WledSegment
 
         // The color slots are the only reference type here, and merging replaces the whole array,
         // so copying one level deep is enough.
-        copy.Colors = Colors?.Select(slot => slot.ToArray()).ToArray();
+        copy.Colors = Colors?.Select(slot => slot?.ToArray()).ToArray();
 
         return copy;
     }
@@ -127,7 +144,7 @@ public sealed class WledSegment
         Frozen = newer.Frozen ?? Frozen;
         Brightness = newer.Brightness ?? Brightness;
         ColorTemperature = newer.ColorTemperature ?? ColorTemperature;
-        Colors = newer.Colors ?? Colors;
+        Colors = MergedColors(Colors, newer.Colors);
         Effect = newer.Effect ?? Effect;
         Speed = newer.Speed ?? Speed;
         Intensity = newer.Intensity ?? Intensity;
@@ -144,5 +161,32 @@ public sealed class WledSegment
         Custom3 = newer.Custom3 ?? Custom3;
         Set = newer.Set ?? Set;
         Expand1Dto2D = newer.Expand1Dto2D ?? Expand1Dto2D;
+    }
+
+    /// <summary>
+    /// Lays one segment's color slots over another's, slot by slot rather than wholesale.
+    /// <para>
+    /// Slot by slot because a patch that sets the background carries nothing in the primary's
+    /// place, and replacing the whole array with it blanked the primary in the editor while the
+    /// controller still had it. A null slot is "unchanged" here for the same reason every other
+    /// field's null is.
+    /// </para>
+    /// </summary>
+    private static int[]?[]? MergedColors(int[]?[]? older, int[]?[]? newer)
+    {
+        if (newer is null || older is null)
+        {
+            return newer ?? older;
+        }
+
+        int[]?[] merged = new int[]?[Math.Max(older.Length, newer.Length)];
+
+        for (int i = 0; i < merged.Length; i++)
+        {
+            merged[i] = (i < newer.Length ? newer[i] : null)
+                ?? (i < older.Length ? older[i] : null);
+        }
+
+        return merged;
     }
 }

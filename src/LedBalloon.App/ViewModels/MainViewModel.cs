@@ -4650,7 +4650,7 @@ public sealed partial class MainViewModel : ViewModelBase
             || !SameColors(before.Colors, after.Colors);
     }
 
-    private static bool SameColors(int[][]? before, int[][]? after)
+    private static bool SameColors(int[]?[]? before, int[]?[]? after)
     {
         if (before is null || after is null)
         {
@@ -4664,7 +4664,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
         for (int i = 0; i < before.Length; i++)
         {
-            if (!before[i].SequenceEqual(after[i]))
+            if (before[i] is not { } was || after[i] is not { } now)
+            {
+                // One slot said nothing and the other did, which is itself a change.
+                if (before[i] is not null || after[i] is not null)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!was.SequenceEqual(now))
             {
                 return false;
             }
