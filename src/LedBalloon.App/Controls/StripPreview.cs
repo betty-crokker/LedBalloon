@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -116,6 +117,25 @@ public sealed class StripPreview : Control
 
     private TimeSpan _lastTick;
 
+    /// <summary>
+    /// Whether to draw the counters over the strip. Off unless LEDBALLOON_PREVIEW_DIAGNOSTICS=1.
+    /// <para>
+    /// Here because "the preview is not moving" has three quite different causes and they are
+    /// indistinguishable by looking: the clock is not firing, the simulation is being thrown away
+    /// and rebuilt, or it is running and the effect really is that slow. One reading tells them
+    /// apart - ticks climbing with frames stuck is the first, restarts climbing is the second,
+    /// and everything climbing is the third.
+    /// </para>
+    /// </summary>
+    private static readonly bool Diagnostics =
+        Environment.GetEnvironmentVariable("LEDBALLOON_PREVIEW_DIAGNOSTICS") == "1";
+
+    /// <summary>How many times the clock has fired since this control was built.</summary>
+    private long _ticks;
+
+    /// <summary>How many times the simulation has been thrown away and started again.</summary>
+    private int _restarts;
+
     public StripPreview()
     {
         // Faster than the photo's 50ms: this is a bitmap blit rather than a photograph with every
@@ -188,6 +208,7 @@ public sealed class StripPreview : Control
         double delta = (elapsed - _lastTick).TotalMilliseconds;
         _lastTick = elapsed;
 
+        _ticks++;
         _running?.Advance(delta);
 
         InvalidateVisual();
@@ -224,6 +245,41 @@ public sealed class StripPreview : Control
         Resize(columns);
         Sample(wled);
         Draw(context, inside);
+
+        if (Diagnostics)
+        {
+            DrawCounters(context, inside);
+        }
+    }
+
+    /// <summary>Writes the counters over the strip, for the one question they answer.</summary>
+    private void DrawCounters(DrawingContext context, Rect inside)
+    {
+        ControllerTiming timing = Timing is { IntervalMilliseconds: > 0 } known
+            ? known
+            : new ControllerTiming(
+                EffectSimulation.DefaultFrameMilliseconds, FrameTime.MinimumFrameDelay);
+
+        string said = _running is { } running
+            ? $"ticks {_ticks}  restarts {_restarts}  frames {running.Frames}  " +
+              $"t {running.ElapsedMilliseconds} ms  step {timing.IntervalMilliseconds}/" +
+              $"{timing.FrameTimeMilliseconds} ms"
+            : $"ticks {_ticks}  restarts {_restarts}  nothing running";
+
+        var text = new FormattedText(
+            said,
+            CultureInfo.InvariantCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            11,
+            Brushes.White);
+
+        context.DrawRectangle(
+            new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)),
+            null,
+            new Rect(inside.X, inside.Y, text.Width + 8, text.Height + 4));
+
+        context.DrawText(text, new Point(inside.X + 4, inside.Y + 2));
     }
 
     /// <summary>Rebuilds the bitmap when the control is a different width in LEDs.</summary>
@@ -359,6 +415,7 @@ public sealed class StripPreview : Control
         }
 
         _run = run;
+        _restarts++;
 
         ControllerTiming timing = Timing is { IntervalMilliseconds: > 0 } known
             ? known
