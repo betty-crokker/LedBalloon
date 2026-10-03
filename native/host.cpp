@@ -172,6 +172,7 @@ extern "C" {
 #endif
 
 static uint32_t g_begins = 0;
+static uint32_t g_refreshes = 0;
 
 EXPORT void wled_begin(uint16_t count, uint8_t fps) {
   g_begins++;
@@ -280,8 +281,25 @@ EXPORT void wled_orientation(uint8_t reverse, uint8_t mirror) {
 // frame. start and stop are public, and SEGLEN comes from them through virtualLength().
 EXPORT void wled_length(uint16_t length) {
   Segment& seg = strip.getSegment(0);
+  uint16_t stop = length > HOST_LEDS ? HOST_LEDS : length;
+
+  if (seg.start == 0 && seg.stop == stop) return;
+
   seg.start = 0;
-  seg.stop = length > HOST_LEDS ? HOST_LEDS : length;
+  seg.stop = stop;
+
+  // The bounds decide what the segment can show, and nothing else recomputes it. Segment capabilities
+  // are worked out from the busses the segment covers, and the only place that happens is
+  // refreshLightCapabilities - which setGeometry calls and this does not, because setGeometry marks
+  // the segment for reset and would wipe whichever caller went before this one.
+  //
+  // So without this the capability byte is whatever wled_begin computed for bounds the segment then
+  // never draws with again, and it is never corrected. That is not a cosmetic staleness: with the
+  // RGB bit clear, color_from_palette gives up at its second line and returns the colour slot for
+  // every pixel, so the whole run comes out one flat colour that no palette, no effect and no amount
+  // of elapsed time can move.
+  seg.refreshLightCapabilities();
+  g_refreshes++;
 }
 
 // The caller's previous frame, which is part of its state: anything that fades or trails reads the
@@ -321,7 +339,24 @@ EXPORT uint8_t wled_palette_count() { return strip.getPaletteCount(); }
 // It is computed from the busses, once, and is exactly the kind of thing that is invisible from the
 // pixels alone: a flat blue run looks the same whether the palette is solid or the capability is
 // missing.
-EXPORT uint8_t wled_capabilities() { return strip.getSegment(0).getLightCapabilities(); }
+EXPORT uint8_t wled_capabilities() {
+  if (g_begins == 0 || strip.getSegmentsNum() == 0) return 0;
+  return strip.getSegment(0).getLightCapabilities();
+}
+
+// What the segment would actually give an effect for a palette index, through the same call the
+// effects use.
+//
+// This exists because reading _capabilities from here does not answer the question. The byte came
+// back as 0x73, 0xbb and 0x00 in three processes, and refreshLightCapabilities can only ever assign
+// 0 to 7 - so whatever that read is reaching, it is not the field FX_fcn.cpp writes, and a reading
+// taken from it means nothing. Asking color_from_palette is not a guess about memory: it is the
+// answer the effect gets. Four samples that come back equal is a run that will be one flat colour
+// whatever the palette says, and comparing them against the colour slot says which branch took it.
+EXPORT uint32_t wled_palette_sample(uint8_t index) {
+  if (g_begins == 0 || strip.getSegmentsNum() == 0) return 0;
+  return strip.getSegment(0).color_from_palette(index, false, true, 255);
+}
 
 // Everything refreshLightCapabilities reads, so a caps of zero can be explained rather than guessed
 // at. It is computed once, in wled_begin, and never again - so whatever it decided there is what
@@ -332,7 +367,7 @@ EXPORT void wled_probe(uint32_t* out) {
   // Before wled_begin there are no segments at all, and getSegment(0) on an empty vector takes the
   // process down - which a diagnostic has no business doing.
   if (g_begins == 0 || strip.getSegmentsNum() == 0) {
-    for (int i = 0; i < 8; i++) out[i] = 0;
+    for (int i = 0; i < 9; i++) out[i] = 0;
     return;
   }
 
@@ -345,6 +380,7 @@ EXPORT void wled_probe(uint32_t* out) {
   out[5] = Segment::maxWidth;
   out[6] = strip.getLengthTotal();
   out[7] = g_bus ? (uint32_t)(g_bus->isOk() ? g_bus->getLength() : 0) : 0xFFFFFFFFu;
+  out[8] = g_refreshes;
 }
 
 EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,

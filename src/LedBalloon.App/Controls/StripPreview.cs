@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls;
@@ -136,6 +137,15 @@ public sealed class StripPreview : Control
     /// <summary>How many times the simulation has been thrown away and started again.</summary>
     private int _restarts;
 
+    /// <summary>
+    /// Where the readings go. The app is a WinExe, so Console.WriteLine reaches nothing on Windows
+    /// even when it was started from a terminal; a file can be read back afterwards.
+    /// </summary>
+    private static readonly string LogPath =
+        Path.Combine(Path.GetTempPath(), "ledballoon-preview.log");
+
+    private TimeSpan _lastSaid = TimeSpan.FromSeconds(-10);
+
     public StripPreview()
     {
         // Faster than the photo's 50ms: this is a bitmap blit rather than a photograph with every
@@ -249,6 +259,75 @@ public sealed class StripPreview : Control
         if (Diagnostics)
         {
             DrawCounters(context, inside, wled);
+            Record(wled);
+        }
+    }
+
+    /// <summary>
+    /// Writes one reading a second to <see cref="LogPath"/>.
+    /// <para>
+    /// The palette samples are the useful part. They are what the segment hands an effect for four
+    /// spread-out palette indices, through the same call the effects make - so four equal values is
+    /// a run that will be one flat colour whatever the palette holds, and they say so without
+    /// anybody having to guess where a private field sits. Four equal values matching color 0 is the
+    /// colour slot being substituted; four different ones mean the palette is reaching the strip and
+    /// the fault is elsewhere.
+    /// </para>
+    /// </summary>
+    private void Record(WledSegment wled)
+    {
+        TimeSpan now = _since.Elapsed;
+        if (now - _lastSaid < TimeSpan.FromSeconds(1))
+        {
+            return;
+        }
+
+        _lastSaid = now;
+
+        try
+        {
+            (int drawnPalette, int capabilities) = NativeEngine.LastDrawn;
+
+            var line = new System.Text.StringBuilder();
+            line.Append(CultureInfo.InvariantCulture, $"[{now.TotalSeconds,6:F1}s] ");
+            line.Append(CultureInfo.InvariantCulture,
+                $"fx {wled.Effect} pal {wled.Palette}->{drawnPalette} caps 0x{capabilities:x2}  ");
+            line.Append(CultureInfo.InvariantCulture,
+                $"ticks {_ticks} restarts {_restarts} ");
+
+            if (_running is { } running)
+            {
+                line.Append(CultureInfo.InvariantCulture,
+                    $"frames {running.Frames} t {running.ElapsedMilliseconds}ms ");
+            }
+
+            line.Append("samples");
+            foreach (uint sample in NativeEngine.PaletteSamples())
+            {
+                line.Append(CultureInfo.InvariantCulture, $" {sample & 0xFFFFFF:x6}");
+            }
+
+            line.Append("  col");
+            if (wled.Colors is { } colors)
+            {
+                foreach (int[]? slot in colors)
+                {
+                    line.Append(CultureInfo.InvariantCulture,
+                        $" {RgbColor.FromWledArray(slot).ToHex()}");
+                }
+            }
+
+            line.Append("  probe");
+            foreach (uint value in NativeEngine.Probe())
+            {
+                line.Append(CultureInfo.InvariantCulture, $" {value}");
+            }
+
+            File.AppendAllText(LogPath, line.ToString() + Environment.NewLine);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // A reading nobody can write down is not worth bringing the preview down for.
         }
     }
 

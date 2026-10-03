@@ -59,7 +59,7 @@ public static class NativeEngine
             return [];
         }
 
-        var into = new uint[8];
+        var into = new uint[9];
 
         lock (Gate)
         {
@@ -67,6 +67,28 @@ public static class NativeEngine
         }
 
         return into;
+    }
+
+    /// <summary>
+    /// What the segment hands back for four palette indices, through the call the effects use.
+    /// <para>
+    /// Four equal values is a run that will be one flat colour whatever the palette holds, which is
+    /// the thing to know. Unlike the capability byte, this is an answer rather than a guess about
+    /// where a private field sits.
+    /// </para>
+    /// </summary>
+    public static uint[] PaletteSamples()
+    {
+        if (!IsReady)
+        {
+            return [];
+        }
+
+        lock (Gate)
+        {
+            return [Native.PaletteSample(0), Native.PaletteSample(85),
+                    Native.PaletteSample(170), Native.PaletteSample(255)];
+        }
     }
 
     /// <summary>How many effects the engine registered. 187 on WLED 0.15.3.</summary>
@@ -356,6 +378,9 @@ public static class NativeEngine
 
         [DllImport(Dll, EntryPoint = "wled_probe")]
         public static extern void Probe(uint[] into);
+
+        [DllImport(Dll, EntryPoint = "wled_palette_sample")]
+        public static extern uint PaletteSample(byte index);
 
         [DllImport(Dll, EntryPoint = "wled_mode_count")]
         public static extern byte ModeCount();
