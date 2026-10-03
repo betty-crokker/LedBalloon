@@ -1012,7 +1012,11 @@
                            Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
                 <TextBlock Classes="hint"
                            Text="One line per controller, because each box runs its own timetable. A scene only appears here once it has been saved — that is when it reaches the controllers, and a timer can only fire what its own box holds." />
+                <TextBlock Classes="hint"
+                           Text="Turning the lights on or off is the exception: one line covers the whole house, and the app puts what each controller needs on it when you save." />
                 <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
+                  <Button Content="Lights on or off" Command="{Binding AddSwitchTimerCommand}"
+                          AutomationProperties.AutomationId="AddSwitchTimer" />
                   <Button Content="Add a timer" Command="{Binding AddScheduleEntryCommand}" />
                   <Button Content="Save to controllers"
                           Command="{Binding SaveScheduleCommand}"
@@ -1029,7 +1033,7 @@
 
                           <StackPanel Orientation="Horizontal" Spacing="8">
                             <CheckBox IsChecked="{Binding Enabled}" Content="On" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding ControllerName}" FontWeight="SemiBold"
+                            <TextBlock Text="{Binding Where}" FontWeight="SemiBold"
                                        VerticalAlignment="Center" />
                             <Button Content="Remove" Padding="6,2"
                                     Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
@@ -1047,7 +1051,7 @@
                             <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59"
                                            FormatString="00" ShowButtonSpinner="False" Width="52"
                                            IsVisible="{Binding IsClock}" />
-                            <TextBlock Text="show" VerticalAlignment="Center" Classes="hint" />
+                            <TextBlock Text="do" VerticalAlignment="Center" Classes="hint" />
                             <ComboBox ItemsSource="{Binding Presets}"
                                       SelectedItem="{Binding Preset}"
                                       PlaceholderText="pick a scene" MinWidth="200" />

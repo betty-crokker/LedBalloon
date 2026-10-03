@@ -6291,12 +6291,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 var config = new WledConfigClient(device.Host);
                 IReadOnlyList<ScheduledChange> entries = await config.GetScheduleAsync();
 
-                IReadOnlyList<PresetChoice> presets =
-                [
-                    .. device.Presets
-                        .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
-                        .Select(p => new PresetChoice(p.Id, p.DisplayName)),
-                ];
+                IReadOnlyList<PresetChoice> presets = PresetsOn(device);
 
                 foreach (ScheduledChange entry in entries)
                 {
@@ -6318,10 +6313,12 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
 
+        List<ScheduleRow> shown = Collapse(rows);
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             Schedule.Clear();
-            foreach (ScheduleRow row in rows)
+            foreach (ScheduleRow row in shown)
             {
                 row.PropertyChanged += (_, _) => ScheduleChanged = true;
                 Schedule.Add(row);
@@ -6333,6 +6330,87 @@ public sealed partial class MainViewModel : ViewModelBase
 
             ScheduleChanged = false;
         });
+    }
+
+    /// <summary>
+    /// What a timer on this controller can be pointed at: the house switch, then its own scenes.
+    /// </summary>
+    private static IReadOnlyList<PresetChoice> PresetsOn(DeviceViewModel device) =>
+        PresetChoice.Offered(
+            device.Presets
+                .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
+                .Select(p => new PresetChoice(p.Id, p.DisplayName)));
+
+    /// <summary>
+    /// Folds the switch timers the controllers reported into one row each.
+    /// <para>
+    /// A switch row is written to every controller, so reading the timetables back gives one copy
+    /// per box - and showing them separately would invite editing one and not the other, which is
+    /// the state the whole-house row exists to make unreachable. Rows that agree on everything but
+    /// which box they came from are one row. Rows that do not agree are left alone and shown as
+    /// they are, because that is a disagreement worth seeing rather than quietly picking a winner.
+    /// </para>
+    /// </summary>
+    private static List<ScheduleRow> Collapse(List<ScheduleRow> rows)
+    {
+        var shown = new List<ScheduleRow>();
+        var seen = new HashSet<(bool On, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
+
+        foreach (ScheduleRow row in rows)
+        {
+            if (row.SwitchOn is not { } on)
+            {
+                shown.Add(row);
+                continue;
+            }
+
+            var shape = (on, row.Trigger?.Sun ?? SunTrigger.None, row.Hour, row.Minute, row.Enabled);
+
+            if (!seen.Add(shape))
+            {
+                continue;
+            }
+
+            shown.Add(new ScheduleRow
+            {
+                ControllerKey = null,
+                ControllerName = row.ControllerName,
+                Presets = row.Presets,
+                Enabled = row.Enabled,
+                Hour = row.Hour,
+                Minute = row.Minute,
+                Preset = row.Preset,
+                Trigger = row.Trigger,
+            });
+        }
+
+        return shown;
+    }
+
+    /// <summary>Adds a whole-house on or off, which is the timer most houses only ever want.</summary>
+    [RelayCommand]
+    private void AddSwitchTimer()
+    {
+        if (Devices.FirstOrDefault() is not { } device || device.DeviceKey is null)
+        {
+            Status = "No controller to put a timer on yet.";
+            return;
+        }
+
+        var row = new ScheduleRow
+        {
+            ControllerKey = null,
+            ControllerName = "The whole house",
+            Presets = PresetsOn(device),
+            Hour = 22,
+            Minute = 30,
+            Preset = PresetChoice.Switches[0],
+        };
+
+        row.PropertyChanged += (_, _) => ScheduleChanged = true;
+
+        Schedule.Add(row);
+        ScheduleChanged = true;
     }
 
     /// <summary>Adds a blank entry to whichever controller is in hand.</summary>
@@ -6347,12 +6425,7 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        IReadOnlyList<PresetChoice> presets =
-        [
-            .. device.Presets
-                .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
-                .Select(p => new PresetChoice(p.Id, p.DisplayName)),
-        ];
+        IReadOnlyList<PresetChoice> presets = PresetsOn(device);
 
         var row = new ScheduleRow
         {
@@ -6368,6 +6441,58 @@ public sealed partial class MainViewModel : ViewModelBase
 
         Schedule.Add(row);
         ScheduleChanged = true;
+    }
+
+    /// <summary>
+    /// Writes the presets the whole-house timers fire, and reports which slot each landed in.
+    /// <para>
+    /// Only the ends of the switch actually in use are written, so a house with no on/off timer
+    /// never gets a preset it did not ask for. They go through the same publisher as scenes, which
+    /// means a second save replaces the one it wrote before instead of filling the box with copies,
+    /// and something a person put in that slot themselves is not quietly overwritten.
+    /// </para>
+    /// </summary>
+    private async Task<Dictionary<(string Key, bool On), int>> WriteSwitchPresetsAsync()
+    {
+        var slots = new Dictionary<(string Key, bool On), int>();
+
+        bool[] wanted =
+        [
+            .. Schedule
+                .Where(row => row.ControllerKey is null)
+                .Select(row => row.SwitchOn)
+                .OfType<bool>()
+                .Distinct(),
+        ];
+
+        if (wanted.Length == 0)
+        {
+            return slots;
+        }
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            if (device.DeviceKey is not { } key)
+            {
+                continue;
+            }
+
+            foreach (bool on in wanted)
+            {
+                ScenePublication written = await ScenePublisher.PublishAsync(
+                    key, device.Host, TimedSwitch.For(on));
+
+                slots[(key, on)] = written.Slot;
+            }
+
+            // Reading the timetable back names the slot, and naming it is how the row knows it is
+            // the switch rather than a scene nobody chose. The preset that was just written is not
+            // in this list until it is read again, so without this the line reappears as two - one
+            // per controller - pointing at a preset with the app's own name on it.
+            await device.Device.RefreshPresetsAsync();
+        }
+
+        return slots;
     }
 
     /// <summary>Drops an entry. It is not gone from the controller until the timetable is saved.</summary>
@@ -6395,16 +6520,49 @@ public sealed partial class MainViewModel : ViewModelBase
 
         try
         {
-            foreach (IGrouping<string, ScheduleRow> byController in
-                     Schedule.GroupBy(row => row.ControllerKey, StringComparer.OrdinalIgnoreCase))
+            // The whole-house rows first, because the preset each one fires has to exist on a
+            // controller before a timer there can point at it - and which slot it lands in is the
+            // controller's answer, not ours.
+            Dictionary<(string Key, bool On), int> switches = await WriteSwitchPresetsAsync();
+
+            List<ScheduleRow> house = [.. Schedule.Where(row => row.ControllerKey is null)];
+
+            foreach (DeviceViewModel device in Devices)
             {
-                if (DeviceFor(byController.Key) is not { } device)
+                if (device.DeviceKey is not { } key)
                 {
                     continue;
                 }
 
-                List<ScheduledChange> entries =
-                    [.. byController.Where(row => row.Preset is not null).Select(row => row.ToChange())];
+                List<ScheduleRow> mine =
+                    [.. Schedule.Where(row =>
+                        string.Equals(row.ControllerKey, key, StringComparison.OrdinalIgnoreCase))];
+
+                if (mine.Count == 0 && house.Count == 0)
+                {
+                    // Nothing for this box, and writing an empty timetable would wipe one somebody
+                    // set in WLED's own interface. Only controllers this screen has rows for get
+                    // written at all.
+                    continue;
+                }
+
+                var entries = new List<ScheduledChange>();
+
+                foreach (ScheduleRow row in mine)
+                {
+                    if (row.Preset is { Switch: null } scene)
+                    {
+                        entries.Add(row.ToChange(scene.Id));
+                    }
+                }
+
+                foreach (ScheduleRow row in house)
+                {
+                    if (row.SwitchOn is { } on && switches.TryGetValue((key, on), out int slot))
+                    {
+                        entries.Add(row.ToChange(slot));
+                    }
+                }
 
                 var config = new WledConfigClient(device.Host);
                 await config.SetScheduleAsync(entries);

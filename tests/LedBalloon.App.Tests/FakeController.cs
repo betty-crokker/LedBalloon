@@ -118,6 +118,19 @@ internal sealed class FakeController : IDisposable
     /// <summary>Where each upload was posted, since /edit and /upload are not interchangeable.</summary>
     public List<string> Uploads { get; } = [];
 
+    /// <summary>
+    /// This one's configuration, which is where its timetable lives.
+    /// <para>
+    /// Held rather than fixed, because writing a timetable reads the whole configuration and
+    /// posts it back with only the timers changed - a partial post is not safe on 0.15.3 - so a
+    /// stand-in that cannot be read back cannot be written to either. The hw.led.fps key is here
+    /// for the same reason: the real handler reads it unconditionally, and a document without it
+    /// uncaps the frame rate.
+    /// </para>
+    /// </summary>
+    public string Configuration { get; set; } =
+        """{"hw":{"led":{"fps":42,"total":10}},"timers":{"cntdwn":{"en":false},"ins":[]}}""";
+
     /// <summary>Puts a custom palette on this controller, as if somebody had made it here.</summary>
     public void Holds(params string[] palettes)
     {
@@ -179,17 +192,21 @@ internal sealed class FakeController : IDisposable
     private static string Heard(string? usermods) =>
         usermods is { Length: > 0 } said ? $", \"u\": {said}" : string.Empty;
 
-    /// <summary>One of the palette files, if this is a request for one and it is held.</summary>
+    /// <summary>
+    /// Whatever file has been written here, if this is a request for one.
+    /// <para>
+    /// Anything, not just the palettes it began as: a write to this filesystem is verified by
+    /// reading the file back, so a stand-in that accepts an upload and then will not serve it
+    /// reports every write as having failed.
+    /// </para>
+    /// </summary>
     private byte[]? Held(string path)
     {
         string name = path.TrimStart('/');
 
         lock (_posted)
         {
-            return name.StartsWith("palette", StringComparison.Ordinal) &&
-                   Files.TryGetValue(name, out byte[]? file)
-                ? file
-                : null;
+            return Files.TryGetValue(name, out byte[]? file) ? file : null;
         }
     }
 
@@ -290,6 +307,14 @@ internal sealed class FakeController : IDisposable
                     lock (_posted)
                     {
                         _posted.Add(sent);
+
+                        // A configuration post replaces the configuration, the way the real one
+                        // does, so a test can read back what it wrote rather than only that it
+                        // wrote something.
+                        if (path.TrimEnd('/') is "/json/cfg")
+                        {
+                            Configuration = sent;
+                        }
                     }
                 }
 
@@ -305,6 +330,18 @@ internal sealed class FakeController : IDisposable
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = file.Length;
                 await context.Response.OutputStream.WriteAsync(file);
+
+                context.Response.Close();
+                continue;
+            }
+
+            if (path.TrimEnd('/') is "/cfg.json" or "/json/cfg")
+            {
+                byte[] body = Encoding.UTF8.GetBytes(Configuration);
+
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body);
 
                 context.Response.Close();
                 continue;
