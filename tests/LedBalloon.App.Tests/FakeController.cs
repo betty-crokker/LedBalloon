@@ -197,12 +197,21 @@ internal sealed class FakeController : IDisposable
     /// What <c>/json/palx</c> says, which is the firmware's expansion of those files.
     /// </summary>
     /// <remarks>
-    /// Only the custom ones. The built-in gradients are not what any of this is about, and a palette
-    /// the controller does not hold is exactly the thing that has to be absent here.
+    /// The custom ones, plus the handful WLED builds out of the segment's own color slots. The rest
+    /// of the built-in gradients are not what any of this is about, and a palette the controller
+    /// does not hold is exactly the thing that has to be absent here.
     /// </remarks>
     private string Expanded()
     {
-        var entries = new List<string>();
+        // WLED gives these as placeholders rather than colors: "c1" is the segment's first slot.
+        // They are here because a swatch drawn from them has to follow the color boxes, and nothing
+        // else in this fake would show that.
+        var entries = new List<string>
+        {
+            "\"2\":[\"c1\"]",
+            "\"3\":[\"c1\",\"c1\",\"c2\",\"c2\"]",
+            "\"4\":[\"c3\",\"c2\",\"c1\"]",
+        };
 
         lock (_posted)
         {
