@@ -46,8 +46,8 @@ public class WledStateCloneTests
         copy.Segments![0].PrimaryColor = new RgbColor(0, 0, 255);
 
         // The live state is still red, which is what the strip is actually showing.
-        Assert.Equal(255, live.Segments![0].Colors![0][0]);
-        Assert.Equal(0, live.Segments[0].Colors![0][2]);
+        Assert.Equal(255, live.Segments![0].Colors![0]![0]);
+        Assert.Equal(0, live.Segments[0].Colors![0]![2]);
     }
 
     [Fact]

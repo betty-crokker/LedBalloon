@@ -159,8 +159,61 @@ public class WireFormatTests
 
         segment.SetColorSlot(1, new RgbColor(255, 255, 255));
 
-        Assert.Equal([1, 2, 3], segment.Colors![0]);
-        Assert.Equal([255, 255, 255], segment.Colors[1]);
-        Assert.Equal([7, 8, 9], segment.Colors[2]);
+        Assert.Equal([1, 2, 3], segment.Colors![0]!);
+        Assert.Equal([255, 255, 255], segment.Colors[1]!);
+        Assert.Equal([7, 8, 9], segment.Colors[2]!);
+    }
+
+    /// <summary>
+    /// A patch that sets the background has to say nothing at all about the primary.
+    /// <para>
+    /// It used to say black. WLED's deserializeSegment reads <c>col</c> by position, so
+    /// <c>[[0,0,0],[r,g,b]]</c> is not "the background is this" - it is "the primary is black and
+    /// the background is this", and the controller did as it was told. Editing Background really
+    /// did turn Color off.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void A_patch_for_one_slot_says_nothing_about_the_slots_below_it()
+    {
+        var patch = new WledSegment();
+
+        patch.SetColorSlot(1, new RgbColor(0, 0, 255));
+
+        Assert.Null(patch.Colors![0]);
+        Assert.Equal([0, 0, 255], patch.Colors[1]!);
+    }
+
+    /// <summary>Null is WLED's own "leave this one alone", so it has to survive serialisation.</summary>
+    [Fact]
+    public void An_unset_slot_goes_over_the_wire_as_null()
+    {
+        var patch = new WledSegment();
+        patch.SetColorSlot(1, new RgbColor(0, 0, 255));
+
+        // Through the shipped context, because WhenWritingNull is set on it and the whole question
+        // is whether a null survives to the wire.
+        string json = JsonSerializer.Serialize(patch, WledJson.Default.WledSegment);
+
+        Assert.Contains("\"col\":[null,[0,0,255]]", json, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// And the editor has to keep reading the slots the patch did not mention, which it did not
+    /// when a held change replaced the whole array with its own shorter one.
+    /// </summary>
+    [Fact]
+    public void Merging_a_one_slot_patch_keeps_the_slots_it_did_not_mention()
+    {
+        var live = new WledSegment { Colors = [[1, 2, 3], [4, 5, 6], [7, 8, 9]] };
+
+        var patch = new WledSegment();
+        patch.SetColorSlot(0, new RgbColor(255, 255, 0));
+
+        live.MergeFrom(patch);
+
+        Assert.Equal([255, 255, 0], live.Colors![0]!);
+        Assert.Equal([4, 5, 6], live.Colors[1]!);
+        Assert.Equal([7, 8, 9], live.Colors[2]!);
     }
 }
