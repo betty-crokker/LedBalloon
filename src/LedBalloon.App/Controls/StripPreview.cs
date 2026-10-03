@@ -317,6 +317,12 @@ public sealed class StripPreview : Control
                 }
             }
 
+            line.Append("  trace");
+            foreach (uint value in NativeEngine.CapabilityTrace())
+            {
+                line.Append(CultureInfo.InvariantCulture, $" {value}");
+            }
+
             line.Append("  probe");
             foreach (uint value in NativeEngine.Probe())
             {
