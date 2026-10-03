@@ -248,12 +248,12 @@ public sealed class StripPreview : Control
 
         if (Diagnostics)
         {
-            DrawCounters(context, inside);
+            DrawCounters(context, inside, wled);
         }
     }
 
     /// <summary>Writes the counters over the strip, for the one question they answer.</summary>
-    private void DrawCounters(DrawingContext context, Rect inside)
+    private void DrawCounters(DrawingContext context, Rect inside, WledSegment wled)
     {
         ControllerTiming timing = Timing is { IntervalMilliseconds: > 0 } known
             ? known
@@ -265,6 +265,13 @@ public sealed class StripPreview : Control
               $"t {running.ElapsedMilliseconds} ms  step {timing.IntervalMilliseconds}/" +
               $"{timing.FrameTimeMilliseconds} ms"
             : $"ticks {_ticks}  restarts {_restarts}  nothing running";
+
+        // What the segment asked for, what the engine was given, and what the engine says the run
+        // can show. Bit 0 of the last is RGB, and without it color_from_palette returns the color
+        // slot for every pixel - a flat run that no palette and no effect can move.
+        (int drawnPalette, int capabilities) = NativeEngine.LastDrawn;
+
+        said += $"  |  pal {wled.Palette} -> {drawnPalette}  caps 0x{capabilities:x2}";
 
         var text = new FormattedText(
             said,

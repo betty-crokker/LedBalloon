@@ -310,6 +310,16 @@ EXPORT void wled_custom_palette(uint8_t slot, const uint32_t* entries) {
 // segfaults, and the rest read whatever follows.
 EXPORT uint8_t wled_palette_count() { return strip.getPaletteCount(); }
 
+// What the segment thinks it can show: bit 0 RGB, bit 1 white, bit 2 CCT.
+//
+// Worth exporting because a segment that reports no RGB is not a drawing bug with a colour in it -
+// color_from_palette gives up at its second line and hands back the colour slot for every pixel, so
+// the whole run comes out one flat colour that never moves whatever the palette or the effect says.
+// It is computed from the busses, once, and is exactly the kind of thing that is invisible from the
+// pixels alone: a flat blue run looks the same whether the palette is solid or the capability is
+// missing.
+EXPORT uint8_t wled_capabilities() { return strip.getSegment(0).getLightCapabilities(); }
+
 EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,
                              const uint8_t* data, uint16_t len) {
   Segment& seg = strip.getSegment(0);
