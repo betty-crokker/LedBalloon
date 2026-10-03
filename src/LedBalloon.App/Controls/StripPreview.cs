@@ -273,6 +273,16 @@ public sealed class StripPreview : Control
 
         said += $"  |  pal {wled.Palette} -> {drawnPalette}  caps 0x{capabilities:x2}";
 
+        // And, when the capability is the thing that is wrong, everything that decided it. A caps
+        // of exactly zero is assigned rather than merely missing a bit: either the segment was not
+        // active when wled_begin ran, or no bus covered it.
+        if (NativeEngine.Probe() is { Length: 8 } probe)
+        {
+            said += $"{Environment.NewLine}begins {probe[0]}  busses {probe[1]}  " +
+                    $"seg {probe[2]}..{probe[3]}  maxWidth {probe[5]}  " +
+                    $"strip {probe[6]}  bus {probe[7]}";
+        }
+
         var text = new FormattedText(
             said,
             CultureInfo.InvariantCulture,

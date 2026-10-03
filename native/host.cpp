@@ -171,7 +171,10 @@ extern "C" {
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
+static uint32_t g_begins = 0;
+
 EXPORT void wled_begin(uint16_t count, uint8_t fps) {
+  g_begins++;
   memset(g_leds, 0, sizeof(g_leds));
 
   // WLED's own init. _length is private and only finalizeInit() sets it, and WS2812FX::setPixelColor
@@ -319,6 +322,30 @@ EXPORT uint8_t wled_palette_count() { return strip.getPaletteCount(); }
 // pixels alone: a flat blue run looks the same whether the palette is solid or the capability is
 // missing.
 EXPORT uint8_t wled_capabilities() { return strip.getSegment(0).getLightCapabilities(); }
+
+// Everything refreshLightCapabilities reads, so a caps of zero can be explained rather than guessed
+// at. It is computed once, in wled_begin, and never again - so whatever it decided there is what
+// every effect is drawn with for the rest of the process.
+EXPORT void wled_probe(uint32_t* out) {
+  if (!out) return;
+
+  // Before wled_begin there are no segments at all, and getSegment(0) on an empty vector takes the
+  // process down - which a diagnostic has no business doing.
+  if (g_begins == 0 || strip.getSegmentsNum() == 0) {
+    for (int i = 0; i < 8; i++) out[i] = 0;
+    return;
+  }
+
+  Segment& seg = strip.getSegment(0);
+  out[0] = g_begins;
+  out[1] = BusManager::getNumBusses();
+  out[2] = seg.start;
+  out[3] = seg.stop;
+  out[4] = seg.getLightCapabilities();
+  out[5] = Segment::maxWidth;
+  out[6] = strip.getLengthTotal();
+  out[7] = g_bus ? (uint32_t)(g_bus->isOk() ? g_bus->getLength() : 0) : 0xFFFFFFFFu;
+}
 
 EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,
                              const uint8_t* data, uint16_t len) {

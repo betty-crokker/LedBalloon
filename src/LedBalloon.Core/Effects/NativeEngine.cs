@@ -47,6 +47,28 @@ public static class NativeEngine
     /// </remarks>
     public static (int Palette, int Capabilities) LastDrawn { get; private set; }
 
+    /// <summary>
+    /// Everything behind the capability byte: begins, busses, segment start and stop, capabilities,
+    /// maxWidth, the strip's total length, and the bus's length (0 if it is not ok, -1 if there is
+    /// no bus at all).
+    /// </summary>
+    public static uint[] Probe()
+    {
+        if (!IsReady)
+        {
+            return [];
+        }
+
+        var into = new uint[8];
+
+        lock (Gate)
+        {
+            Native.Probe(into);
+        }
+
+        return into;
+    }
+
     /// <summary>How many effects the engine registered. 187 on WLED 0.15.3.</summary>
     public static int EffectCount => IsReady ? Native.ModeCount() : 0;
 
@@ -331,6 +353,9 @@ public static class NativeEngine
 
         [DllImport(Dll, EntryPoint = "wled_capabilities")]
         public static extern byte Capabilities();
+
+        [DllImport(Dll, EntryPoint = "wled_probe")]
+        public static extern void Probe(uint[] into);
 
         [DllImport(Dll, EntryPoint = "wled_mode_count")]
         public static extern byte ModeCount();
