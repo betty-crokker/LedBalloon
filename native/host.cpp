@@ -206,8 +206,6 @@ EXPORT uint8_t wled_mode_count() { return strip.getModeCount(); }
 
 EXPORT const char* wled_mode_data(uint8_t id) { return strip.getModeData(id); }
 
-EXPORT uint8_t wled_palette_count() { return strip.getPaletteCount(); }
-
 EXPORT void wled_segment(uint8_t fx, uint8_t pal, uint8_t speed, uint8_t intensity,
                          uint32_t c0, uint32_t c1, uint32_t c2) {
   Segment& seg = strip.getSegment(0);
@@ -289,6 +287,28 @@ EXPORT void wled_pixels_set(const uint32_t* in, uint16_t count) {
   if (!in) return;
   for (uint16_t i = 0; i < count && i < HOST_LEDS; i++) g_leds[i] = in[i];
 }
+
+// A custom palette, as the app's palette editor holds it.
+//
+// The engine loads none of its own: loadCustomPalettes reads them off the controller's filesystem,
+// which is not here. Without them a segment set to a custom palette falls back to palette 0, and
+// palette 0 means "use the colour slot" - so a palette-driven effect on a custom palette came out
+// as a flat wash of the primary colour, or black if the primary is black, while the house drew the
+// palette properly. WLED addresses custom palettes as 255 minus the slot; this takes the slot.
+EXPORT void wled_custom_palette(uint8_t slot, const uint32_t* entries) {
+  if (!entries) return;
+  if (strip.customPalettes.size() <= slot) strip.customPalettes.resize((size_t)slot + 1);
+
+  CRGBPalette16& into = strip.customPalettes[slot];
+  for (int i = 0; i < 16; i++) {
+    into[i] = CRGB(R(entries[i]), G(entries[i]), B(entries[i]));
+  }
+}
+
+// How many palettes the engine can actually draw, so a caller can avoid asking for one it cannot.
+// Ids from here up to 245 index past the end of the gradient table: 71 reads one past it and
+// segfaults, and the rest read whatever follows.
+EXPORT uint8_t wled_palette_count() { return strip.getPaletteCount(); }
 
 EXPORT void wled_runtime_set(uint16_t aux0, uint16_t aux1, uint32_t step, uint32_t call,
                              const uint8_t* data, uint16_t len) {
