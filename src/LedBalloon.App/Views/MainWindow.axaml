@@ -477,6 +477,104 @@
 
               </StackPanel>
 
+
+              <!-- The timetable, on this screen rather than behind the Setup button. It is not
+                   wiring: it is the thing that decides what the house does on the evenings nobody
+                   opens the app at all, which makes it one of the few settings here that somebody
+                   who never touches Setup still needs. -->
+              <Border Classes="card" Padding="10" Margin="0,8,0,0">
+                <StackPanel Spacing="6">
+
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="Timers" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Border Padding="6,1" CornerRadius="3" VerticalAlignment="Center"
+                            Background="#33C9821B" BorderBrush="#C9821B" BorderThickness="1"
+                            IsVisible="{Binding ScheduleChanged}">
+                      <TextBlock Text="Unsaved" FontSize="11" Foreground="#C9821B" />
+                    </Border>
+                  </StackPanel>
+
+                  <TextBlock Classes="hint" TextWrapping="Wrap"
+                             Text="The controllers run this by themselves, with or without this app open. Turning the lights on or off covers the whole house; a scene timer belongs to one controller, because a timer can only fire what its own box holds." />
+
+                  <!-- Only the sun timers read this, and the controllers compute those themselves,
+                       so it sits next to the thing it decides. Pasted rather than typed into two
+                       fields because that is how the number is come by: right-click a spot in
+                       Google Maps and it copies the pair. -->
+                  <TextBlock Classes="hint" Text="Where the house is" Margin="0,4,0,0" />
+                  <TextBox Text="{Binding LocationPasted}"
+                           Watermark="22.694768, 114.283689"
+                           AutomationProperties.AutomationId="HouseLocation" />
+                  <TextBlock Classes="hint" TextWrapping="Wrap"
+                             Text="Sunrise and sunset are worked out on the controllers, from this. Right-click your house in Google Maps and it copies the numbers; paste them here." />
+                  <StackPanel Orientation="Horizontal" Spacing="6">
+                    <ComboBox ItemsSource="{Binding TimeZones}" SelectedItem="{Binding TimeZone}"
+                              PlaceholderText="time zone" MinWidth="170" />
+                    <Button Content="Save" Command="{Binding SaveLocationCommand}" />
+                  </StackPanel>
+                  <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
+                             Text="That is not a place. Two numbers, latitude then longitude."
+                             IsVisible="{Binding LocationIsNotAPlace}" />
+                  <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
+                             Text="{Binding LocationNotice}"
+                             IsVisible="{Binding LocationNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                  <!-- Wrapped rather than in a row: three buttons do not fit this column, and a
+                       button pushed off the edge is a button nobody knows is there. -->
+                  <WrapPanel Margin="0,6,0,0">
+                    <Button Content="Lights on or off" Margin="0,0,6,6"
+                            Command="{Binding AddSwitchTimerCommand}"
+                            AutomationProperties.AutomationId="AddSwitchTimer" />
+                    <Button Content="Add a timer" Margin="0,0,6,6"
+                            Command="{Binding AddScheduleEntryCommand}" />
+                    <Button Content="Save to controllers" Margin="0,0,6,6"
+                            Command="{Binding SaveScheduleCommand}"
+                            IsEnabled="{Binding !IsBusy}" />
+                  </WrapPanel>
+
+                  <ItemsControl ItemsSource="{Binding Schedule}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="vm:ScheduleRow">
+                        <Border Classes="card" Margin="0,0,0,6" Padding="8">
+                          <StackPanel Spacing="6">
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                              <CheckBox IsChecked="{Binding Enabled}" Content="On" VerticalAlignment="Center" />
+                              <TextBlock Text="{Binding Where}" FontWeight="SemiBold"
+                                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                              <Button Content="Remove" Padding="6,2"
+                                      Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
+                                      CommandParameter="{Binding}" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                              <ComboBox ItemsSource="{Binding Triggers}"
+                                        SelectedItem="{Binding Trigger}" Width="120" />
+                              <NumericUpDown Value="{Binding Hour}" Minimum="0" Maximum="23"
+                                             FormatString="00" ShowButtonSpinner="False" Width="52"
+                                             IsVisible="{Binding IsClock}" />
+                              <TextBlock Text=":" VerticalAlignment="Center"
+                                         IsVisible="{Binding IsClock}" />
+                              <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59"
+                                             FormatString="00" ShowButtonSpinner="False" Width="52"
+                                             IsVisible="{Binding IsClock}" />
+                            </StackPanel>
+
+                            <!-- On its own line, stretched: in this column a scene name beside the
+                                 time had nowhere to go and came out as an ellipsis. -->
+                            <ComboBox ItemsSource="{Binding Presets}"
+                                      SelectedItem="{Binding Preset}"
+                                      PlaceholderText="pick a scene"
+                                      HorizontalAlignment="Stretch" />
+
+                          </StackPanel>
+                        </Border>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                </StackPanel>
+              </Border>
             </StackPanel>
           </ScrollViewer>
         </Border>
@@ -995,102 +1093,6 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Schedule">
-            <DockPanel Margin="8,8,8,8">
-
-              <StackPanel DockPanel.Dock="Top" Spacing="6">
-                <!-- Same as Setup: the badge sits on the heading, clear of the buttons. -->
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <TextBlock Text="Timers" FontWeight="SemiBold" VerticalAlignment="Center" />
-                  <Border Padding="6,1" CornerRadius="3" VerticalAlignment="Center"
-                          Background="#33C9821B" BorderBrush="#C9821B" BorderThickness="1"
-                          IsVisible="{Binding ScheduleChanged}">
-                    <TextBlock Text="Unsaved" FontSize="11" Foreground="#C9821B" />
-                  </Border>
-                </StackPanel>
-                <TextBlock Classes="hint"
-                           Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
-                <TextBlock Classes="hint"
-                           Text="One line per controller, because each box runs its own timetable. A scene only appears here once it has been saved — that is when it reaches the controllers, and a timer can only fire what its own box holds." />
-                <TextBlock Classes="hint"
-                           Text="Turning the lights on or off is the exception: one line covers the whole house, and the app puts what each controller needs on it when you save." />
-                <!-- Only the sun timers read this, and the controllers compute those themselves -
-                     so it sits here rather than off in a settings screen, next to the thing it
-                     decides. Pasted rather than typed into two fields because that is how the
-                     number is come by: right-click a spot in Google Maps and it copies the pair. -->
-                <Border Classes="card" Padding="10" Margin="0,4,0,0">
-                  <StackPanel Spacing="6">
-                    <TextBlock Text="Where the house is" FontWeight="SemiBold" />
-                    <TextBlock Classes="hint" TextWrapping="Wrap"
-                               Text="Sunrise and sunset are worked out on the controllers, from this. Right-click your house in Google Maps and it copies the numbers; paste them here. A map link works too." />
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                      <TextBox Text="{Binding LocationPasted}" Width="260"
-                               Watermark="22.694768, 114.283689"
-                               AutomationProperties.AutomationId="HouseLocation" />
-                      <ComboBox ItemsSource="{Binding TimeZones}" SelectedItem="{Binding TimeZone}"
-                                PlaceholderText="time zone" MinWidth="170" />
-                      <Button Content="Save to controllers" Command="{Binding SaveLocationCommand}" />
-                    </StackPanel>
-                    <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
-                               Text="That is not a place. Two numbers, latitude then longitude."
-                               IsVisible="{Binding LocationIsNotAPlace}" />
-                    <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
-                               Text="{Binding LocationNotice}"
-                               IsVisible="{Binding LocationNotice, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                  </StackPanel>
-                </Border>
-
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,4,0,6">
-                  <Button Content="Lights on or off" Command="{Binding AddSwitchTimerCommand}"
-                          AutomationProperties.AutomationId="AddSwitchTimer" />
-                  <Button Content="Add a timer" Command="{Binding AddScheduleEntryCommand}" />
-                  <Button Content="Save to controllers"
-                          Command="{Binding SaveScheduleCommand}"
-                          IsEnabled="{Binding !IsBusy}" />
-                </StackPanel>
-              </StackPanel>
-
-              <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Schedule}">
-                  <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:ScheduleRow">
-                      <Border Classes="card" Margin="0,0,0,6" Padding="10">
-                        <StackPanel Spacing="6">
-
-                          <StackPanel Orientation="Horizontal" Spacing="8">
-                            <CheckBox IsChecked="{Binding Enabled}" Content="On" VerticalAlignment="Center" />
-                            <TextBlock Text="{Binding Where}" FontWeight="SemiBold"
-                                       VerticalAlignment="Center" />
-                            <Button Content="Remove" Padding="6,2"
-                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
-                                    CommandParameter="{Binding}" />
-                          </StackPanel>
-
-                          <StackPanel Orientation="Horizontal" Spacing="6">
-                            <ComboBox ItemsSource="{Binding Triggers}"
-                                      SelectedItem="{Binding Trigger}" Width="120" />
-                            <NumericUpDown Value="{Binding Hour}" Minimum="0" Maximum="23"
-                                           FormatString="00" ShowButtonSpinner="False" Width="52"
-                                           IsVisible="{Binding IsClock}" />
-                            <TextBlock Text=":" VerticalAlignment="Center"
-                                       IsVisible="{Binding IsClock}" />
-                            <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59"
-                                           FormatString="00" ShowButtonSpinner="False" Width="52"
-                                           IsVisible="{Binding IsClock}" />
-                            <TextBlock Text="do" VerticalAlignment="Center" Classes="hint" />
-                            <ComboBox ItemsSource="{Binding Presets}"
-                                      SelectedItem="{Binding Preset}"
-                                      PlaceholderText="pick a scene" MinWidth="200" />
-                          </StackPanel>
-
-                        </StackPanel>
-                      </Border>
-                    </DataTemplate>
-                  </ItemsControl.ItemTemplate>
-                </ItemsControl>
-              </ScrollViewer>
-            </DockPanel>
-          </TabItem>
 
 
         </TabControl>

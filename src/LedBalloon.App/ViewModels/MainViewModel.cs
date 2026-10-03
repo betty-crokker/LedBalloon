@@ -3243,7 +3243,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (TimersPointingAt(scene) is { Count: > 0 } timers)
         {
             Status = $"'{scene.Name}' cannot be removed while {string.Join(" and ", timers)} " +
-                     "point at it. Change the timer first, on the Schedule tab.";
+                     "point at it. Change the timer first, under Timers.";
             return;
         }
 
@@ -3375,7 +3375,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private readonly List<string> _scenesToUnpublish = [];
 
-    /// <summary>Which timers fire this scene, named the way the Schedule tab names them.</summary>
+    /// <summary>Which timers fire this scene, named the way the Timers panel names them.</summary>
     private List<string> TimersPointingAt(Scene scene)
     {
         string[] names = [scene.Name, .. scene.PublishedAs is { Length: > 0 } was ? new[] { was } : []];
