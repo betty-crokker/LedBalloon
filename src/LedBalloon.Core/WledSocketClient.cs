@@ -203,6 +203,8 @@ public sealed class WledSocketClient : IAsyncDisposable
                 message.Clear();
 
                 WebSocketReceiveResult result;
+                var kind = WebSocketMessageType.Text;
+
                 do
                 {
                     result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
@@ -215,11 +217,27 @@ public sealed class WledSocketClient : IAsyncDisposable
                         return;
                     }
 
+                    // The type is on the frame, and a message's frames all carry the same one, so
+                    // the first is the message's.
+                    if (message.WrittenCount == 0)
+                    {
+                        kind = result.MessageType;
+                    }
+
                     message.Write(buffer.AsSpan(0, result.Count));
                 }
                 while (!result.EndOfMessage);
 
-                Dispatch(message.WrittenSpan);
+                // Only the text ones are state. WLED sends the live preview down this same socket
+                // as binary pixel data, and handing that to a JSON reader throws once per frame -
+                // twenty-five times a second while a preview is up. It was caught and reported as
+                // an unreadable frame, which is true of the bytes and wrong about the cause: a
+                // binary frame is not malformed JSON, it is not JSON, and the socket knew that
+                // before anybody tried to read it.
+                if (kind == WebSocketMessageType.Text)
+                {
+                    Dispatch(message.WrittenSpan);
+                }
             }
         }
         finally

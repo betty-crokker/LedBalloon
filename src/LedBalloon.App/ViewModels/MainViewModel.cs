@@ -400,6 +400,20 @@ public sealed partial class MainViewModel : ViewModelBase
     private readonly List<Segment> _watchedSegments = [];
     [ObservableProperty] private bool _isBusy;
 
+    /// <summary>
+    /// Whether the way out of Setup is open.
+    /// </summary>
+    /// <remarks>
+    /// Not while a save is in flight. Done asks whether to save and then leaves on the answer, so
+    /// pressing it during a save puts that question up about work already being carried out - and
+    /// leaving halfway through hands somebody the colours screen while the controllers are still
+    /// being re-cut underneath it. The other buttons in that strip have always been held back for
+    /// this; this one was held back only on there being segments, which is the whole of the bug.
+    /// </remarks>
+    private bool CanFinishSetup => HasSegments && !IsBusy;
+
+    partial void OnIsBusyChanged(bool value) => FinishSetupCommand.NotifyCanExecuteChanged();
+
     /// <summary>Bumped when segments are added or removed, so the canvas re-watches the list.</summary>
     [ObservableProperty] private int _layoutRevision;
 
@@ -961,7 +975,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// losing their work.
     /// </para>
     /// </remarks>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanFinishSetup))]
     private async Task FinishSetupAsync()
     {
         if (HasUnsavedChanges && SyncTargets().Count > 0 && Ask is { } ask)
@@ -5981,6 +5995,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(Project));
         OnPropertyChanged(nameof(HasSegments));
+        FinishSetupCommand.NotifyCanExecuteChanged();
         LayoutRevision++;
         Status = status;
 

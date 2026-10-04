@@ -568,10 +568,12 @@
                       Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
               <Button Content="Overwrite anyway"
                       Command="{Binding OverwriteNewerRevisionCommand}"
-                      IsVisible="{Binding SaveBlockedByNewerRevision}" />
+                      IsVisible="{Binding SaveBlockedByNewerRevision}"
+                      IsEnabled="{Binding !IsBusy}" />
+              <!-- Enablement comes from the command now, which also knows about a save in
+                   flight. IsEnabled on HasSegments alone let this be pressed mid-save. -->
               <Button Content="Done — back to colors"
-                      Command="{Binding FinishSetupCommand}"
-                      IsEnabled="{Binding HasSegments}" />
+                      Command="{Binding FinishSetupCommand}" />
             </StackPanel>
 
             <StackPanel VerticalAlignment="Center">
