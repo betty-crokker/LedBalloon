@@ -944,10 +944,63 @@ public sealed partial class MainViewModel : ViewModelBase
         ActiveTab = PresetsTab;
     }
 
-    /// <summary>Leaves setup behind and goes back to choosing colors.</summary>
+    /// <summary>
+    /// Leaves setup behind and goes back to choosing colors, once the changes have been dealt with.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Saving the layout is not only writing a document: it re-cuts the segment boundaries on the
+    /// controllers. Until it has happened the colours screen is drawing a house the controllers do
+    /// not have - lengthen a run here and the box still thinks it is the old length, so the photo,
+    /// the strip and anything applied all disagree with the wall, and the LEDs just accounted for
+    /// stay dark. That is a screen quietly lying, which is worse than a question.
+    /// </para>
+    /// <para>
+    /// So the way out asks, and both answers are ways out. Staying is offered too, because somebody
+    /// who pressed Done by mistake should not have to choose between writing to the house and
+    /// losing their work.
+    /// </para>
+    /// </remarks>
     [RelayCommand]
-    private void FinishSetup()
+    private async Task FinishSetupAsync()
     {
+        if (HasUnsavedChanges && SyncTargets().Count > 0 && Ask is { } ask)
+        {
+            ConfirmResult answer = await ask(new ConfirmRequest(
+                Title: "Save what you changed?",
+                Message: "The controllers do not have these changes yet, and the colours screen " +
+                         "draws the house as described here — so until they are saved it shows a " +
+                         "house the controllers are not set up for." +
+                         (EditedSceneNames(Project.Scenes, _editedScenes) is { Length: > 0 } scenes
+                             ? $" Changed: {scenes}."
+                             : string.Empty),
+                AcceptText: "Save and go",
+                AlternateText: "Throw them away",
+                CancelText: "Stay here"));
+
+            switch (answer.Choice)
+            {
+                case ConfirmChoice.Accept:
+                    await SaveAsync(force: false);
+
+                    // A save that could not land leaves the changes exactly where they were, so
+                    // going anyway would be going on without them after being told they were kept.
+                    if (HasUnsavedChanges)
+                    {
+                        return;
+                    }
+
+                    break;
+
+                case ConfirmChoice.Alternate:
+                    await ReloadFromControllersAsync(keepMode: true);
+                    break;
+
+                default:
+                    return;
+            }
+        }
+
         Mode = AppMode.Design;
         Status = HasSegments
             ? "Click a segment on the photo to change what it is showing."
