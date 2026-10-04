@@ -248,7 +248,7 @@
             <Button DockPanel.Dock="Right" Content="Sort it out"
                     Background="White" Foreground="#6B4508" BorderBrush="White"
                     Padding="12,5" FontWeight="SemiBold"
-                    Command="{Binding GoToSetupCommand}" />
+                    Command="{Binding SortOutPresetsCommand}" />
             <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="White"
                        Text="{Binding PresetGapNotice}" />
           </DockPanel>
@@ -325,23 +325,9 @@
                      only when it is pressed. -->
                 <ItemsControl ItemsSource="{Binding SceneNotes}">
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate x:DataType="vm:PresetGapRow">
-                      <Border Classes="card" Margin="0,0,0,6" Padding="10">
-                        <StackPanel Spacing="6">
-                          <TextBlock TextWrapping="Wrap" Foreground="#C9821B"
-                                     Text="{Binding Trouble}" />
-                          <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button Content="Stretch it to fit"
-                                    ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the runs as they are now"
-                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).FixPresetCommand}"
-                                    CommandParameter="{Binding}" />
-                            <Button Content="Delete it"
-                                    ToolTip.Tip="Removes it from the controller. Anything pointing at it stops working."
-                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).DeletePresetCommand}"
-                                    CommandParameter="{Binding}" />
-                          </StackPanel>
-                        </StackPanel>
-                      </Border>
+                    <DataTemplate>
+                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
+                                 Foreground="#C9821B" Text="{Binding}" />
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -1031,7 +1017,7 @@
           </Grid>
         </Border>
 
-        <TabControl Margin="14,8,14,8">
+        <TabControl Margin="14,8,14,8" SelectedIndex="{Binding ActiveTab}">
 
           <TabItem Header="The house">
             <DockPanel>
@@ -1074,17 +1060,32 @@
                 <TextBlock Classes="hint" TextWrapping="Wrap"
                            Text="A preset saved when you thought a segment was shorter puts that old length back when it is recalled, so the LEDs you found later stay dark. This reads every preset on every controller and lists the ones that would. Scenes cannot go wrong this way — they carry no LED numbers at all." />
 
-                <Button Content="Check" Margin="0,8,0,0" HorizontalAlignment="Left"
-                        Command="{Binding AuditCommand}" />
+                <TextBlock Classes="hint" Margin="0,8,0,0" FontStyle="Italic"
+                           Text="Every preset covers every LED its controller has."
+                           IsVisible="{Binding !HasPresetGaps}" />
 
                 <!-- Two ways out, said in full because they are not reversible in the same way:
                      rewriting keeps the preset and moves its bounds to the runs as they are now,
                      deleting removes it from the controller for good. -->
                 <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,8,0,0">
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
-                                 Foreground="#C9821B" Text="{Binding}" />
+                    <DataTemplate x:DataType="vm:PresetGapRow">
+                      <Border Classes="card" Margin="0,0,0,6" Padding="10">
+                        <StackPanel Spacing="6">
+                          <TextBlock TextWrapping="Wrap" Foreground="#C9821B"
+                                     Text="{Binding Trouble}" />
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Stretch it to fit"
+                                    ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the runs as they are now"
+                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).FixPresetCommand}"
+                                    CommandParameter="{Binding}" />
+                            <Button Content="Delete it"
+                                    ToolTip.Tip="Removes it from the controller. Anything pointing at it stops working."
+                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).DeletePresetCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>

@@ -234,8 +234,7 @@ public sealed record FixtureChoice(FixtureStyle Style, string Name, string Descr
 public sealed partial class MainViewModel : ViewModelBase
 {
     private const int HouseTab = 0;
-    private const int LightsTab = 1;
-    private const int SetupTab = 2;
+    private const int PresetsTab = 1;
 
     private readonly ZeroconfWledDiscovery _discovery = new();
 
@@ -319,7 +318,7 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private string _status = "Looking for controllers on the network...";
     [ObservableProperty] private string _manualHost = string.Empty;
     [ObservableProperty] private string _controllerNameEdit = string.Empty;
-    [ObservableProperty] private int _activeTab = SetupTab;
+    [ObservableProperty] private int _activeTab = HouseTab;
     [ObservableProperty] private bool _masterOn;
     [ObservableProperty] private PickerOption? _segmentEffectChoice;
     [ObservableProperty] private PaletteOption? _segmentPaletteChoice;
@@ -928,7 +927,21 @@ public sealed partial class MainViewModel : ViewModelBase
     private void GoToSetup()
     {
         Mode = AppMode.Setup;
-        ActiveTab = SetupTab;
+    }
+
+    /// <summary>
+    /// Goes straight to the presets that have gone stale, rather than to Setup's front page.
+    /// </summary>
+    /// <remarks>
+    /// The banner offers one thing and should arrive at it. Landing on the first tab and leaving
+    /// somebody to find the right one is the kind of half-answer that makes a banner feel like an
+    /// advertisement.
+    /// </remarks>
+    [RelayCommand]
+    private void SortOutPresets()
+    {
+        Mode = AppMode.Setup;
+        ActiveTab = PresetsTab;
     }
 
     /// <summary>Leaves setup behind and goes back to choosing colors.</summary>
