@@ -479,6 +479,17 @@ public sealed partial class MainViewModel : ViewModelBase
 
     public ObservableCollection<PresetGapRow> PresetGaps { get; } = [];
 
+    /// <summary>
+    /// The repairs asked for and not yet carried out, by controller and preset name.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than on the rows, because the rows do not survive. The list is rebuilt whenever
+    /// the presets are read, and a save reads them several times over - so a flag held on a row was
+    /// thrown away partway through the very save that was meant to act on it, and the delete asked
+    /// for found nothing pending by the time it looked.
+    /// </remarks>
+    private readonly Dictionary<(string Key, string Name), PresetRepair> _presetRepairs = [];
+
     /// <summary>True when some preset on some controller no longer covers its strip.</summary>
     public bool HasPresetGaps => PresetGaps.Count > 0;
 
@@ -1201,14 +1212,15 @@ public sealed partial class MainViewModel : ViewModelBase
                 // After the scenes, because a timer names a scene and can only be pointed at one
                 // the controller is already holding. Before the bookkeeping below, so a timetable
                 // that will not write is reported with everything else rather than on its own.
-                progress?.Say("Writing the timetable");
-                await WriteScheduleAsync();
-
-                // After the scenes and the timetable, because deleting a preset can take a slot a
-                // timer was pointing at, and the timetable has just been written to say where
-                // everything now lives.
+                // Before the timetable, not after. Deleting a preset frees the slot a timer was
+                // pointing at, so the timetable has to be written against the slots that will
+                // exist rather than the ones that did - otherwise a line is left aimed at a slot
+                // whose preset has just gone.
                 progress?.Say("Repairing the presets that were asked about");
                 await ApplyPresetRepairsAsync();
+
+                progress?.Say("Writing the timetable");
+                await WriteScheduleAsync();
 
                 if (Project.Fingerprint() != beforePublishing)
                 {
@@ -1758,6 +1770,12 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedDevice ??= device;
+
+        // Here as well as on the property changes, because the audit needs three things that do not
+        // arrive together: the controller in this list, its presets, and its LED count. Hung off any
+        // one of those it runs at a moment when another is still missing, finds nothing, and never
+        // runs again - the check is only as good as the moment it is made.
+        RefreshPresetGaps();
     }
 
     /// <summary>
@@ -5806,15 +5824,24 @@ public sealed partial class MainViewModel : ViewModelBase
 
             int ledCount = device.Capabilities?.LedCount ?? 0;
 
-            foreach (PresetGap gap in PresetAudit.FindGaps(device.Presets, ledCount))
+            foreach (PresetGap gap in PresetAudit.FindGaps(device.Device.Presets, ledCount))
             {
-                PresetGaps.Add(new PresetGapRow
+                var row = new PresetGapRow
                 {
                     ControllerKey = key,
                     Host = device.Host,
                     ControllerName = device.DisplayName,
                     Gap = gap,
-                });
+                };
+
+                // Put back what was asked for about this preset, if anything was. The row is new;
+                // the intention is not.
+                if (_presetRepairs.TryGetValue((key, row.Name), out PresetRepair asked))
+                {
+                    row.Pending = asked;
+                }
+
+                PresetGaps.Add(row);
             }
         }
 
@@ -5839,6 +5866,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         row.Pending = PresetRepair.Stretch;
+        _presetRepairs[(row.ControllerKey, row.Name)] = PresetRepair.Stretch;
         HasUnsavedChanges = true;
         Status = $"{row.Name} will be stretched to fit when you save.";
     }
@@ -5871,6 +5899,7 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         row.Pending = PresetRepair.Delete;
+        _presetRepairs[(row.ControllerKey, row.Name)] = PresetRepair.Delete;
         HasUnsavedChanges = true;
         Status = $"{row.Name} will be deleted when you save.";
     }
@@ -5882,6 +5911,7 @@ public sealed partial class MainViewModel : ViewModelBase
         if (row is not null)
         {
             row.Pending = PresetRepair.None;
+            _presetRepairs.Remove((row.ControllerKey, row.Name));
         }
     }
 
@@ -5896,27 +5926,43 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </remarks>
     private async Task ApplyPresetRepairsAsync()
     {
-        PresetGapRow[] asked = [.. PresetGaps.Where(row => row.IsPending)];
-
-        if (asked.Length == 0)
+        if (_presetRepairs.Count == 0)
         {
             return;
         }
 
-        foreach (PresetGapRow row in asked)
+        foreach (((string key, string name), PresetRepair repair) in _presetRepairs.ToArray())
         {
-            if (row.Pending is PresetRepair.Delete)
+            if (DeviceFor(key) is not { } device)
             {
-                await ScenePublisher.RemoveAsync(row.Host, row.Name);
+                continue;
             }
-            else
-            {
-                WledState refit = PresetAudit.BuildRefit(Project, row.ControllerKey, row.Gap.Preset);
 
-                using var client = new WledClient(row.Host);
+            if (repair is PresetRepair.Delete)
+            {
+                await ScenePublisher.RemoveAsync(device.Host, name);
+
+                // A scene adopted from this preset would simply put it back on the next save, which
+                // is not what "delete it" can be allowed to mean.
+                Scene? adopted = Project.Scenes.FirstOrDefault(scene =>
+                    string.Equals(scene.Name, name, StringComparison.CurrentCultureIgnoreCase) ||
+                    string.Equals(scene.PublishedAs, name, StringComparison.CurrentCultureIgnoreCase));
+
+                if (adopted is not null)
+                {
+                    Project.Scenes.Remove(adopted);
+                }
+            }
+            else if (PresetOn(device, name) is { } stale)
+            {
+                WledState refit = PresetAudit.BuildRefit(Project, key, stale);
+
+                using var client = new WledClient(device.Host);
                 await client.ApplyAsync(refit);
             }
         }
+
+        _presetRepairs.Clear();
 
         foreach (DeviceViewModel device in Devices)
         {
@@ -5924,7 +5970,13 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         RefreshPresetGaps();
+        RebuildScenes();
     }
+
+    /// <summary>That controller's copy of a preset, by name, as it stands now.</summary>
+    private static WledPreset? PresetOn(DeviceViewModel device, string name) =>
+        device.Device.Presets.FirstOrDefault(
+            p => string.Equals(p.DisplayName, name, StringComparison.Ordinal));
 
     // ---- Drawing --------------------------------------------------------------------------------
 
@@ -6502,6 +6554,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
         AdoptTheCleanOnes();
 
+        // Whenever the presets are read, which is the only moment the answer can have changed -
+        // and well before anybody goes looking for it. Here rather than hung off the timetable
+        // load, which is a different thing that happened to run at a convenient time.
+        RefreshPresetGaps();
+
         // The scene list is built out of this one, so it is stale the moment this changes.
         RebuildScenes();
     }
@@ -6585,6 +6642,11 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             case nameof(DeviceViewModel.IsConnected):
                 OnPropertyChanged(nameof(ControllerSummary));
+
+                // The audit needs the controller's LED count as well as its presets, and the two
+                // do not arrive together - with no count it has nothing to compare against and
+                // finds nothing, however many presets it has been handed.
+                RefreshPresetGaps();
                 break;
             case nameof(DeviceViewModel.Presets):
                 RebuildPresetCatalog();

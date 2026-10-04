@@ -46,8 +46,8 @@ public class TheSaveSaysWhatItIsDoingTests(UiThreadFixture ui) : IDisposable
                 "Writing the output settings",
                 "Moving the segment boundaries to match",
                 "Putting the scenes on the controllers",
-                "Writing the timetable",
                 "Repairing the presets that were asked about",
+                "Writing the timetable",
             ],
             spy.Steps);
 
