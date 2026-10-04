@@ -158,19 +158,40 @@
         <Border DockPanel.Dock="Top" Padding="14,10"
                 BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
           <DockPanel>
-            <Button DockPanel.Dock="Right" Content="Setup" Command="{Binding GoToSetupCommand}" />
+            <!-- Segoe's own glyphs, named explicitly: the app's text font is Inter, and a
+                 private-use codepoint drawn in it is a blank box. E713 Settings, E897 Help,
+                 E787 Calendar - the ones Windows itself uses for these three. -->
+            <Button DockPanel.Dock="Right" Command="{Binding GoToSetupCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="&#xE713;" FontSize="14" VerticalAlignment="Center"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <TextBlock Text="Setup" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
 
             <!-- Every word on this screen is a term of art and none of them was ever defined, which
                  is how the app came to call one thing a segment in one place and a run in another. -->
-            <Button DockPanel.Dock="Right" Content="Help" Margin="0,0,8,0"
-                    Command="{Binding ShowGlossaryCommand}" />
+            <Button DockPanel.Dock="Right" Margin="0,0,8,0"
+                    Command="{Binding ShowGlossaryCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="&#xE897;" FontSize="14" VerticalAlignment="Center"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <TextBlock Text="Help" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
 
             <!-- Up here rather than at the foot of the sidebar, where it sat under the scene
                  list and had to be scrolled to. What the house does on its own is true of the
                  whole house, not of the scene being edited. -->
-            <Button DockPanel.Dock="Right" Content="Schedule" Margin="0,0,8,0"
+            <Button DockPanel.Dock="Right" Margin="0,0,8,0"
                     AutomationProperties.AutomationId="OpenSchedule"
-                    Command="{Binding OpenScheduleCommand}" />
+                    Command="{Binding OpenScheduleCommand}">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="&#xE787;" FontSize="14" VerticalAlignment="Center"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <TextBlock Text="Schedule" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
 
             <!-- The control is the sentence. A box labelled "Sync" says what the setting is
                  called and nothing about what it does, and the two things it decides between are

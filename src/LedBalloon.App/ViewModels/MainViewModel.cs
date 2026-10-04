@@ -6530,7 +6530,11 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 foreach (ScheduledChange entry in entries)
                 {
-                    rows.Add(ScheduleRow.From(entry, NameOfSlot(device, entry.PresetId), offered));
+                    ScheduleRow read = ScheduleRow.From(
+                        entry, NameOfSlot(device, entry.PresetId), offered);
+
+                    read.FoundOn = device.DisplayName;
+                    rows.Add(read);
                 }
 
                 string sentence = WledSchedule.Describe(
@@ -6548,7 +6552,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
 
-        List<ScheduleRow> shown = Collapse(rows);
+        List<ScheduleRow> shown = Collapse(rows, Devices.Count(d => d.DeviceKey is not null));
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -6603,58 +6607,6 @@ public sealed partial class MainViewModel : ViewModelBase
         ];
     }
 
-    /// <summary>
-    /// Puts every scene a timer names onto every controller.
-    /// <para>
-    /// A timer covers the house, so the scene it fires has to be on each box or the house comes up
-    /// in halves. Publishing normally skips a controller the scene says nothing about, which is
-    /// right when nobody has asked for it - the scene has no opinion there, and writing one would
-    /// invent one. Naming it in a timer is asking for it.
-    /// </para>
-    /// <para>
-    /// What lands on a box the scene does not mention is whatever the scene resolves to there,
-    /// which for most scenes is "off". That is the honest reading of "at five o'clock the house
-    /// shows this", and it is the reason this is done at save time rather than silently on every
-    /// publish.
-    /// </para>
-    /// </summary>
-    private async Task PutScenesTimersNameOnEveryControllerAsync()
-    {
-        string[] named =
-        [
-            .. Schedule
-                .Where(row => row.Preset is { Switch: null })
-                .Select(row => row.Preset!.Name)
-                .Distinct(StringComparer.CurrentCultureIgnoreCase),
-        ];
-
-        foreach (string name in named)
-        {
-            Scene? scene = Project.Scenes.FirstOrDefault(
-                s => string.Equals(s.Name, name, StringComparison.CurrentCultureIgnoreCase));
-
-            if (scene is null)
-            {
-                // Not one of ours - a preset somebody saved on the controller itself. Nothing to
-                // publish, and the save will simply not find a slot for it on a box that lacks it.
-                continue;
-            }
-
-            foreach (DeviceViewModel device in Devices)
-            {
-                if (device.DeviceKey is not { } key || SlotOf(device, name) is not null)
-                {
-                    continue;
-                }
-
-                await ScenePublisher.PublishAsync(
-                    key, device.Host, ScenePublisher.BuildFor(Project, scene, key));
-
-                await device.Device.RefreshPresetsAsync();
-            }
-        }
-    }
-
     /// <summary>The slot that controller keeps a named scene in, if it keeps one at all.</summary>
     private static int? SlotOf(DeviceViewModel device, string name) =>
         device.Presets.FirstOrDefault(
@@ -6670,17 +6622,39 @@ public sealed partial class MainViewModel : ViewModelBase
     /// they are, because that is a disagreement worth seeing rather than quietly picking a winner.
     /// </para>
     /// </summary>
-    private static List<ScheduleRow> Collapse(List<ScheduleRow> rows)
+    private static List<ScheduleRow> Collapse(List<ScheduleRow> rows, int controllers)
     {
         var shown = new List<ScheduleRow>();
-        var seen = new HashSet<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
+        var first = new Dictionary<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled), ScheduleRow>();
+        var boxes = new Dictionary<ScheduleRow, List<string>>();
 
         foreach (ScheduleRow row in rows)
         {
-            if (seen.Add(row.Shape))
+            if (first.TryGetValue(row.Shape, out ScheduleRow? already))
             {
-                shown.Add(row);
+                if (row.FoundOn is { Length: > 0 } also)
+                {
+                    boxes[already].Add(also);
+                }
+
+                continue;
             }
+
+            first[row.Shape] = row;
+            boxes[row] = row.FoundOn is { Length: > 0 } from ? [from] : [];
+            shown.Add(row);
+        }
+
+        // A line this app wrote is on every box, so the copies fold back into one and there is
+        // nothing to say. One that is not - set up in WLED's own pages, or left behind by a save
+        // that only reached one controller - would otherwise be shown as though it covered the
+        // house, which is the one thing the reader must not be allowed to believe.
+        foreach (ScheduleRow row in shown)
+        {
+            List<string> on = boxes[row];
+            row.OnlyOn = on.Count > 0 && on.Count < controllers
+                ? $"Only on {string.Join(" and ", on)}. Saving will put it on the rest."
+                : string.Empty;
         }
 
         return shown;
@@ -6828,11 +6802,10 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task WriteScheduleAsync()
     {
         {
-            // Everything a line fires has to exist on the box the line is going to, before a timer
-            // there can point at it - and which slot it lands in is the controller's answer, not
-            // ours. The switch is the app's own preset; the scenes are the house's.
+            // The switch presets first, because the preset a line fires has to exist on a
+            // controller before a timer there can point at it - and which slot it lands in is the
+            // controller's answer, not ours.
             Dictionary<(string Key, bool On), int> switches = await WriteSwitchPresetsAsync();
-            await PutScenesTimersNameOnEveryControllerAsync();
 
             foreach (DeviceViewModel device in Devices)
             {
@@ -6848,6 +6821,12 @@ public sealed partial class MainViewModel : ViewModelBase
                     // Each line, resolved against this box. The switch lands wherever it was
                     // written; a scene is found by the name it was picked by, which is the only
                     // thing the two controllers agree on.
+                    //
+                    // A scene that says nothing about this controller has no slot here, so the line
+                    // is simply not written to it - and that box is left alone at that time of day.
+                    // "Twinkle both" leaves South alone, so a timer firing it leaves South alone;
+                    // writing the scene here anyway would resolve to "off" and turn South off every
+                    // evening, which is not what the scene does and not what the timer said.
                     int? slot = row.SwitchOn is { } on
                         ? switches.TryGetValue((key, on), out int written) ? written : null
                         : row.Preset is { Name: { } name } ? SlotOf(device, name) : null;
