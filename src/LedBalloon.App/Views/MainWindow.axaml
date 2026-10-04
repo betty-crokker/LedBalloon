@@ -170,6 +170,22 @@
               </StackPanel>
             </Button>
 
+            <!-- Saving was only ever offered in Setup, so the scenes and looks made on this screen
+                 had no button at all: the status bar said "Unsaved changes" and left the reader to
+                 find the way to deal with it on another page. E74E is Save, the same glyph Windows
+                 puts on it. Greyed when there is nothing to write rather than hidden, so the
+                 question "is everything written down" has one place to be asked. -->
+            <Button DockPanel.Dock="Right" Margin="0,0,8,0"
+                    AutomationProperties.AutomationId="SaveFromDesign"
+                    Command="{Binding SaveProjectCommand}"
+                    ToolTip.Tip="Write the scenes and the layout to the controllers">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <TextBlock Text="&#xE74E;" FontSize="14" VerticalAlignment="Center"
+                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                <TextBlock Text="Save" VerticalAlignment="Center" />
+              </StackPanel>
+            </Button>
+
             <!-- Every word on this screen is a term of art and none of them was ever defined, which
                  is how the app came to call one thing a segment in one place and a run in another. -->
             <Button DockPanel.Dock="Right" Margin="0,0,8,0"

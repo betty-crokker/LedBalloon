@@ -34,7 +34,7 @@
   <Window.Styles>
     <Style Selector="TextBlock.panelTitle">
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontSize" Value="21" />
     </Style>
     <Style Selector="TextBlock.heading">
       <Setter Property="FontWeight" Value="SemiBold" />
@@ -288,10 +288,13 @@
           <TextBlock Classes="hint"
                      Text="A look is a named way for one segment to look — its effect, palette, speed and colors, written down once. Use it on as many segments and in as many scenes as you like; change it here and all of them follow." />
 
+          <!-- Dead until there is something in it. An empty picker that still invites a click
+               says there is a list behind it and that you have failed to open it. -->
           <ComboBox ItemsSource="{Binding Looks}"
                     AutomationProperties.AutomationId="LookList"
                     SelectedItem="{Binding SelectedLook}"
                     DisplayMemberBinding="{Binding Name}"
+                    IsEnabled="{Binding HasLooks}"
                     PlaceholderText="Pick a look"
                     HorizontalAlignment="Stretch"
                     Margin="0,6,0,6" />
@@ -302,10 +305,6 @@
           <StackPanel Spacing="8" Margin="0,8,0,0"
                       IsVisible="{Binding SelectedLook, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
 
-            <TextBox Text="{Binding SelectedLook.Name, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                     AutomationProperties.AutomationId="LookName"
-                     PlaceholderText="Look name" />
-
             <!-- The reach is the point and also the surprise, so it is said while the look is being
                  changed rather than afterwards. -->
             <TextBlock Classes="hint" Text="{Binding SelectedLook.Reach}" />
@@ -313,6 +312,8 @@
             <StackPanel Orientation="Horizontal" Spacing="8">
               <Button Content="Put it on this segment" Command="{Binding ApplyLookCommand}" />
               <Button Content="Take it from this segment" Command="{Binding UpdateLookCommand}" />
+              <Button Content="Rename" AutomationProperties.AutomationId="LookRename"
+                      Command="{Binding RenameLookCommand}" />
               <Button Content="Remove" Command="{Binding DeleteLookCommand}" />
             </StackPanel>
           </StackPanel>

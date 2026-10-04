@@ -22,10 +22,18 @@ public sealed record PresetChoice(string Name, bool? Switch = null)
     public override string ToString() => Name;
 
     /// <summary>The two ends of the house switch, offered on every timer.</summary>
+    /// <remarks>
+    /// Said at length because "Turn everything on" was read as "show the scene I am looking at".
+    /// It is an easy reading - a scene was on the screen at the time - and the difference matters:
+    /// these two pick no scene at all. They are the timetabled form of the switch at the top of
+    /// the main screen, sending the same on and off and nothing else, so the house comes back
+    /// to whatever it was last showing. A timer that should decide the colours wants a scene
+    /// by name.
+    /// </remarks>
     public static IReadOnlyList<PresetChoice> Switches { get; } =
     [
-        new("Turn everything off", false),
-        new("Turn everything on", true),
+        new("Turn the lights off", false),
+        new("Turn the lights on (whatever was showing last)", true),
     ];
 
     /// <summary>The switch and then the scenes, which is the order they are worth reading in.</summary>

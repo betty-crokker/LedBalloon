@@ -418,7 +418,14 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </remarks>
     private bool CanFinishSetup => HasSegments && !IsBusy;
 
-    partial void OnIsBusyChanged(bool value) => FinishSetupCommand.NotifyCanExecuteChanged();
+    partial void OnIsBusyChanged(bool value)
+    {
+        FinishSetupCommand.NotifyCanExecuteChanged();
+        SaveProjectCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnHasUnsavedChangesChanged(bool value) =>
+        SaveProjectCommand.NotifyCanExecuteChanged();
 
     /// <summary>Bumped when segments are added or removed, so the canvas re-watches the list.</summary>
     [ObservableProperty] private int _layoutRevision;
@@ -1121,8 +1128,18 @@ public sealed partial class MainViewModel : ViewModelBase
     /// between machines.
     /// </para>
     /// </summary>
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanSaveProject))]
     private Task SaveProjectAsync() => SaveAsync(force: false);
+
+    /// <summary>
+    /// Nothing to write, or already writing.
+    /// </summary>
+    /// <remarks>
+    /// Greyed rather than hidden. A Save button that comes and goes is a Save button you have to
+    /// look for, and the question it answers - is there anything of mine not written down yet -
+    /// is worth being able to ask of a control that is always in the same place.
+    /// </remarks>
+    private bool CanSaveProject => HasUnsavedChanges && !IsBusy;
 
     /// <summary>Saves over a newer revision, once the user has said that is what they want.</summary>
     [RelayCommand]
@@ -3125,6 +3142,34 @@ public sealed partial class MainViewModel : ViewModelBase
     /// looking exactly as they did — they simply stop following this name.
     /// </para>
     /// </summary>
+    /// <summary>Renames a look, asking for the new name the way everything else here asks.</summary>
+    /// <remarks>
+    /// There used to be a text box under the picker holding the same name the picker was already
+    /// showing, which read as two different things to fill in.
+    /// </remarks>
+    [RelayCommand]
+    private async Task RenameLookAsync()
+    {
+        if (SelectedLook is not { } row || Ask is not { } ask)
+        {
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            Title: $"Rename '{row.Name}'?",
+            Message: "Every scene wearing this look follows the new name.",
+            AcceptText: "Rename",
+            CancelText: "Cancel",
+            InputLabel: "Look name",
+            InputDefault: row.Name));
+
+        if (answer.Accepted && answer.Input is { Length: > 0 } name)
+        {
+            row.Name = name;
+            HasUnsavedChanges = true;
+        }
+    }
+
     [RelayCommand]
     private async Task DeleteLookAsync()
     {
@@ -3186,6 +3231,9 @@ public sealed partial class MainViewModel : ViewModelBase
             : null;
     }
 
+    /// <summary>True when there is a look to pick, so the picker can say so by being dead.</summary>
+    public bool HasLooks => Looks.Count > 0;
+
     private void RebuildLooks()
     {
         string? was = SelectedLook?.Look.Id;
@@ -3202,6 +3250,8 @@ public sealed partial class MainViewModel : ViewModelBase
             SelectedLook = Looks.FirstOrDefault(row =>
                 string.Equals(row.Look.Id, was, StringComparison.Ordinal));
         }
+
+        OnPropertyChanged(nameof(HasLooks));
     }
 
     /// <summary>
