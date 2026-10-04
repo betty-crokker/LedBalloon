@@ -1,6 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="LedBalloon.App.Views.HelpDialog"
+        Icon="/Assets/ledballoon.ico"
         Title="What the words mean"
         Width="520" Height="600"
         WindowStartupLocation="CenterOwner"

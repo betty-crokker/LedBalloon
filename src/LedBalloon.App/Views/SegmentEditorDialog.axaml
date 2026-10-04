@@ -5,6 +5,7 @@
         xmlns:ctrl="using:LedBalloon.App.Controls"
         x:Class="LedBalloon.App.Views.SegmentEditorDialog"
         x:DataType="vm:MainViewModel"
+        Icon="/Assets/ledballoon.ico"
         Title="LedBalloon"
         Width="520" SizeToContent="Height"
         CanResize="False"

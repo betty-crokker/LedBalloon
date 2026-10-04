@@ -9,7 +9,7 @@
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="820"
         x:Class="LedBalloon.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/ledballoon.ico"
         Title="LedBalloon"
         Width="1280" Height="820"
         MinWidth="1040" MinHeight="620">
@@ -155,8 +155,9 @@
       <!-- ================= DESIGN: what color should things be ================= -->
       <DockPanel IsVisible="{Binding IsDesignMode}">
 
-        <Border DockPanel.Dock="Top" Padding="14,10"
-                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,0,0,1">
+        <Border DockPanel.Dock="Bottom" Padding="14,10"
+                Background="{DynamicResource PanelBackground}"
+                BorderBrush="{DynamicResource PanelBorder}" BorderThickness="0,1,0,0">
           <DockPanel>
             <!-- Segoe's own glyphs, named explicitly: the app's text font is Inter, and a
                  private-use codepoint drawn in it is a blank box. E713 Settings, E897 Help,

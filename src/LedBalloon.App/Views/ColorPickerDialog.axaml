@@ -4,6 +4,7 @@
         xmlns:primitives="using:Avalonia.Controls.Primitives"
         x:Class="LedBalloon.App.Views.ColorPickerDialog"
         x:DataType="vm:SegmentColorSlot"
+        Icon="/Assets/ledballoon.ico"
         Title="LedBalloon"
         Width="372" SizeToContent="Height"
         CanResize="False"

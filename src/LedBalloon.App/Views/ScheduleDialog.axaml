@@ -3,6 +3,7 @@
         xmlns:vm="using:LedBalloon.App.ViewModels"
         x:Class="LedBalloon.App.Views.ScheduleDialog"
         x:DataType="vm:MainViewModel"
+        Icon="/Assets/ledballoon.ico"
         Title="Schedule"
         Width="560" Height="620"
         WindowStartupLocation="CenterOwner">

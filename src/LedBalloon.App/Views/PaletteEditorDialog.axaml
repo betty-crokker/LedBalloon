@@ -4,6 +4,7 @@
         xmlns:vm="using:LedBalloon.App.ViewModels"
         x:Class="LedBalloon.App.Views.PaletteEditorDialog"
         x:DataType="vm:PaletteEditorViewModel"
+        Icon="/Assets/ledballoon.ico"
         Title="LedBalloon"
         Width="620" Height="700"
         WindowStartupLocation="CenterOwner"
