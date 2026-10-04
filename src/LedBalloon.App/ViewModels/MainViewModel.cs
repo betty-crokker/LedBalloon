@@ -6377,9 +6377,84 @@ public sealed partial class MainViewModel : ViewModelBase
             Presets.Add(preset);
         }
 
+        AdoptTheCleanOnes();
+
         // The scene list is built out of this one, so it is stale the moment this changes.
         RebuildScenes();
     }
+
+    /// <summary>
+    /// Takes on every preset that translates exactly, and leaves the rest alone.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Adoption is the translation from a preset, which addresses LED numbers, to a scene, which
+    /// addresses runs. It is a decision when the translation loses something - a preset made against
+    /// a layout that has since moved may light ranges matching no run, and nobody should discover
+    /// that from the house. It is not a decision when it loses nothing, and
+    /// <see cref="AdoptionReport.IsClean"/> is the firm answer to which it is.
+    /// </para>
+    /// <para>
+    /// Worth doing because the adopted form is the better one to hold: a scene follows the layout,
+    /// so correcting a run's length makes it cover the new length by itself, where a preset pins
+    /// the length it was saved with and leaves the LEDs found later dark. The presets this skips
+    /// are the ones that cannot survive that correction, and they are reported separately.
+    /// </para>
+    /// </remarks>
+    private void AdoptTheCleanOnes()
+    {
+        var taken = new List<string>();
+
+        foreach (HousePreset preset in Presets)
+        {
+            // The two the app writes for the timers are not scenes and must never become ones:
+            // adopting "Everything off" would make a scene that turns the house off, sitting in
+            // the list beside the scenes, one click from being applied by accident.
+            if (TimedSwitch.SwitchIn(preset.Name) is not null || IsAlreadyAscene(preset.Name))
+            {
+                continue;
+            }
+
+            AdoptionReport report = PresetAdoption.Plan(Project, preset);
+
+            if (!report.IsClean)
+            {
+                continue;
+            }
+
+            report.Scene.Name = Project.UniqueSceneName(preset.Name);
+
+            // It is already on the controllers under this name, in slots a timer may point at, so
+            // saving has to land in those slots rather than adding a second copy beside it.
+            if (string.Equals(report.Scene.Name, preset.Name, StringComparison.Ordinal))
+            {
+                report.Scene.PublishedAs = preset.Name;
+            }
+
+            Project.Scenes.Add(report.Scene);
+            taken.Add(report.Scene.Name);
+        }
+
+        if (taken.Count == 0)
+        {
+            return;
+        }
+
+        HasUnsavedChanges = true;
+
+        // Said rather than done silently. Nothing is lost by it and nothing on the house changes,
+        // but the scene list growing on its own is the kind of thing that is unsettling to notice
+        // and reassuring to have been told.
+        Status = taken.Count == 1
+            ? $"'{taken[0]}' was already on a controller and matches the layout exactly, so it is a scene now."
+            : $"{taken.Count} presets matched the layout exactly and are scenes now: {string.Join(", ", taken)}.";
+    }
+
+    /// <summary>True when a scene already stands for that preset, under either of its names.</summary>
+    private bool IsAlreadyAscene(string presetName) =>
+        Project.Scenes.Any(scene =>
+            string.Equals(scene.Name, presetName, StringComparison.CurrentCultureIgnoreCase) ||
+            string.Equals(scene.PublishedAs, presetName, StringComparison.CurrentCultureIgnoreCase));
 
     private void OnDevicePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
