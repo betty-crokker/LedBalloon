@@ -12,9 +12,7 @@
     <StackPanel DockPanel.Dock="Top" Spacing="6">
       <TextBlock Text="What the house does on its own" FontWeight="SemiBold" FontSize="16" />
       <TextBlock Classes="hint" TextWrapping="Wrap"
-                 Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
-      <TextBlock Classes="hint" TextWrapping="Wrap"
-                 Text="Every line covers the whole house. A scene can only be named here once it has been saved onto every controller — a timer can only fire what each box already holds." />
+                 Text="These timers fire even if this app or this computer are off. Every line covers the whole house." />
       <Button Content="Add a timer" Margin="0,6,0,6"
               AutomationProperties.AutomationId="AddTimer"
               Command="{Binding AddScheduleEntryCommand}" />
@@ -42,34 +40,51 @@
         <ItemsControl ItemsSource="{Binding Schedule}">
           <ItemsControl.ItemTemplate>
             <DataTemplate x:DataType="vm:ScheduleRow">
-              <Border Classes="card" Margin="0,0,0,6" Padding="10">
-                <StackPanel Spacing="6">
+              <!-- One line: a timer is one sentence - on, when, what - and stacking it made four
+                   timers look like four pages. The scene picker takes the room left over, so it is
+                   the part that grows with the window. -->
+              <Border Classes="card" Margin="0,0,0,4" Padding="8">
+                <DockPanel>
 
-                  <StackPanel Orientation="Horizontal" Spacing="8">
-                    <CheckBox IsChecked="{Binding Enabled}" Content="On" VerticalAlignment="Center" />
+                  <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Enabled}"
+                            VerticalAlignment="Center" Margin="0,0,4,0"
+                            ToolTip.Tip="Whether this timer runs at all" />
 
-                    <ComboBox ItemsSource="{Binding Triggers}"
-                              SelectedItem="{Binding Trigger}" Width="120" />
-                    <NumericUpDown Value="{Binding Hour}" Minimum="0" Maximum="23"
-                                   FormatString="00" ShowButtonSpinner="False" Width="52"
-                                   IsVisible="{Binding IsClock}" />
-                    <TextBlock Text=":" VerticalAlignment="Center"
-                               IsVisible="{Binding IsClock}" />
-                    <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59"
-                                   FormatString="00" ShowButtonSpinner="False" Width="52"
-                                   IsVisible="{Binding IsClock}" />
+                  <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding Triggers}"
+                            SelectedItem="{Binding Trigger}" Width="116"
+                            VerticalAlignment="Center" />
 
-                    <Button Content="Remove" Padding="6,2"
-                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
-                            CommandParameter="{Binding}" />
-                  </StackPanel>
+                  <NumericUpDown DockPanel.Dock="Left" Value="{Binding Hour}" Minimum="0" Maximum="23"
+                                 FormatString="00" ShowButtonSpinner="False" Width="48"
+                                 VerticalAlignment="Center" Margin="4,0,0,0"
+                                 IsVisible="{Binding IsClock}" />
+                  <TextBlock DockPanel.Dock="Left" Text=":" VerticalAlignment="Center"
+                             Margin="2,0" IsVisible="{Binding IsClock}" />
+                  <NumericUpDown DockPanel.Dock="Left" Value="{Binding Minute}" Minimum="0" Maximum="59"
+                                 FormatString="00" ShowButtonSpinner="False" Width="48"
+                                 VerticalAlignment="Center" IsVisible="{Binding IsClock}" />
+
+                  <!-- Segoe's "Delete" glyph, which is the trash can Explorer, Outlook, Teams
+                       and Settings all delete with. Named explicitly because the app's text
+                       font is Inter, and a private-use codepoint drawn in it is a blank box.
+                       Fluent Icons is Windows 11, MDL2 Assets is the 10 fallback. -->
+                  <Button DockPanel.Dock="Right" Padding="7,3" Margin="6,0,0,0"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="Remove this timer"
+                          AutomationProperties.AutomationId="RemoveTimer"
+                          Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
+                          CommandParameter="{Binding}">
+                    <TextBlock Text="&#xE74D;" FontSize="13"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                  </Button>
 
                   <ComboBox ItemsSource="{Binding Presets}"
                             SelectedItem="{Binding Preset}"
                             PlaceholderText="pick what it does"
+                            VerticalAlignment="Center" Margin="8,0,0,0"
                             HorizontalAlignment="Stretch" />
 
-                </StackPanel>
+                </DockPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

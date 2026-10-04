@@ -165,6 +165,13 @@
             <Button DockPanel.Dock="Right" Content="Help" Margin="0,0,8,0"
                     Command="{Binding ShowGlossaryCommand}" />
 
+            <!-- Up here rather than at the foot of the sidebar, where it sat under the scene
+                 list and had to be scrolled to. What the house does on its own is true of the
+                 whole house, not of the scene being edited. -->
+            <Button DockPanel.Dock="Right" Content="Schedule" Margin="0,0,8,0"
+                    AutomationProperties.AutomationId="OpenSchedule"
+                    Command="{Binding OpenScheduleCommand}" />
+
             <!-- The control is the sentence. A box labelled "Sync" says what the setting is
                  called and nothing about what it does, and the two things it decides between are
                  worth a sentence each; a switch that carries them costs one click to read and one
@@ -484,17 +491,6 @@
 
               </StackPanel>
 
-
-              <!-- Opened, set and closed, perhaps twice a year - so a button rather than a
-                   column of this screen. It is still here rather than in Setup because it is not
-                   wiring: it decides what the house does on the evenings nobody opens the app. -->
-              <Button Classes="block" Content="Schedule…" Margin="0,8,0,0"
-                      AutomationProperties.AutomationId="OpenSchedule"
-                      Command="{Binding OpenScheduleCommand}" />
-
-              <TextBlock Classes="hint" TextWrapping="Wrap" Margin="0,2,0,0"
-                         Text="The house changes on its own. Saved with everything else."
-                         IsVisible="{Binding ScheduleChanged}" />
 
             </StackPanel>
           </ScrollViewer>

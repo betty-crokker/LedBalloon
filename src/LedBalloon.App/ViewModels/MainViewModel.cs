@@ -6507,7 +6507,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Reads each controller's timetable and the presets its entries can point at.</summary>
     private async Task LoadScheduleAsync()
     {
-        IReadOnlyList<PresetChoice> offered = PresetChoice.Offered(ScenesEveryControllerHolds());
+        IReadOnlyList<PresetChoice> offered = PresetChoice.Offered(ScenesATimerCanName());
 
         // The location belongs with this: it is the thing the sun timers on this screen run on, and
         // reading it at the same moment means the two cannot disagree about which controllers exist.
@@ -6573,37 +6573,86 @@ public sealed partial class MainViewModel : ViewModelBase
         device.Presets.FirstOrDefault(p => p.Id == slot)?.DisplayName;
 
     /// <summary>
-    /// The scenes a timer can name, which are the ones every controller has.
+    /// The scenes a timer can name.
     /// </summary>
     /// <remarks>
-    /// Every controller, because a line here means the whole house: a scene only one box holds
-    /// could not be fired on the others, and offering it would promise something that comes out
-    /// half lit. The switch is not in this list - the app writes that one itself, so it can always
-    /// be promised.
+    /// Everything this house has, whether or not every controller is holding it yet. It used to be
+    /// only the scenes all of them had, with a line of text explaining why the one you wanted was
+    /// missing - which is a rule the app can simply keep instead of a rule the reader has to learn.
+    /// Naming a scene here is now what makes it land on every box: see
+    /// <see cref="PutScenesTimersNameOnEveryControllerAsync"/>.
     /// </remarks>
-    private IReadOnlyList<string> ScenesEveryControllerHolds()
+    private IReadOnlyList<string> ScenesATimerCanName()
     {
-        List<DeviceViewModel> boxes = [.. Devices.Where(d => d.DeviceKey is not null)];
+        IEnumerable<string> known = Project.Scenes.Select(scene => scene.Name);
 
-        if (boxes.Count == 0)
+        // Plus anything the controllers already hold that this app did not write - a preset saved
+        // from WLED's own interface is still a thing a timer can reasonably fire.
+        foreach (DeviceViewModel box in Devices)
         {
-            return [];
+            known = known.Concat(
+                box.Presets.Where(p => p.Id > 0).Select(p => p.DisplayName));
         }
 
-        IEnumerable<string> shared = boxes[0].Presets
-            .Where(p => p.Id > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
-            .Select(p => p.DisplayName)
-            .Where(name => TimedSwitch.SwitchIn(name) is null);
+        return
+        [
+            .. known
+                .Where(name => !string.IsNullOrWhiteSpace(name) && TimedSwitch.SwitchIn(name) is null)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase),
+        ];
+    }
 
-        foreach (DeviceViewModel box in boxes.Skip(1))
+    /// <summary>
+    /// Puts every scene a timer names onto every controller.
+    /// <para>
+    /// A timer covers the house, so the scene it fires has to be on each box or the house comes up
+    /// in halves. Publishing normally skips a controller the scene says nothing about, which is
+    /// right when nobody has asked for it - the scene has no opinion there, and writing one would
+    /// invent one. Naming it in a timer is asking for it.
+    /// </para>
+    /// <para>
+    /// What lands on a box the scene does not mention is whatever the scene resolves to there,
+    /// which for most scenes is "off". That is the honest reading of "at five o'clock the house
+    /// shows this", and it is the reason this is done at save time rather than silently on every
+    /// publish.
+    /// </para>
+    /// </summary>
+    private async Task PutScenesTimersNameOnEveryControllerAsync()
+    {
+        string[] named =
+        [
+            .. Schedule
+                .Where(row => row.Preset is { Switch: null })
+                .Select(row => row.Preset!.Name)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase),
+        ];
+
+        foreach (string name in named)
         {
-            HashSet<string> here =
-                [.. box.Presets.Where(p => p.Id > 0).Select(p => p.DisplayName)];
+            Scene? scene = Project.Scenes.FirstOrDefault(
+                s => string.Equals(s.Name, name, StringComparison.CurrentCultureIgnoreCase));
 
-            shared = shared.Where(here.Contains);
+            if (scene is null)
+            {
+                // Not one of ours - a preset somebody saved on the controller itself. Nothing to
+                // publish, and the save will simply not find a slot for it on a box that lacks it.
+                continue;
+            }
+
+            foreach (DeviceViewModel device in Devices)
+            {
+                if (device.DeviceKey is not { } key || SlotOf(device, name) is not null)
+                {
+                    continue;
+                }
+
+                await ScenePublisher.PublishAsync(
+                    key, device.Host, ScenePublisher.BuildFor(Project, scene, key));
+
+                await device.Device.RefreshPresetsAsync();
+            }
         }
-
-        return [.. shared.Distinct().OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)];
     }
 
     /// <summary>The slot that controller keeps a named scene in, if it keeps one at all.</summary>
@@ -6688,7 +6737,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         var row = new ScheduleRow
         {
-            Presets = PresetChoice.Offered(ScenesEveryControllerHolds()),
+            Presets = PresetChoice.Offered(ScenesATimerCanName()),
             Hour = 22,
             Minute = 30,
             Preset = PresetChoice.Switches[0],
@@ -6779,10 +6828,11 @@ public sealed partial class MainViewModel : ViewModelBase
     private async Task WriteScheduleAsync()
     {
         {
-            // The switch presets first, because the preset a line fires has to exist on a
-            // controller before a timer there can point at it - and which slot it lands in is the
-            // controller's answer, not ours.
+            // Everything a line fires has to exist on the box the line is going to, before a timer
+            // there can point at it - and which slot it lands in is the controller's answer, not
+            // ours. The switch is the app's own preset; the scenes are the house's.
             Dictionary<(string Key, bool On), int> switches = await WriteSwitchPresetsAsync();
+            await PutScenesTimersNameOnEveryControllerAsync();
 
             foreach (DeviceViewModel device in Devices)
             {
