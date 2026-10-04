@@ -234,6 +234,20 @@
           </DockPanel>
         </Border>
 
+        <!-- A fault in the house rather than a detail of its description, so it is said here and
+             not only in Setup. A preset that pins a length recalls that length, so LEDs counted
+             since go dark whenever a wall button or the phone app fires it - and nothing on this
+             screen would otherwise ever mention it. -->
+        <Border DockPanel.Dock="Top" Padding="12,8" Background="#8A5A10"
+                IsVisible="{Binding HasPresetGaps}">
+          <DockPanel>
+            <Button DockPanel.Dock="Right" Content="Sort it out"
+                    Command="{Binding GoToSetupCommand}" />
+            <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="White"
+                       Text="{Binding PresetGapNotice}" />
+          </DockPanel>
+        </Border>
+
         <!-- Color and presets. Wider than the setup sidebar, because a preset needs describing
              and the photo only has to be big enough to read. -->
         <Border DockPanel.Dock="Right" Width="420" Padding="14"
@@ -305,9 +319,23 @@
                      only when it is pressed. -->
                 <ItemsControl ItemsSource="{Binding SceneNotes}">
                   <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                      <TextBlock Classes="hint" Margin="0,2" TextWrapping="Wrap"
-                                 Foreground="#C9821B" Text="{Binding}" />
+                    <DataTemplate x:DataType="vm:PresetGapRow">
+                      <Border Classes="card" Margin="0,0,0,6" Padding="10">
+                        <StackPanel Spacing="6">
+                          <TextBlock TextWrapping="Wrap" Foreground="#C9821B"
+                                     Text="{Binding Trouble}" />
+                          <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button Content="Stretch it to fit"
+                                    ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the runs as they are now"
+                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).FixPresetCommand}"
+                                    CommandParameter="{Binding}" />
+                            <Button Content="Delete it"
+                                    ToolTip.Tip="Removes it from the controller. Anything pointing at it stops working."
+                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).DeletePresetCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -1043,6 +1071,9 @@
                 <Button Content="Check" Margin="0,8,0,0" HorizontalAlignment="Left"
                         Command="{Binding AuditCommand}" />
 
+                <!-- Two ways out, said in full because they are not reversible in the same way:
+                     rewriting keeps the preset and moves its bounds to the runs as they are now,
+                     deleting removes it from the controller for good. -->
                 <ItemsControl ItemsSource="{Binding PresetGaps}" Margin="0,8,0,0">
                   <ItemsControl.ItemTemplate>
                     <DataTemplate>

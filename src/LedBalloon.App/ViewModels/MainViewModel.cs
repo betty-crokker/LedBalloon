@@ -458,7 +458,27 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Palettes the selected segment's controller holds.</summary>
     public ObservableCollection<PaletteOption> SegmentPalettes { get; } = [];
 
-    public ObservableCollection<PresetGap> PresetGaps { get; } = [];
+    public ObservableCollection<PresetGapRow> PresetGaps { get; } = [];
+
+    /// <summary>True when some preset on some controller no longer covers its strip.</summary>
+    public bool HasPresetGaps => PresetGaps.Count > 0;
+
+    /// <summary>
+    /// The trouble in one sentence, for the screen somebody is actually looking at.
+    /// </summary>
+    /// <remarks>
+    /// On the main screen rather than only in Setup, because this is a fault in the house and not a
+    /// detail of its description: a preset that pins a length recalls that length, so LEDs somebody
+    /// has since counted and told the app about go dark whenever a wall button or the phone app
+    /// fires it. Nothing on this screen would otherwise ever mention it.
+    /// </remarks>
+    public string PresetGapNotice => PresetGaps.Count switch
+    {
+        0 => string.Empty,
+        1 => PresetGaps[0].Trouble,
+        _ => $"{PresetGaps.Count} presets on the controllers were saved when the strips were " +
+             $"shorter, and leave LEDs dark when they run.",
+    };
 
     public ObservableCollection<string> LayoutConflicts { get; } = [];
 
@@ -5654,6 +5674,21 @@ public sealed partial class MainViewModel : ViewModelBase
     [RelayCommand]
     private void Audit()
     {
+        RefreshPresetGaps();
+
+        Status = PresetGaps.Count == 0
+            ? "Every preset lights every LED its controller has."
+            : $"{PresetGaps.Count} preset(s) would leave LEDs dark after a length change.";
+    }
+
+    /// <summary>Re-runs the audit without saying anything about it.</summary>
+    /// <remarks>
+    /// Run whenever the presets are read rather than only when a button is pressed. A stale preset
+    /// is not something anybody goes looking for - it is noticed when part of the house stays dark,
+    /// which is months later and nowhere near the button.
+    /// </remarks>
+    private void RefreshPresetGaps()
+    {
         PresetGaps.Clear();
 
         foreach (DeviceViewModel device in Devices)
@@ -5667,13 +5702,106 @@ public sealed partial class MainViewModel : ViewModelBase
 
             foreach (PresetGap gap in PresetAudit.FindGaps(device.Presets, ledCount))
             {
-                PresetGaps.Add(gap);
+                PresetGaps.Add(new PresetGapRow(key, device.Host, device.DisplayName, gap));
             }
         }
 
-        Status = PresetGaps.Count == 0
-            ? "Every preset lights every LED its controller has."
-            : $"{PresetGaps.Count} preset(s) would leave LEDs dark after a length change.";
+        OnPropertyChanged(nameof(HasPresetGaps));
+        OnPropertyChanged(nameof(PresetGapNotice));
+    }
+
+    /// <summary>
+    /// Rewrites a preset so its segments span what the runs are now, keeping its colors.
+    /// </summary>
+    /// <remarks>
+    /// The preset is what a wall button and the phone app recall, so it is worth keeping and worth
+    /// correcting rather than only warning about. Its look is carried across untouched; only the
+    /// bounds move.
+    /// </remarks>
+    [RelayCommand]
+    private async Task FixPresetAsync(PresetGapRow? row)
+    {
+        if (row is null)
+        {
+            return;
+        }
+
+        IsBusy = true;
+
+        try
+        {
+            WledState refit = PresetAudit.BuildRefit(Project, row.ControllerKey, row.Gap.Preset);
+
+            using var client = new WledClient(row.Host);
+            await client.ApplyAsync(refit);
+
+            if (DeviceFor(row.ControllerKey) is { } device)
+            {
+                await device.Device.RefreshPresetsAsync();
+            }
+
+            RefreshPresetGaps();
+            Status = $"{row.Name} now covers the whole strip.";
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            Status = $"Could not rewrite {row.Name}: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Deletes a preset that is not worth keeping.
+    /// </summary>
+    /// <remarks>
+    /// Asked about first. A preset is the one thing on these boxes that nobody else has a copy of,
+    /// and a timer or a wall button may be pointing at it.
+    /// </remarks>
+    [RelayCommand]
+    private async Task DeletePresetAsync(PresetGapRow? row)
+    {
+        if (row is null || Ask is not { } ask)
+        {
+            return;
+        }
+
+        ConfirmResult answer = await ask(new ConfirmRequest(
+            "Delete this preset?",
+            $"{row.Name} would be gone from {row.ControllerName}. Anything pointing at it — a timer, " +
+            "a wall button, the phone app — would stop working.",
+            AcceptText: "Delete it",
+            CancelText: "Keep it"));
+
+        if (answer.Choice is not ConfirmChoice.Accept)
+        {
+            return;
+        }
+
+        IsBusy = true;
+
+        try
+        {
+            await ScenePublisher.RemoveAsync(row.Host, row.Name);
+
+            if (DeviceFor(row.ControllerKey) is { } device)
+            {
+                await device.Device.RefreshPresetsAsync();
+            }
+
+            RefreshPresetGaps();
+            Status = $"{row.Name} deleted.";
+        }
+        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+        {
+            Status = $"Could not delete {row.Name}: {ex.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     // ---- Drawing --------------------------------------------------------------------------------
@@ -6572,6 +6700,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
             ScheduleChanged = false;
             OnPropertyChanged(nameof(SceneTimerNote));
+            RefreshPresetGaps();
         });
     }
 
