@@ -6530,11 +6530,14 @@ public sealed partial class MainViewModel : ViewModelBase
 
                 foreach (ScheduledChange entry in entries)
                 {
-                    ScheduleRow read = ScheduleRow.From(
-                        entry, NameOfSlot(device, entry.PresetId), offered);
+                    string? holds = NameOfSlot(device, entry.PresetId);
 
-                    read.FoundOn = device.DisplayName;
-                    rows.Add(read);
+                    if (holds is { Length: > 0 } && TimedSwitch.SwitchIn(holds) is null)
+                    {
+                        _firedByTimers.Add(holds);
+                    }
+
+                    rows.Add(ScheduleRow.From(entry, holds, offered));
                 }
 
                 string sentence = WledSchedule.Describe(
@@ -6552,7 +6555,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
         }
 
-        List<ScheduleRow> shown = Collapse(rows, Devices.Count(d => d.DeviceKey is not null));
+        List<ScheduleRow> shown = Collapse(rows);
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -6572,6 +6575,16 @@ public sealed partial class MainViewModel : ViewModelBase
         });
     }
 
+    /// <summary>
+    /// Names the controllers' timetables already point at, gathered as they are read.
+    /// </summary>
+    /// <remarks>
+    /// So a timer set up outside this app reads back as what it is. Without it the row would find
+    /// nothing matching in the list, come up blank, and the next save would write that blank over
+    /// a timer somebody meant.
+    /// </remarks>
+    private readonly HashSet<string> _firedByTimers = new(StringComparer.CurrentCultureIgnoreCase);
+
     /// <summary>What the slot holds on that controller, by name.</summary>
     private static string? NameOfSlot(DeviceViewModel device, int slot) =>
         device.Presets.FirstOrDefault(p => p.Id == slot)?.DisplayName;
@@ -6590,13 +6603,12 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         IEnumerable<string> known = Project.Scenes.Select(scene => scene.Name);
 
-        // Plus anything the controllers already hold that this app did not write - a preset saved
-        // from WLED's own interface is still a thing a timer can reasonably fire.
-        foreach (DeviceViewModel box in Devices)
-        {
-            known = known.Concat(
-                box.Presets.Where(p => p.Id > 0).Select(p => p.DisplayName));
-        }
+        // Plus whatever the controllers are already firing. Not every preset they hold: a box can
+        // carry presets this app never wrote - saved from WLED's own pages, or left there by
+        // whoever set it up - and listing those would offer a reader a choice between their own
+        // scenes and a handful of names that mean nothing to them. A timer already pointing at one
+        // still has to read back as itself rather than as an empty box, so those names are kept.
+        known = known.Concat(_firedByTimers);
 
         return
         [
@@ -6622,39 +6634,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// they are, because that is a disagreement worth seeing rather than quietly picking a winner.
     /// </para>
     /// </summary>
-    private static List<ScheduleRow> Collapse(List<ScheduleRow> rows, int controllers)
+    private static List<ScheduleRow> Collapse(List<ScheduleRow> rows)
     {
         var shown = new List<ScheduleRow>();
-        var first = new Dictionary<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled), ScheduleRow>();
-        var boxes = new Dictionary<ScheduleRow, List<string>>();
+        var seen = new HashSet<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
 
         foreach (ScheduleRow row in rows)
         {
-            if (first.TryGetValue(row.Shape, out ScheduleRow? already))
+            if (seen.Add(row.Shape))
             {
-                if (row.FoundOn is { Length: > 0 } also)
-                {
-                    boxes[already].Add(also);
-                }
-
-                continue;
+                shown.Add(row);
             }
-
-            first[row.Shape] = row;
-            boxes[row] = row.FoundOn is { Length: > 0 } from ? [from] : [];
-            shown.Add(row);
-        }
-
-        // A line this app wrote is on every box, so the copies fold back into one and there is
-        // nothing to say. One that is not - set up in WLED's own pages, or left behind by a save
-        // that only reached one controller - would otherwise be shown as though it covered the
-        // house, which is the one thing the reader must not be allowed to believe.
-        foreach (ScheduleRow row in shown)
-        {
-            List<string> on = boxes[row];
-            row.OnlyOn = on.Count > 0 && on.Count < controllers
-                ? $"Only on {string.Join(" and ", on)}. Saving will put it on the rest."
-                : string.Empty;
         }
 
         return shown;

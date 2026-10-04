@@ -44,7 +44,6 @@
                    timers look like four pages. The scene picker takes the room left over, so it is
                    the part that grows with the window. -->
               <Border Classes="card" Margin="0,0,0,4" Padding="8">
-                <StackPanel Spacing="4">
                 <DockPanel>
 
                   <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Enabled}"
@@ -86,13 +85,6 @@
                             HorizontalAlignment="Stretch" />
 
                 </DockPanel>
-
-                <!-- Every line this app writes goes to every controller, so this is empty almost
-                     always. When it is not, the line came off one box and not the other, and
-                     showing it as though it covered the house is the one thing that would mislead. -->
-                <TextBlock Classes="hint" Foreground="#C9821B" TextWrapping="Wrap"
-                           Text="{Binding OnlyOn}" IsVisible="{Binding IsLopsided}" />
-                </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

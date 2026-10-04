@@ -77,26 +77,6 @@ public sealed partial class ScheduleRow : ObservableObject
     /// <summary>Which end of the switch, when it is one rather than a scene.</summary>
     public bool? SwitchOn => Preset?.Switch;
 
-    /// <summary>
-    /// Which controller this was read from, while the copies are still separate.
-    /// </summary>
-    /// <remarks>
-    /// Only meaningful during a load. Every line written by this app goes to every box, so the
-    /// copies fold back into one - but a timetable set up elsewhere, or half-saved, need not
-    /// match, and a line that is only on one controller must not be shown as though it were on
-    /// both.
-    /// </remarks>
-    public string? FoundOn { get; set; }
-
-    /// <summary>
-    /// Said when this line is not on every controller, and empty when it is.
-    /// </summary>
-    [ObservableProperty] private string _onlyOn = string.Empty;
-
-    /// <summary>True when there is something to say about which boxes have this line.</summary>
-    public bool IsLopsided => OnlyOn.Length > 0;
-
-    partial void OnOnlyOnChanged(string value) => OnPropertyChanged(nameof(IsLopsided));
 
     partial void OnTriggerChanged(TriggerChoice? value) => OnPropertyChanged(nameof(IsClock));
 
