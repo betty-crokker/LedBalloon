@@ -60,6 +60,40 @@ public partial class SegmentEditorDialog : Window
         return dialog._saved;
     }
 
+    /// <summary>Opens the grid of effects on whatever this segment is running.</summary>
+    private async void OnPickEffect(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        object? picked = await PickerDialog.PickAsync(
+            this, "Effect", viewModel.SegmentEffects, viewModel.SegmentEffectChoice);
+
+        if (picked is PickerOption effect)
+        {
+            viewModel.SegmentEffectChoice = effect;
+        }
+    }
+
+    /// <summary>And the same for palettes, which is the same window with a different tile.</summary>
+    private async void OnPickPalette(object? sender, RoutedEventArgs e)
+    {
+        if (DataContext is not MainViewModel viewModel)
+        {
+            return;
+        }
+
+        object? picked = await PickerDialog.PickAsync(
+            this, "Palette", viewModel.SegmentPalettes, viewModel.SegmentPaletteChoice);
+
+        if (picked is PaletteOption palette)
+        {
+            viewModel.SegmentPaletteChoice = palette;
+        }
+    }
+
     private void OnSave(object? sender, RoutedEventArgs e)
     {
         _saved = true;

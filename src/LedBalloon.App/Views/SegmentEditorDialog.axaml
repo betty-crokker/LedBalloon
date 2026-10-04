@@ -109,28 +109,29 @@
                one, so both of them appear, disappear and change their labels when this changes -
                and a control that rearranges the things above it is read as having gone wrong. -->
           <TextBlock Classes="hint" Margin="0,4,0,2" Text="Effect" />
-          <!-- Each row carries a stamp of what that effect does on this segment, drawn the same
-               way the preview above is: the run across, a few recent frames down. "Chunchun" is not
-               a description and neither is "Phased Noise", and the list is 187 of them. -->
-          <ComboBox ItemsSource="{Binding SegmentEffects}"
-                    AutomationProperties.AutomationId="SegmentEffect"
-                    SelectedItem="{Binding SegmentEffectChoice}"
-                    PlaceholderText="Not reported yet"
-                    HorizontalAlignment="Stretch">
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:PickerOption">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                  <Border Width="72" Height="18" CornerRadius="2" VerticalAlignment="Center"
-                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
-                    <Image Source="{Binding Preview}" Stretch="Fill"
-                           RenderOptions.BitmapInterpolationMode="None" />
-                  </Border>
-                  <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                             TextTrimming="CharacterEllipsis" />
-                </StackPanel>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
+          <!-- A stamp of what that effect does on this segment, drawn the same way the preview
+               above is: the segment across, a few recent frames down. "Chunchun" is not a
+               description and neither is "Phased Noise", and the list is 187 of them - which is
+               why this opens a grid rather than dropping one line at a time. -->
+          <Button Click="OnPickEffect"
+                  AutomationProperties.AutomationId="SegmentEffect"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Padding="8,6">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="&#xE70D;" FontSize="11" Margin="8,0,2,0"
+                         VerticalAlignment="Center" Opacity="0.7"
+                         FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+              <Border Width="140" Height="34" CornerRadius="3" ClipToBounds="True"
+                      VerticalAlignment="Center"
+                      BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1">
+                <Image Source="{Binding SegmentEffectChoice.Preview}" Stretch="Fill"
+                       RenderOptions.BitmapInterpolationMode="None" />
+              </Border>
+              <TextBlock Margin="10,0,0,0" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"
+                         Text="{Binding SegmentEffectChoice.Name}" />
+            </DockPanel>
+          </Button>
 
           <!-- One box per color slot the effect actually reads, named the way the effect names it.
                A single box called "Color" was wrong twice over: most effects read more than one
@@ -176,38 +177,25 @@
                name, and only for a palette somebody here made: the firmware's own are the same on
                every box and nobody can change them. -->
           <Grid ColumnDefinitions="*,6,Auto">
-          <ComboBox Grid.Column="0" ItemsSource="{Binding SegmentPalettes}"
-                    AutomationProperties.AutomationId="SegmentPalette"
-                    SelectedItem="{Binding SegmentPaletteChoice}"
-                    PlaceholderText="Not reported yet"
-                    HorizontalAlignment="Stretch">
-            <ComboBox.Styles>
-              <!-- The rule between the two groups is an item, a ComboBox having no notion of a real
-                   separator. Disabling its container is what stops it being chosen. -->
-              <Style Selector="ComboBoxItem" x:DataType="vm:PaletteOption">
-                <Setter Property="IsEnabled" Value="{Binding !IsSeparator}" />
-              </Style>
-            </ComboBox.Styles>
-            <ComboBox.ItemTemplate>
-              <DataTemplate x:DataType="vm:PaletteOption">
-                <Panel>
-                  <Border Height="1" VerticalAlignment="Center" Margin="0,1"
-                          Background="{DynamicResource PanelBorder}"
-                          IsVisible="{Binding IsSeparator}" />
-                  <StackPanel Orientation="Horizontal" Spacing="8"
-                              IsVisible="{Binding !IsSeparator}">
-                    <Border Width="48" Height="14" CornerRadius="3"
-                            VerticalAlignment="Center"
-                            Background="{Binding Gradient}"
-                            BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
-                            IsVisible="{Binding HasGradient}" />
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
-                               TextTrimming="CharacterEllipsis" />
-                  </StackPanel>
-                </Panel>
-              </DataTemplate>
-            </ComboBox.ItemTemplate>
-          </ComboBox>
+          <!-- The gradient at a size worth comparing against another one, and a grid behind it
+               rather than a drop-down: a palette is told apart by looking at it, and seventy of
+               them a dozen at a time is not looking. -->
+          <Button Grid.Column="0" Click="OnPickPalette"
+                  AutomationProperties.AutomationId="SegmentPalette"
+                  HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch"
+                  Padding="8,6">
+            <DockPanel>
+              <TextBlock DockPanel.Dock="Right" Text="&#xE70D;" FontSize="11" Margin="8,0,2,0"
+                         VerticalAlignment="Center" Opacity="0.7"
+                         FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+              <Border Width="140" Height="34" CornerRadius="3" VerticalAlignment="Center"
+                      Background="{Binding SegmentPaletteChoice.Gradient}"
+                      BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1" />
+              <TextBlock Margin="10,0,0,0" VerticalAlignment="Center"
+                         TextTrimming="CharacterEllipsis"
+                         Text="{Binding SegmentPaletteChoice.Name}" />
+            </DockPanel>
+          </Button>
 
             <Button Grid.Column="2" Padding="7,3" VerticalAlignment="Center"
                     Command="{Binding EditPalettesCommand}"
