@@ -1117,6 +1117,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 // that will not write is reported with everything else rather than on its own.
                 await WriteScheduleAsync();
 
+                // After the scenes and the timetable, because deleting a preset can take a slot a
+                // timer was pointing at, and the timetable has just been written to say where
+                // everything now lives.
+                await ApplyPresetRepairsAsync();
+
                 if (Project.Fingerprint() != beforePublishing)
                 {
                     ProjectSaveResult bookkeeping = await ProjectSync.SaveAsync(
@@ -5715,7 +5720,13 @@ public sealed partial class MainViewModel : ViewModelBase
 
             foreach (PresetGap gap in PresetAudit.FindGaps(device.Presets, ledCount))
             {
-                PresetGaps.Add(new PresetGapRow(key, device.Host, device.DisplayName, gap));
+                PresetGaps.Add(new PresetGapRow
+                {
+                    ControllerKey = key,
+                    Host = device.Host,
+                    ControllerName = device.DisplayName,
+                    Gap = gap,
+                });
             }
         }
 
@@ -5732,38 +5743,16 @@ public sealed partial class MainViewModel : ViewModelBase
     /// bounds move.
     /// </remarks>
     [RelayCommand]
-    private async Task FixPresetAsync(PresetGapRow? row)
+    private void FixPreset(PresetGapRow? row)
     {
         if (row is null)
         {
             return;
         }
 
-        IsBusy = true;
-
-        try
-        {
-            WledState refit = PresetAudit.BuildRefit(Project, row.ControllerKey, row.Gap.Preset);
-
-            using var client = new WledClient(row.Host);
-            await client.ApplyAsync(refit);
-
-            if (DeviceFor(row.ControllerKey) is { } device)
-            {
-                await device.Device.RefreshPresetsAsync();
-            }
-
-            RefreshPresetGaps();
-            Status = $"{row.Name} now covers the whole strip.";
-        }
-        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
-        {
-            Status = $"Could not rewrite {row.Name}: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
-        }
+        row.Pending = PresetRepair.Stretch;
+        HasUnsavedChanges = true;
+        Status = $"{row.Name} will be stretched to fit when you save.";
     }
 
     /// <summary>
@@ -5783,8 +5772,8 @@ public sealed partial class MainViewModel : ViewModelBase
 
         ConfirmResult answer = await ask(new ConfirmRequest(
             "Delete this preset?",
-            $"{row.Name} would be gone from {row.ControllerName}. Anything pointing at it — a timer, " +
-            "a wall button, the phone app — would stop working.",
+            $"{row.Name} would be gone from {row.ControllerName} when you next save. Anything " +
+            "pointing at it — a timer, a wall button, the phone app — would stop working.",
             AcceptText: "Delete it",
             CancelText: "Keep it"));
 
@@ -5793,28 +5782,60 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        IsBusy = true;
+        row.Pending = PresetRepair.Delete;
+        HasUnsavedChanges = true;
+        Status = $"{row.Name} will be deleted when you save.";
+    }
 
-        try
+    /// <summary>Takes back a repair that has been asked for and not yet saved.</summary>
+    [RelayCommand]
+    private void LeavePreset(PresetGapRow? row)
+    {
+        if (row is not null)
         {
-            await ScenePublisher.RemoveAsync(row.Host, row.Name);
+            row.Pending = PresetRepair.None;
+        }
+    }
 
-            if (DeviceFor(row.ControllerKey) is { } device)
+    /// <summary>
+    /// Carries out the preset repairs that have been asked for.
+    /// </summary>
+    /// <remarks>
+    /// With the rest of the save, because both of these write to a controller and this app has one
+    /// button for that. Afterwards the presets are read again, which is what empties the list - and
+    /// reading them is also what the audit runs on, so the row goes when the trouble does rather
+    /// than when the button was pressed.
+    /// </remarks>
+    private async Task ApplyPresetRepairsAsync()
+    {
+        PresetGapRow[] asked = [.. PresetGaps.Where(row => row.IsPending)];
+
+        if (asked.Length == 0)
+        {
+            return;
+        }
+
+        foreach (PresetGapRow row in asked)
+        {
+            if (row.Pending is PresetRepair.Delete)
             {
-                await device.Device.RefreshPresetsAsync();
+                await ScenePublisher.RemoveAsync(row.Host, row.Name);
             }
+            else
+            {
+                WledState refit = PresetAudit.BuildRefit(Project, row.ControllerKey, row.Gap.Preset);
 
-            RefreshPresetGaps();
-            Status = $"{row.Name} deleted.";
+                using var client = new WledClient(row.Host);
+                await client.ApplyAsync(refit);
+            }
         }
-        catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+
+        foreach (DeviceViewModel device in Devices)
         {
-            Status = $"Could not delete {row.Name}: {ex.Message}";
+            await device.Device.RefreshPresetsAsync();
         }
-        finally
-        {
-            IsBusy = false;
-        }
+
+        RefreshPresetGaps();
     }
 
     // ---- Drawing --------------------------------------------------------------------------------

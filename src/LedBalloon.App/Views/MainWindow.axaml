@@ -1074,7 +1074,8 @@
                         <StackPanel Spacing="6">
                           <TextBlock TextWrapping="Wrap" Foreground="#C9821B"
                                      Text="{Binding Trouble}" />
-                          <StackPanel Orientation="Horizontal" Spacing="8">
+                          <StackPanel Orientation="Horizontal" Spacing="8"
+                                      IsVisible="{Binding !IsPending}">
                             <Button Content="Stretch it to fit"
                                     ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the runs as they are now"
                                     Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).FixPresetCommand}"
@@ -1082,6 +1083,20 @@
                             <Button Content="Delete it"
                                     ToolTip.Tip="Removes it from the controller. Anything pointing at it stops working."
                                     Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).DeletePresetCommand}"
+                                    CommandParameter="{Binding}" />
+                          </StackPanel>
+
+                          <!-- Nothing has been written yet: both repairs go out with the one save,
+                               like everything else here. Said on the row rather than only in the
+                               status line, because the row is what somebody is looking at and an
+                               unchanged row reads as a button that did not work. -->
+                          <StackPanel Orientation="Horizontal" Spacing="8"
+                                      IsVisible="{Binding IsPending}">
+                            <TextBlock VerticalAlignment="Center" TextWrapping="Wrap"
+                                       FontStyle="Italic" Text="{Binding PendingNote}" />
+                            <Button Content="Leave it"
+                                    ToolTip.Tip="Take that back and go on as before"
+                                    Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).LeavePresetCommand}"
                                     CommandParameter="{Binding}" />
                           </StackPanel>
                         </StackPanel>
