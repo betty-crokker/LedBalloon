@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LedBalloon.App.ViewModels"
+        x:Class="LedBalloon.App.Views.ScheduleDialog"
+        x:DataType="vm:MainViewModel"
+        Title="Schedule"
+        Width="560" Height="620"
+        WindowStartupLocation="CenterOwner">
+
+  <DockPanel Margin="16">
+
+    <StackPanel DockPanel.Dock="Top" Spacing="6">
+      <TextBlock Text="What the house does on its own" FontWeight="SemiBold" FontSize="16" />
+      <TextBlock Classes="hint" TextWrapping="Wrap"
+                 Text="The controllers run this by themselves, with or without this app open. It is stored on them like everything else, so it survives reinstalling and it keeps going when the computer is off." />
+      <TextBlock Classes="hint" TextWrapping="Wrap"
+                 Text="Every line covers the whole house. A scene can only be named here once it has been saved onto every controller — a timer can only fire what each box already holds." />
+      <Button Content="Add a timer" Margin="0,6,0,6"
+              AutomationProperties.AutomationId="AddTimer"
+              Command="{Binding AddScheduleEntryCommand}" />
+    </StackPanel>
+
+    <!-- Nothing here saves. A timetable is part of the description of the house, so it goes to the
+         controllers when that does - one save, rather than a button here that looks like the save
+         and is not. -->
+    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"
+                HorizontalAlignment="Right" Margin="0,10,0,0">
+      <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,8,0"
+                 Text="Saved with everything else."
+                 IsVisible="{Binding ScheduleChanged}" />
+      <Button Content="Cancel" Click="OnCancel" />
+      <Button Content="Done" Click="OnSave" IsDefault="True" />
+    </StackPanel>
+
+    <ScrollViewer>
+      <StackPanel>
+
+        <TextBlock Classes="hint" Margin="0,8" TextWrapping="Wrap"
+                   Text="Nothing is scheduled. The house will only do what it is told while somebody is telling it."
+                   IsVisible="{Binding !Schedule.Count}" />
+
+        <ItemsControl ItemsSource="{Binding Schedule}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ScheduleRow">
+              <Border Classes="card" Margin="0,0,0,6" Padding="10">
+                <StackPanel Spacing="6">
+
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <CheckBox IsChecked="{Binding Enabled}" Content="On" VerticalAlignment="Center" />
+
+                    <ComboBox ItemsSource="{Binding Triggers}"
+                              SelectedItem="{Binding Trigger}" Width="120" />
+                    <NumericUpDown Value="{Binding Hour}" Minimum="0" Maximum="23"
+                                   FormatString="00" ShowButtonSpinner="False" Width="52"
+                                   IsVisible="{Binding IsClock}" />
+                    <TextBlock Text=":" VerticalAlignment="Center"
+                               IsVisible="{Binding IsClock}" />
+                    <NumericUpDown Value="{Binding Minute}" Minimum="0" Maximum="59"
+                                   FormatString="00" ShowButtonSpinner="False" Width="52"
+                                   IsVisible="{Binding IsClock}" />
+
+                    <Button Content="Remove" Padding="6,2"
+                            Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).RemoveScheduleEntryCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
+
+                  <ComboBox ItemsSource="{Binding Presets}"
+                            SelectedItem="{Binding Preset}"
+                            PlaceholderText="pick what it does"
+                            HorizontalAlignment="Stretch" />
+
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+      </StackPanel>
+    </ScrollViewer>
+
+  </DockPanel>
+</Window>

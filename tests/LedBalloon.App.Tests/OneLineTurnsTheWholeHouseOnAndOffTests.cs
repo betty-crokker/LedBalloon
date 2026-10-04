@@ -33,18 +33,16 @@ public class OneLineTurnsTheWholeHouseOnAndOffTests(UiThreadFixture ui) : IDispo
     private const string South = "66:55:44:33:22:11";
 
     [Fact]
-    public void A_timer_can_be_pointed_at_the_switch_as_well_as_at_a_scene() => ui.Run(async () =>
+    public void A_new_line_turns_the_house_off_and_belongs_to_no_controller() => ui.Run(async () =>
     {
         MainViewModel app = await HouseAsync();
 
-        app.AddSwitchTimerCommand.Execute(null);
+        app.AddScheduleEntryCommand.Execute(null);
 
         ScheduleRow row = Assert.Single(app.Schedule);
 
-        // Not one controller's. The row says so, and the save fans it out.
-        Assert.Null(row.ControllerKey);
-        Assert.Equal("The whole house", row.Where);
-        Assert.True(row.IsSwitch);
+        // Off is what a house wants first, and there is nowhere on the row to say which box it is
+        // for, because there is no such thing: the save writes every line to all of them.
         Assert.False(row.SwitchOn);
     });
 
@@ -54,12 +52,14 @@ public class OneLineTurnsTheWholeHouseOnAndOffTests(UiThreadFixture ui) : IDispo
     {
         MainViewModel app = await HouseAsync();
 
-        app.AddSwitchTimerCommand.Execute(null);
+        app.AddScheduleEntryCommand.Execute(null);
         ScheduleRow row = app.Schedule.Single();
         row.Hour = 22;
         row.Minute = 30;
 
-        await app.SaveScheduleCommand.ExecuteAsync(null);
+        // The one save. There is no button that writes only the timetable - it goes out with the
+        // rest of the description of the house.
+        await app.SaveProjectCommand.ExecuteAsync(null);
 
         foreach (FakeController controller in _open)
         {
@@ -93,14 +93,13 @@ public class OneLineTurnsTheWholeHouseOnAndOffTests(UiThreadFixture ui) : IDispo
     {
         MainViewModel app = await HouseAsync();
 
-        app.AddSwitchTimerCommand.Execute(null);
-        await app.SaveScheduleCommand.ExecuteAsync(null);
+        app.AddScheduleEntryCommand.Execute(null);
+        await app.SaveProjectCommand.ExecuteAsync(null);
 
-        // SaveScheduleAsync reloads, so what is on screen now is what came back off the two boxes.
+        // Saving reloads, so what is on screen now is what came back off the two boxes.
         ScheduleRow row = Assert.Single(app.Schedule);
 
-        Assert.True(row.IsSwitch);
-        Assert.Null(row.ControllerKey);
+        Assert.False(row.SwitchOn);
     });
 
     private static IReadOnlyList<ScheduledChange> Timetable(FakeController controller)

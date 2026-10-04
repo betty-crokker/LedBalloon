@@ -1,34 +1,36 @@
 using System.Collections.Generic;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using LedBalloon.Core;
+using LedBalloon.Core.Layout;
 
 namespace LedBalloon.App.ViewModels;
 
 /// <summary>
-/// Something a timer can be pointed at: a scene one controller holds, or the house switch.
+/// Something a timer can be pointed at, named rather than numbered.
 /// <para>
-/// A scene carries the slot that box happens to keep it in, because that is all a WLED timer
-/// stores. The switch carries no slot at all - the preset behind it is written at save time, and
-/// lands wherever each controller has room, which is not the same slot on each.
+/// A WLED timer stores a preset slot, and the same scene sits in a different slot on each box. So
+/// the slot cannot be the identity here: the name is, and the save works out the number for each
+/// controller in turn. That is what lets one line mean the whole house, which is what a timer should
+/// mean — the lights do not come on in halves.
 /// </para>
 /// </summary>
-/// <param name="Id">The slot, for a scene. Zero for the switch, which has no slot until it is saved.</param>
-/// <param name="Name">What it is called in the picker.</param>
+/// <param name="Name">What it is called, and what it is matched by.</param>
 /// <param name="Switch">True for "everything on", false for "everything off", null for a scene.</param>
-public sealed record PresetChoice(int Id, string Name, bool? Switch = null)
+public sealed record PresetChoice(string Name, bool? Switch = null)
 {
     public override string ToString() => Name;
 
     /// <summary>The two ends of the house switch, offered on every timer.</summary>
     public static IReadOnlyList<PresetChoice> Switches { get; } =
     [
-        new(0, "Turn everything off", false),
-        new(0, "Turn everything on", true),
+        new("Turn everything off", false),
+        new("Turn everything on", true),
     ];
 
     /// <summary>The switch and then the scenes, which is the order they are worth reading in.</summary>
-    public static IReadOnlyList<PresetChoice> Offered(IEnumerable<PresetChoice> scenes) =>
-        [.. Switches, .. scenes];
+    public static IReadOnlyList<PresetChoice> Offered(IEnumerable<string> scenes) =>
+        [.. Switches, .. scenes.Select(name => new PresetChoice(name))];
 }
 
 /// <summary>When a timetable entry fires, as something to pick from a list.</summary>
@@ -45,31 +47,20 @@ public sealed record TriggerChoice(SunTrigger Sun, string Name)
 }
 
 /// <summary>
-/// One line of a controller's timetable, editable.
+/// One line of the house's timetable, editable.
 /// <para>
-/// The choices are listed per controller rather than merged, unlike everywhere else in the app.
-/// A timer stores a slot number and the controller runs whatever is in that slot, so this is the
-/// one place where which box holds a scene genuinely matters — and a scene that has not been
-/// saved is not on any box yet, so it is not there to be fired.
+/// The house's, not one controller's. Every box gets its own copy of every line, because a timer
+/// that covers half the house is a fault waiting to be noticed on a dark evening — and because what
+/// a person means by "off at half ten" has never once been "off at half ten on the north controller".
+/// </para>
+/// <para>
+/// Which is why a scene is picked by name here. The slot it occupies differs per box, and a line
+/// that stored one could only ever have meant one box.
 /// </para>
 /// </summary>
 public sealed partial class ScheduleRow : ObservableObject
 {
-    /// <summary>
-    /// Which controller runs it, or null when it is the whole house.
-    /// <para>
-    /// Null only for the switch. A scene lives in a different slot on each box and a timer stores a
-    /// slot, so a scene timer belongs to one controller and says which. The switch does not: the
-    /// preset behind it is the app's own, written to every controller, so one row can mean "the
-    /// whole house, at this time" and the save works out the slots.
-    /// </para>
-    /// </summary>
-    public string? ControllerKey { get; init; }
-
-    /// <summary>What that controller is called, for the row's heading.</summary>
-    public required string ControllerName { get; init; }
-
-    /// <summary>What that controller holds, which is what a timer can point at.</summary>
+    /// <summary>What a timer can be pointed at: the switch, then the scenes every box holds.</summary>
     public required IReadOnlyList<PresetChoice> Presets { get; init; }
 
     public IReadOnlyList<TriggerChoice> Triggers => TriggerChoice.All;
@@ -83,31 +74,19 @@ public sealed partial class ScheduleRow : ObservableObject
     /// <summary>True when this entry hangs off the sun rather than the clock, so the time is moot.</summary>
     public bool IsClock => Trigger?.Sun is null or SunTrigger.None;
 
-    /// <summary>True when this row is the house switch rather than a scene on one box.</summary>
-    public bool IsSwitch => Preset?.Switch is not null;
-
-    /// <summary>Which end of the switch, when it is one.</summary>
+    /// <summary>Which end of the switch, when it is one rather than a scene.</summary>
     public bool? SwitchOn => Preset?.Switch;
 
     partial void OnTriggerChanged(TriggerChoice? value) => OnPropertyChanged(nameof(IsClock));
 
-    partial void OnPresetChanged(PresetChoice? value)
-    {
-        OnPropertyChanged(nameof(IsSwitch));
-        OnPropertyChanged(nameof(SwitchOn));
-        OnPropertyChanged(nameof(Where));
-    }
-
-    /// <summary>Which part of the house it acts on, for the row's heading.</summary>
-    public string Where => IsSwitch ? "The whole house" : ControllerName;
+    partial void OnPresetChanged(PresetChoice? value) => OnPropertyChanged(nameof(SwitchOn));
 
     /// <summary>
-    /// The entry as the controller stores it.
+    /// The entry as one controller stores it.
     /// </summary>
     /// <param name="presetId">
-    /// The slot on the controller being written. Passed in rather than read off
-    /// <see cref="Preset"/> because the switch has no slot until the preset behind it has been
-    /// written, and it does not land in the same slot on every box.
+    /// The slot on the controller being written. Passed in because the same line lands in a
+    /// different slot on each box, and for the switch in no slot at all until it has been written.
     /// </param>
     public ScheduledChange ToChange(int presetId) => new(
         Enabled: Enabled,
@@ -117,17 +96,25 @@ public sealed partial class ScheduleRow : ObservableObject
         DaysOfWeek: 0x7F,
         Sun: Trigger?.Sun ?? SunTrigger.None);
 
-    /// <summary>Builds a row from what a controller reported.</summary>
+    /// <summary>
+    /// What makes two controllers' copies of a line the same line.
+    /// </summary>
+    /// <remarks>
+    /// Everything a person set, and nothing about where it was read from. Lines that match on this
+    /// are folded into one; lines that do not are left as they are, because two boxes disagreeing
+    /// about when the house goes dark is worth seeing rather than quietly resolving.
+    /// </remarks>
+    public (string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled) Shape =>
+        (Preset?.Name, Trigger?.Sun ?? SunTrigger.None, Hour, Minute, Enabled);
+
+    /// <summary>Builds a row from what one controller reported, naming what its slot holds.</summary>
     public static ScheduleRow From(
         ScheduledChange change,
-        string controllerKey,
-        string controllerName,
+        string? presetName,
         IReadOnlyList<PresetChoice> presets)
     {
         var row = new ScheduleRow
         {
-            ControllerKey = controllerKey,
-            ControllerName = controllerName,
             Presets = presets,
             Enabled = change.Enabled,
             Hour = change.Hour > 23 ? 0 : change.Hour,
@@ -142,38 +129,17 @@ public sealed partial class ScheduleRow : ObservableObject
             }
         }
 
-        // The switch first, by the name in the slot the timer points at: these presets are the
-        // app's own and a reader should see "turn everything off", not the preset it is implemented
-        // as. Falling through to the scene list would show the implementation.
-        string? pointedAt = null;
-        foreach (PresetChoice preset in presets)
+        // The switch first, by the name in the slot the timer points at. These presets are the
+        // app's own, and a reader should see "turn everything off" rather than the preset it is
+        // implemented as.
+        if (TimedSwitch.SwitchIn(presetName) is { } which)
         {
-            if (preset.Id == change.PresetId && preset.Switch is null)
-            {
-                pointedAt = preset.Name;
-            }
-        }
-
-        if (LedBalloon.Core.Layout.TimedSwitch.SwitchIn(pointedAt) is { } which)
-        {
-            foreach (PresetChoice preset in PresetChoice.Switches)
-            {
-                if (preset.Switch == which)
-                {
-                    row.Preset = preset;
-                }
-            }
-
+            row.Preset = PresetChoice.Switches.FirstOrDefault(p => p.Switch == which);
             return row;
         }
 
-        foreach (PresetChoice preset in presets)
-        {
-            if (preset.Id == change.PresetId && preset.Switch is null)
-            {
-                row.Preset = preset;
-            }
-        }
+        row.Preset = presets.FirstOrDefault(
+            p => p.Switch is null && string.Equals(p.Name, presetName, System.StringComparison.Ordinal));
 
         return row;
     }

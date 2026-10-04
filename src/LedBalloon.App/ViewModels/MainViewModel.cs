@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -264,6 +265,9 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </para>
     /// </remarks>
     public Func<Task<bool>>? ShowSegmentEditor { get; set; }
+
+    /// <summary>Opens the house's timetable. Set by the window that can host a dialog.</summary>
+    public Func<Task<bool>>? ShowSchedule { get; set; }
 
     /// <summary>
     /// How this opens the color picker. Set by the segment editor while it is open, because the
@@ -1074,6 +1078,11 @@ public sealed partial class MainViewModel : ViewModelBase
                 string beforePublishing = Project.Fingerprint();
 
                 int published = await PublishScenesAsync();
+
+                // After the scenes, because a timer names a scene and can only be pointed at one
+                // the controller is already holding. Before the bookkeeping below, so a timetable
+                // that will not write is reported with everything else rather than on its own.
+                await WriteScheduleAsync();
 
                 if (Project.Fingerprint() != beforePublishing)
                 {
@@ -3375,6 +3384,94 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private readonly List<string> _scenesToUnpublish = [];
 
+    /// <summary>
+    /// What the timetable is going to do to the scene being edited.
+    /// <para>
+    /// Worth saying here because this screen is the one place somebody decides what the house looks
+    /// like, and it is the one place the house's own timetable is invisible. A scene can be chosen,
+    /// adjusted and admired at four in the afternoon while a timer waits to replace it at half
+    /// past five - and the first anybody knows is that the house "changed by itself".
+    /// </para>
+    /// <para>
+    /// Two different facts, so two different sentences. A timer that fires this scene is the scene
+    /// working as intended and is worth knowing. A timer that fires something else is the scene
+    /// being taken off the house, which is worth knowing rather more.
+    /// </para>
+    /// </summary>
+    public string SceneTimerNote
+    {
+        get
+        {
+            if (SelectedScene is not { Scene: { } scene } || Schedule.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            // Said in the same words as the other sentence. TimersPointingAt phrases these for a
+            // confirmation box - "the 17:00 timer" - which reads as a thing rather than as a time,
+            // and this is prose about when something happens.
+            List<string> shows =
+            [
+                .. Schedule
+                    .Where(row => row.Enabled && FiresScene(row, scene))
+                    .Select(When)
+                    .Distinct(StringComparer.CurrentCultureIgnoreCase),
+            ];
+
+            // Everything else that fires, which is what will be on the house instead. Lines that
+            // are switched off are not going to do anything, so they are not mentioned.
+            List<string> instead =
+            [
+                .. Schedule
+                    .Where(row => row.Enabled && row.Preset is not null)
+                    .Where(row => !FiresScene(row, scene))
+                    .Select(When)
+                    .Distinct(StringComparer.CurrentCultureIgnoreCase),
+            ];
+
+            var said = new List<string>();
+
+            if (shows.Count > 0)
+            {
+                said.Add($"This scene comes up on the house by itself {Spoken(shows)}.");
+            }
+
+            if (instead.Count > 0)
+            {
+                said.Add($"A timer replaces whatever is on the house {Spoken(instead)}.");
+            }
+
+            return string.Join(" ", said);
+        }
+    }
+
+    /// <summary>True when that line fires this scene rather than something else.</summary>
+    private static bool FiresScene(ScheduleRow row, Scene scene)
+    {
+        if (row.Preset is not { Switch: null, Name: { } name })
+        {
+            return false;
+        }
+
+        return string.Equals(name.Trim(), scene.Name.Trim(), StringComparison.OrdinalIgnoreCase)
+            || (scene.PublishedAs is { Length: > 0 } was
+                && string.Equals(name.Trim(), was.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>When a line fires, in the words a clock on a wall would use.</summary>
+    private static string When(ScheduleRow row) => row.IsClock
+        ? "at " + new TimeOnly(Math.Clamp(row.Hour, 0, 23), Math.Clamp(row.Minute, 0, 59))
+            .ToString("h:mm tt", CultureInfo.CurrentCulture).ToLowerInvariant()
+        : row.Trigger?.Name?.ToLowerInvariant() ?? "at sunset";
+
+    /// <summary>A handful of times as a list somebody would read aloud.</summary>
+    private static string Spoken(IReadOnlyList<string> times) => times.Count switch
+    {
+        1 => times[0],
+        2 => $"{times[0]} and {times[1]}",
+        _ => string.Join(", ", times.Take(times.Count - 1)) + $" and {times[^1]}",
+    };
+
     /// <summary>Which timers fire this scene, named the way the Timers panel names them.</summary>
     private List<string> TimersPointingAt(Scene scene)
     {
@@ -3386,8 +3483,8 @@ public sealed partial class MainViewModel : ViewModelBase
                 .Where(row => row.Preset is { } preset &&
                               names.Any(n => string.Equals(n.Trim(), preset.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
                 .Select(row => row.IsClock
-                    ? $"the {row.Hour:00}:{row.Minute:00} timer on {row.ControllerName}"
-                    : $"the {row.Trigger?.Name?.ToLowerInvariant() ?? "sun"} timer on {row.ControllerName}")
+                    ? $"the {row.Hour:00}:{row.Minute:00} timer"
+                    : $"the {row.Trigger?.Name?.ToLowerInvariant() ?? "sun"} timer")
                 .Distinct(StringComparer.CurrentCultureIgnoreCase),
         ];
     }
@@ -3457,6 +3554,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         SceneDetails.Clear();
         SceneNotes.Clear();
+        OnPropertyChanged(nameof(SceneTimerNote));
 
         // Looking at the house again: no preview, and the cards describe what is really on it.
         if (value is null || value.IsTheHouse)
@@ -6274,6 +6372,22 @@ public sealed partial class MainViewModel : ViewModelBase
     [ObservableProperty] private bool _scheduleChanged;
 
     /// <summary>
+    /// A touched timetable is unsaved work like any other, and says so on the one Save.
+    /// </summary>
+    /// <remarks>
+    /// Without this the timetable had its own button and its own idea of whether it was saved,
+    /// which is two places to look and one of them easy to miss. It goes out with the layout now,
+    /// so it has to count towards the same banner.
+    /// </remarks>
+    partial void OnScheduleChangedChanged(bool value)
+    {
+        if (value)
+        {
+            HasUnsavedChanges = true;
+        }
+    }
+
+    /// <summary>
     /// Where the house is, as something to paste into.
     /// <para>
     /// Only the sun timers read it, and only the controllers compute them - so this is a setting
@@ -6393,6 +6507,8 @@ public sealed partial class MainViewModel : ViewModelBase
     /// <summary>Reads each controller's timetable and the presets its entries can point at.</summary>
     private async Task LoadScheduleAsync()
     {
+        IReadOnlyList<PresetChoice> offered = PresetChoice.Offered(ScenesEveryControllerHolds());
+
         // The location belongs with this: it is the thing the sun timers on this screen run on, and
         // reading it at the same moment means the two cannot disagree about which controllers exist.
         await LoadLocationAsync();
@@ -6412,16 +6528,14 @@ public sealed partial class MainViewModel : ViewModelBase
                 var config = new WledConfigClient(device.Host);
                 IReadOnlyList<ScheduledChange> entries = await config.GetScheduleAsync();
 
-                IReadOnlyList<PresetChoice> presets = PresetsOn(device);
-
                 foreach (ScheduledChange entry in entries)
                 {
-                    rows.Add(ScheduleRow.From(entry, key, device.DisplayName, presets));
+                    rows.Add(ScheduleRow.From(entry, NameOfSlot(device, entry.PresetId), offered));
                 }
 
                 string sentence = WledSchedule.Describe(
                     entries,
-                    id => presets.FirstOrDefault(p => p.Id == id)?.Name);
+                    id => NameOfSlot(device, id));
 
                 if (sentence.Length > 0)
                 {
@@ -6450,17 +6564,52 @@ public sealed partial class MainViewModel : ViewModelBase
                 : $"The house changes on its own \u2014 {string.Join("; ", said)}.";
 
             ScheduleChanged = false;
+            OnPropertyChanged(nameof(SceneTimerNote));
         });
     }
 
+    /// <summary>What the slot holds on that controller, by name.</summary>
+    private static string? NameOfSlot(DeviceViewModel device, int slot) =>
+        device.Presets.FirstOrDefault(p => p.Id == slot)?.DisplayName;
+
     /// <summary>
-    /// What a timer on this controller can be pointed at: the house switch, then its own scenes.
+    /// The scenes a timer can name, which are the ones every controller has.
     /// </summary>
-    private static IReadOnlyList<PresetChoice> PresetsOn(DeviceViewModel device) =>
-        PresetChoice.Offered(
-            device.Presets
-                .Where(p => p.Id is > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
-                .Select(p => new PresetChoice(p.Id, p.DisplayName)));
+    /// <remarks>
+    /// Every controller, because a line here means the whole house: a scene only one box holds
+    /// could not be fired on the others, and offering it would promise something that comes out
+    /// half lit. The switch is not in this list - the app writes that one itself, so it can always
+    /// be promised.
+    /// </remarks>
+    private IReadOnlyList<string> ScenesEveryControllerHolds()
+    {
+        List<DeviceViewModel> boxes = [.. Devices.Where(d => d.DeviceKey is not null)];
+
+        if (boxes.Count == 0)
+        {
+            return [];
+        }
+
+        IEnumerable<string> shared = boxes[0].Presets
+            .Where(p => p.Id > 0 && !string.IsNullOrWhiteSpace(p.DisplayName))
+            .Select(p => p.DisplayName)
+            .Where(name => TimedSwitch.SwitchIn(name) is null);
+
+        foreach (DeviceViewModel box in boxes.Skip(1))
+        {
+            HashSet<string> here =
+                [.. box.Presets.Where(p => p.Id > 0).Select(p => p.DisplayName)];
+
+            shared = shared.Where(here.Contains);
+        }
+
+        return [.. shared.Distinct().OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)];
+    }
+
+    /// <summary>The slot that controller keeps a named scene in, if it keeps one at all.</summary>
+    private static int? SlotOf(DeviceViewModel device, string name) =>
+        device.Presets.FirstOrDefault(
+            p => p.Id > 0 && string.Equals(p.DisplayName, name, StringComparison.Ordinal))?.Id;
 
     /// <summary>
     /// Folds the switch timers the controllers reported into one row each.
@@ -6475,87 +6624,74 @@ public sealed partial class MainViewModel : ViewModelBase
     private static List<ScheduleRow> Collapse(List<ScheduleRow> rows)
     {
         var shown = new List<ScheduleRow>();
-        var seen = new HashSet<(bool On, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
+        var seen = new HashSet<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
 
         foreach (ScheduleRow row in rows)
         {
-            if (row.SwitchOn is not { } on)
+            if (seen.Add(row.Shape))
             {
                 shown.Add(row);
-                continue;
             }
-
-            var shape = (on, row.Trigger?.Sun ?? SunTrigger.None, row.Hour, row.Minute, row.Enabled);
-
-            if (!seen.Add(shape))
-            {
-                continue;
-            }
-
-            shown.Add(new ScheduleRow
-            {
-                ControllerKey = null,
-                ControllerName = row.ControllerName,
-                Presets = row.Presets,
-                Enabled = row.Enabled,
-                Hour = row.Hour,
-                Minute = row.Minute,
-                Preset = row.Preset,
-                Trigger = row.Trigger,
-            });
         }
 
         return shown;
     }
 
-    /// <summary>Adds a whole-house on or off, which is the timer most houses only ever want.</summary>
+    /// <summary>
+    /// Opens the timetable, and puts it back if the answer is Cancel.
+    /// </summary>
+    /// <remarks>
+    /// Put back rather than re-read: re-reading would go to the controllers, which would also throw
+    /// away any line changed before this was opened and not yet saved. Cancel should undo what this
+    /// window did and nothing else.
+    /// </remarks>
     [RelayCommand]
-    private void AddSwitchTimer()
+    private async Task OpenScheduleAsync()
     {
-        if (Devices.FirstOrDefault() is not { } device || device.DeviceKey is null)
+        if (ShowSchedule is not { } show)
         {
-            Status = "No controller to put a timer on yet.";
             return;
         }
 
-        var row = new ScheduleRow
+        List<ScheduleRow> before = [.. Schedule];
+        List<(bool Enabled, int Hour, int Minute, PresetChoice? Preset, TriggerChoice? Trigger)> was =
+            [.. before.Select(r => (r.Enabled, r.Hour, r.Minute, r.Preset, r.Trigger))];
+
+        bool changedBefore = ScheduleChanged;
+
+        if (await show())
         {
-            ControllerKey = null,
-            ControllerName = "The whole house",
-            Presets = PresetsOn(device),
-            Hour = 22,
-            Minute = 30,
-            Preset = PresetChoice.Switches[0],
-        };
+            return;
+        }
 
-        row.PropertyChanged += (_, _) => ScheduleChanged = true;
+        Schedule.Clear();
 
-        Schedule.Add(row);
-        ScheduleChanged = true;
+        for (int at = 0; at < before.Count; at++)
+        {
+            ScheduleRow row = before[at];
+            (row.Enabled, row.Hour, row.Minute, row.Preset, row.Trigger) = was[at];
+            Schedule.Add(row);
+        }
+
+        ScheduleChanged = changedBefore;
     }
 
-    /// <summary>Adds a blank entry to whichever controller is in hand.</summary>
+    /// <summary>Adds a line, set to turn the house off, which is the timer most houses want first.</summary>
     [RelayCommand]
     private void AddScheduleEntry()
     {
-        DeviceViewModel? device = SelectedDevice ?? Devices.FirstOrDefault();
-
-        if (device?.DeviceKey is not { } key)
+        if (!Devices.Any(d => d.DeviceKey is not null))
         {
             Status = "No controller to put a timer on yet.";
             return;
         }
 
-        IReadOnlyList<PresetChoice> presets = PresetsOn(device);
-
         var row = new ScheduleRow
         {
-            ControllerKey = key,
-            ControllerName = device.DisplayName,
-            Presets = presets,
-            Hour = 18,
-            Minute = 0,
-            Preset = presets.FirstOrDefault(),
+            Presets = PresetChoice.Offered(ScenesEveryControllerHolds()),
+            Hour = 22,
+            Minute = 30,
+            Preset = PresetChoice.Switches[0],
         };
 
         row.PropertyChanged += (_, _) => ScheduleChanged = true;
@@ -6577,14 +6713,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         var slots = new Dictionary<(string Key, bool On), int>();
 
-        bool[] wanted =
-        [
-            .. Schedule
-                .Where(row => row.ControllerKey is null)
-                .Select(row => row.SwitchOn)
-                .OfType<bool>()
-                .Distinct(),
-        ];
+        bool[] wanted = [.. Schedule.Select(row => row.SwitchOn).OfType<bool>().Distinct()];
 
         if (wanted.Length == 0)
         {
@@ -6634,19 +6763,26 @@ public sealed partial class MainViewModel : ViewModelBase
     /// the slots nobody mentioned keep running what they used to.
     /// </para>
     /// </summary>
-    [RelayCommand]
-    private async Task SaveScheduleAsync()
+    /// <summary>
+    /// Writes the house's timetable to every controller.
+    /// <para>
+    /// Not a command and not a button. A timetable is part of the description of the house, like
+    /// the segments and the scenes, so it goes out when that does rather than needing to be saved
+    /// on its own - one save, or people reasonably believe they have saved when they have not.
+    /// </para>
+    /// <para>
+    /// Every connected controller is written, including ones whose lines did not change: the
+    /// entries are stored by position, so a controller has to be sent its whole timetable or the
+    /// slots nobody mentioned keep running what they used to.
+    /// </para>
+    /// </summary>
+    private async Task WriteScheduleAsync()
     {
-        IsBusy = true;
-
-        try
         {
-            // The whole-house rows first, because the preset each one fires has to exist on a
+            // The switch presets first, because the preset a line fires has to exist on a
             // controller before a timer there can point at it - and which slot it lands in is the
             // controller's answer, not ours.
             Dictionary<(string Key, bool On), int> switches = await WriteSwitchPresetsAsync();
-
-            List<ScheduleRow> house = [.. Schedule.Where(row => row.ControllerKey is null)];
 
             foreach (DeviceViewModel device in Devices)
             {
@@ -6655,33 +6791,20 @@ public sealed partial class MainViewModel : ViewModelBase
                     continue;
                 }
 
-                List<ScheduleRow> mine =
-                    [.. Schedule.Where(row =>
-                        string.Equals(row.ControllerKey, key, StringComparison.OrdinalIgnoreCase))];
-
-                if (mine.Count == 0 && house.Count == 0)
-                {
-                    // Nothing for this box, and writing an empty timetable would wipe one somebody
-                    // set in WLED's own interface. Only controllers this screen has rows for get
-                    // written at all.
-                    continue;
-                }
-
                 var entries = new List<ScheduledChange>();
 
-                foreach (ScheduleRow row in mine)
+                foreach (ScheduleRow row in Schedule)
                 {
-                    if (row.Preset is { Switch: null } scene)
-                    {
-                        entries.Add(row.ToChange(scene.Id));
-                    }
-                }
+                    // Each line, resolved against this box. The switch lands wherever it was
+                    // written; a scene is found by the name it was picked by, which is the only
+                    // thing the two controllers agree on.
+                    int? slot = row.SwitchOn is { } on
+                        ? switches.TryGetValue((key, on), out int written) ? written : null
+                        : row.Preset is { Name: { } name } ? SlotOf(device, name) : null;
 
-                foreach (ScheduleRow row in house)
-                {
-                    if (row.SwitchOn is { } on && switches.TryGetValue((key, on), out int slot))
+                    if (slot is { } found)
                     {
-                        entries.Add(row.ToChange(slot));
+                        entries.Add(row.ToChange(found));
                     }
                 }
 
@@ -6690,17 +6813,7 @@ public sealed partial class MainViewModel : ViewModelBase
             }
 
             ScheduleChanged = false;
-            Status = "Timetable saved to the controllers.";
-
             await LoadScheduleAsync();
-        }
-        catch (Exception ex)
-        {
-            Status = $"Could not save the timetable: {ex.Message}";
-        }
-        finally
-        {
-            IsBusy = false;
         }
     }
 
