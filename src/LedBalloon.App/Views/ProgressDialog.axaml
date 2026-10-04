@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="LedBalloon.App.Views.ProgressDialog"
+        Width="420" SizeToContent="Height"
+        CanResize="False"
+        ShowInTaskbar="False"
+        SystemDecorations="BorderOnly"
+        WindowStartupLocation="CenterOwner">
+
+  <Border Padding="22">
+    <StackPanel Spacing="14">
+
+      <TextBlock x:Name="Heading" FontWeight="SemiBold" FontSize="15" TextWrapping="Wrap" />
+
+      <!-- Indeterminate on purpose. The work is a handful of writes to two boxes over a network,
+           and how long each takes is not knowable in advance - a bar creeping to 90% and sitting
+           there is a worse account of that than one that simply says it is still going. What is
+           worth showing is which part it is on, which the line below carries. -->
+      <ProgressBar IsIndeterminate="True" Height="4" />
+
+      <TextBlock x:Name="Step" Classes="hint" TextWrapping="Wrap" MinHeight="34" />
+
+      <TextBlock Classes="hint" FontStyle="Italic" TextWrapping="Wrap"
+                 Text="Leave this until it finishes. The controllers are being written to, and stopping halfway would leave them disagreeing with each other." />
+
+    </StackPanel>
+  </Border>
+</Window>

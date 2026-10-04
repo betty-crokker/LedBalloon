@@ -269,6 +269,12 @@ public sealed partial class MainViewModel : ViewModelBase
     public Func<Task<bool>>? ShowSchedule { get; set; }
 
     /// <summary>
+    /// Puts a progress window up for the length of a piece of work. Set by the window that can host
+    /// one; null everywhere that cannot, which is a run without one rather than a failure.
+    /// </summary>
+    public Func<string, IProgressHandle>? ShowProgress { get; set; }
+
+    /// <summary>
     /// How this opens the color picker. Set by the segment editor while it is open, because the
     /// picker is a window over that window and has to be owned by it.
     /// </summary>
@@ -1123,8 +1129,15 @@ public sealed partial class MainViewModel : ViewModelBase
         IsBusy = true;
         Status = "Saving the layout to the controllers...";
 
+        // Several writes to every controller, and on a slow network a few seconds of a window that
+        // appears to be doing nothing. Which part it is on is the useful thing to show: the parts
+        // that take longest - re-cutting the segments, publishing the scenes - are the ones with
+        // nothing on screen to account for them.
+        using IProgressHandle? progress = ShowProgress?.Invoke("Saving to the controllers");
+
         try
         {
+            progress?.Say("Writing the layout");
             // Cached locally either way: if the controllers cannot hold it, this machine still can.
             if (PhotoBytes is { Length: > 0 })
             {
@@ -1153,8 +1166,13 @@ public sealed partial class MainViewModel : ViewModelBase
             string pushed = string.Empty;
             try
             {
+                progress?.Say("Setting the LED output lengths");
                 int lengthened = await PushOutputLengthsAsync();
+
+                progress?.Say("Writing the output settings");
                 int settings = await PushOutputSettingsAsync();
+
+                progress?.Say("Moving the segment boundaries to match");
                 int count = await PushGeometryAsync();
 
                 pushed = count > 0 ? $" {count} controller(s) re-cut to match." : string.Empty;
@@ -1177,16 +1195,19 @@ public sealed partial class MainViewModel : ViewModelBase
                 // be told from the scene itself having moved on.
                 string beforePublishing = Project.Fingerprint();
 
+                progress?.Say("Putting the scenes on the controllers");
                 int published = await PublishScenesAsync();
 
                 // After the scenes, because a timer names a scene and can only be pointed at one
                 // the controller is already holding. Before the bookkeeping below, so a timetable
                 // that will not write is reported with everything else rather than on its own.
+                progress?.Say("Writing the timetable");
                 await WriteScheduleAsync();
 
                 // After the scenes and the timetable, because deleting a preset can take a slot a
                 // timer was pointing at, and the timetable has just been written to say where
                 // everything now lives.
+                progress?.Say("Repairing the presets that were asked about");
                 await ApplyPresetRepairsAsync();
 
                 if (Project.Fingerprint() != beforePublishing)
