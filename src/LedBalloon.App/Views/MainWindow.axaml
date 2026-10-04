@@ -241,7 +241,13 @@
         <Border DockPanel.Dock="Top" Padding="12,8" Background="#8A5A10"
                 IsVisible="{Binding HasPresetGaps}">
           <DockPanel>
+            <!-- Spelled out rather than left to the theme. A button keeps its ordinary surface on
+                 a coloured banner, and the ordinary surface here is a dark grey that all but
+                 disappears into the amber - which is the one control on the banner that has to be
+                 found. White on dark is the way round that cannot go wrong, whatever the banner. -->
             <Button DockPanel.Dock="Right" Content="Sort it out"
+                    Background="White" Foreground="#6B4508" BorderBrush="White"
+                    Padding="12,5" FontWeight="SemiBold"
                     Command="{Binding GoToSetupCommand}" />
             <TextBlock VerticalAlignment="Center" TextWrapping="Wrap" Foreground="White"
                        Text="{Binding PresetGapNotice}" />
