@@ -147,8 +147,8 @@ public static class PresetAdoption
         if (stray > 0)
         {
             notes.Add(new AdoptionNote(key,
-                $"{stray} LED(s) this preset lights are not part of any run, so the scene has " +
-                "nowhere to put them. Trace them as a run first if they matter."));
+                $"{stray} LED(s) this preset lights are not part of any segment, so the scene " +
+                "has nowhere to put them. Trace them as a segment first if they matter."));
         }
     }
 

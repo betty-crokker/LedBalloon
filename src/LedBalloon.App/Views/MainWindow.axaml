@@ -1080,7 +1080,7 @@
                           <StackPanel Orientation="Horizontal" Spacing="8"
                                       IsVisible="{Binding !IsPending}">
                             <Button Content="Stretch it to fit"
-                                    ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the runs as they are now"
+                                    ToolTip.Tip="Keeps its colors and effects, and moves its bounds to the segments as they are now"
                                     Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).FixPresetCommand}"
                                     CommandParameter="{Binding}" />
                             <Button Content="Delete it"

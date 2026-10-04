@@ -126,7 +126,7 @@ public class PresetAdoptionTests
     }
 
     [Fact]
-    public void Leds_the_preset_lights_that_belong_to_no_run_are_reported()
+    public void Leds_the_preset_lights_that_belong_to_no_segment_are_reported()
     {
         HousePreset overrun = Preset(
             "Overrun",
@@ -134,7 +134,7 @@ public class PresetAdoptionTests
 
         AdoptionReport report = PresetAdoption.Plan(House(), overrun);
 
-        Assert.Contains(report.Notes, n => n.Message.Contains("90 LED(s) this preset lights are not part of any run"));
+        Assert.Contains(report.Notes, n => n.Message.Contains("90 LED(s) this preset lights are not part of any segment"));
     }
 
     [Fact]

@@ -45,8 +45,15 @@ public partial class ConfirmDialog : Window
 
             // Named and ready to type over, because the default is a placeholder rather than an
             // answer: nobody wants a house full of scenes called "New scene".
-            dialog.InputBox.SelectAll();
-            dialog.InputBox.Focus();
+            //
+            // On Opened rather than here. Focus set before the window is shown does not survive
+            // being shown: opening moves focus itself, and the box ended up with a selection
+            // nobody could type over because the keyboard was still somewhere else.
+            dialog.Opened += (_, _) =>
+            {
+                dialog.InputBox.Focus();
+                dialog.InputBox.SelectAll();
+            };
         }
 
         if (request.OptionText is { Length: > 0 } option)

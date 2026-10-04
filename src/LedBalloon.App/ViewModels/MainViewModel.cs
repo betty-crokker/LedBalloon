@@ -2920,7 +2920,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         ConfirmResult answer = await ask(new ConfirmRequest(
             Title: "New scene",
-            Message: "Writes down what each run is showing right now, under a name you can put " +
+            Message: "Writes down what each segment is showing right now, under a name you can put " +
                      "back any time. Change the house first if it is not what you want kept.",
             AcceptText: "Create",
             CancelText: "Cancel",
@@ -4712,7 +4712,7 @@ public sealed partial class MainViewModel : ViewModelBase
                 return SegmentNeedsSoundItHasNot
                     ? "This effect follows sound, and this controller reports none coming in, " +
                       "so the house would stay as it is."
-                    : "This effect follows sound, so what the run does depends on what the " +
+                    : "This effect follows sound, so what the segment does depends on what the " +
                       "controller can hear rather than on anything here.";
             }
 

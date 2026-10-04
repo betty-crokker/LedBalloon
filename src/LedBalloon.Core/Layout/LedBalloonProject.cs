@@ -563,7 +563,7 @@ public sealed class LedBalloonProject
                 if (outputs[i].Number != i + 1)
                 {
                     problems.Add(
-                        $"{label}: there are runs on output {outputs[i].Number} but nothing on output {i + 1}.");
+                        $"{label}: there are segments on output {outputs[i].Number} but nothing on output {i + 1}.");
                 }
             }
 
@@ -576,7 +576,7 @@ public sealed class LedBalloonProject
                 configured > 0 && described > configured)
             {
                 problems.Add(
-                    $"{label}: the runs add up to {described} LEDs but the controller is still set up for " +
+                    $"{label}: the segments add up to {described} LEDs but the controller is still set up for " +
                     $"{configured}. Lengthen its LED outputs to match, or the last {described - configured} " +
                     "stay dark.");
             }
