@@ -11,9 +11,13 @@
 
     <!-- Fluent's own button fill is a mid grey carrying near-black text, and at this size the pair
          reads as a disabled control: low contrast, no edge, nothing to say it can be pressed. The
-         fix is not darker text but a lighter face and a border that holds a shape - and, just as
-         much, a disabled state that is plainly different, since the complaint about an enabled
-         button looking disabled is also a complaint that a disabled one looks like anything else.
+         fix is a white face and a border dark enough to draw the shape on its own - a near-white
+         face alone is only a nineteen-level step from the #F4F5F7 panels and the #E9EBEF strip the
+         buttons sit on, which reads as no button at all - a white face against that strip is only
+         1.19:1, so the border carries the whole job and is sized to 3:1 against the face, the
+         contrast a component boundary needs to be seen. And, just as much, a disabled state that
+         is plainly different, since the complaint about an enabled button looking disabled is also
+         a complaint that a disabled one looks like anything else.
 
          Here rather than in the main window, because every dialog is its own window and would not
          have inherited it. -->
@@ -22,26 +26,26 @@
             <ResourceDictionary.ThemeDictionaries>
 
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="ButtonBackground" Color="#FCFCFD" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F1F3F7" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#E3E6EC" />
-                    <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#F2F3F5" />
+                    <SolidColorBrush x:Key="ButtonBackground" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#F2F6FD" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#E2E7EF" />
+                    <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#EDEEF1" />
 
                     <SolidColorBrush x:Key="ButtonForeground" Color="#16181C" />
                     <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="#16181C" />
                     <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#16181C" />
                     <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#A2A7B0" />
 
-                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#BFC4CC" />
-                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#9AA1AB" />
-                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#9AA1AB" />
-                    <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#E4E6EA" />
+                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#8B939F" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#6B7480" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#6B7480" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#DCDFE4" />
                 </ResourceDictionary>
 
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="ButtonBackground" Color="#272B32" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#31363F" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#1F2329" />
+                    <SolidColorBrush x:Key="ButtonBackground" Color="#2E333B" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#3A414B" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#232831" />
                     <SolidColorBrush x:Key="ButtonBackgroundDisabled" Color="#1C1F24" />
 
                     <SolidColorBrush x:Key="ButtonForeground" Color="#F0F2F5" />
@@ -49,9 +53,9 @@
                     <SolidColorBrush x:Key="ButtonForegroundPressed" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="ButtonForegroundDisabled" Color="#5C636E" />
 
-                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#3C434D" />
-                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#525A66" />
-                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#525A66" />
+                    <SolidColorBrush x:Key="ButtonBorderBrush" Color="#737C8A" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPointerOver" Color="#949DAB" />
+                    <SolidColorBrush x:Key="ButtonBorderBrushPressed" Color="#949DAB" />
                     <SolidColorBrush x:Key="ButtonBorderBrushDisabled" Color="#2A2E35" />
                 </ResourceDictionary>
 
