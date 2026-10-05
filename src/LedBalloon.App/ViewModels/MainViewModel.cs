@@ -1564,10 +1564,15 @@ public sealed partial class MainViewModel : ViewModelBase
 
             await LoadPalettesAsync();
             await LoadFrameTimesAsync();
-            await LoadScheduleAsync();
-
-            // The controllers hold the layout, so a fresh machine finds the house already described.
+            // The controllers hold the layout, so a fresh machine finds the house already
+            // described.
+            //
+            // Before the timetable, not after. A timetable line names a scene, and the scenes
+            // arrive with the project - read the other way round, every line that fired a scene
+            // came back pointing at nothing, because at that moment the app knew of no scenes.
             await LoadProjectAsync();
+
+            await LoadScheduleAsync();
 
             // From here a controller that turns up late has to be caught up by the listener
             // instead, because this pass is over.
@@ -1664,8 +1669,10 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         await LoadPalettesAsync();
         await LoadFrameTimesAsync();
-        await LoadScheduleAsync();
+
+        // The project first, so the timetable has scenes to name. See the first pass.
         await LoadProjectAsync();
+        await LoadScheduleAsync();
 
         AfterDevicesChanged();
         Status = ControllerSummary + ".";
@@ -6943,15 +6950,14 @@ public sealed partial class MainViewModel : ViewModelBase
     }
 
     /// <summary>Reads each controller's timetable and the presets its entries can point at.</summary>
-    private async Task LoadScheduleAsync()
+    /// <remarks>Internal so a test can read a timetable back the way startup does.</remarks>
+    internal async Task LoadScheduleAsync()
     {
-        IReadOnlyList<PresetChoice> offered = PresetChoice.Offered(ScenesATimerCanName());
-
         // The location belongs with this: it is the thing the sun timers on this screen run on, and
         // reading it at the same moment means the two cannot disagree about which controllers exist.
         await LoadLocationAsync();
 
-        var rows = new List<ScheduleRow>();
+        var found = new List<(ScheduledChange Entry, string? Holds)>();
         var said = new List<string>();
 
         foreach (DeviceViewModel device in Devices)
@@ -6975,7 +6981,7 @@ public sealed partial class MainViewModel : ViewModelBase
                         _firedByTimers.Add(holds);
                     }
 
-                    rows.Add(ScheduleRow.From(entry, holds, offered));
+                    found.Add((entry, holds));
                 }
 
                 string sentence = WledSchedule.Describe(
@@ -6992,6 +6998,14 @@ public sealed partial class MainViewModel : ViewModelBase
                 // A controller that will not show its timetable is not a reason to stop.
             }
         }
+
+        // After the reading rather than before it. A line can name a preset this app has never
+        // written - one somebody saved from WLED's own pages - and those names are learned from the
+        // very loop above. Built first, the list could not contain them, so a line pointing at one
+        // read back as a line pointing at nothing, and saving then wrote that nothing down.
+        IReadOnlyList<PresetChoice> offered = PresetChoice.Offered(ScenesATimerCanName());
+
+        List<ScheduleRow> rows = [.. found.Select(f => ScheduleRow.From(f.Entry, f.Holds, offered))];
 
         List<ScheduleRow> shown = Collapse(rows);
 
