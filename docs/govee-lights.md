@@ -146,6 +146,64 @@ cloud is down", `govee2mqtt` is the answer.
 - **Power Platform** — Microsoft publishes a Govee connector for Power Automate, if the goal is
   "turn the porch orange when a thing happens in a spreadsheet".
 
+## How the Govee app itself talks to the lights
+
+Worth knowing, because it decides what is worth reverse engineering.
+
+The app uses **three** transports, and the cloud is the main one:
+
+1. **Govee's servers** — `app2.govee.com` for the account, the device list and the scene
+   catalogues, plus an **AWS IoT MQTT** connection for low-latency control and status. Most of what
+   the app does goes out to the internet and back, even when the phone is standing next to the
+   lights.
+2. **Bluetooth LE** — direct to the control box. Used for setup and for control while in range.
+3. **LAN UDP** — only when LAN Control is switched on for that device, and only the thin command set.
+
+So "the app talks to my lights" is mostly false. It talks to Govee, and Govee talks to the lights.
+
+## Reverse engineering: what has already been done
+
+A good deal, and several projects depend on it today.
+
+- **The app's own scene catalogue is readable.** A request to
+  `https://app2.govee.com/appsku/v1/light-effect-libraries?sku=H7020` with an `AppVersion`
+  header returns the scenes for that model, including their **scene IDs and scene codes** — the
+  numbers the app sends to select an effect. This is how integrations offer effects the official API
+  never exposed.
+- **The AWS IoT MQTT interface** has been worked out and is what `govee2mqtt` uses for fast
+  status and Tap-to-Run scenes. It needs the Govee account email and password, not just an API key.
+- **The BLE protocol** is documented for several models by community projects: packets beginning
+  `0x33`, with `0x05` for colour mode, `0x04` for selecting a scene and `0x0a` for
+  **DIY mode**. So a DIY scene can be *invoked* over Bluetooth by its code, with no cloud involved.
+
+What nobody appears to have published is **creating** a DIY scene from outside the app — defining
+one and saving it. There is no evident technical barrier: it is an authenticated HTTP call to
+`app2.govee.com` like any other, and someone with a proxy and some patience could capture it. It
+simply does not seem to have been done and shared.
+
+### The catch, and it is a live one
+
+The unofficial paths break. Govee has changed the app API more than once and ships a check that
+rejects old clients outright — `govee2mqtt` has had crash-on-startup reports with the server
+answering *"The app version is too low, please upgrade the version!"*, which takes out every
+integration built on that endpoint until a maintainer updates the version string.
+
+The documented Developer API is the only path with anything behind it. Everything else works until
+Govee changes something, with no notice and no obligation.
+
+### So is it worth doing?
+
+Depends what you want.
+
+- **To play existing scenes, including DIY ones, locally and fast** — it is already done for you.
+  Use `govee2mqtt` and accept the occasional breakage.
+- **To get effects the lights do not already have** — no. Even perfectly reverse engineered, the
+  firmware's effect engine is a fixed list and a DIY scene is a parameter set for it, so the ceiling
+  is the same. Driving `segmentedColorRgb` yourself gives more freedom than any scene does, and
+  that is documented and supported.
+- **To get off the cloud entirely** — partly. BLE and LAN both work without it, but neither offers
+  per-segment colour, and BLE needs something sitting in Bluetooth range of the control box.
+
 ## What cannot be done, by anything
 
 - **Create or edit a DIY scene outside the Govee Home app.**
@@ -168,5 +226,9 @@ the controller, open, and reachable over the local network with no account invol
 - [govee2mqtt](https://github.com/wez/govee2mqtt) · [DIY scene discussion](https://github.com/wez/govee2mqtt/issues/344)
 - [homebridge-govee — Scene, Music, DIY modes](https://github.com/bwp91/homebridge-govee/wiki/Scene,-Music,-DIY-Modes)
 - [govee_ble_lights](https://github.com/Beshelmek/govee_ble_lights)
+- [Govee-Reverse-Engineering - computing scene codes](https://github.com/egold555/Govee-Reverse-Engineering/issues/11)
+- [govee_h7015 - BLE protocol notes](https://github.com/ConsciousCode/govee_h7015)
+- [H6127 BLE reverse engineering](https://github.com/BeauJBurroughs/Govee-H6127-Reverse-Engineering)
+- [govee2mqtt #637 - the app API rejecting old clients](https://github.com/wez/govee2mqtt/issues/637)
 - [Govee connector for Power Platform](https://learn.microsoft.com/en-us/connectors/govee/)
 - [H7020 user manual](https://manuals.plus/govee/h7020-rgbic-warm-white-wifi-and-bluetooth-smart-outdoor-string-lights-manual)
