@@ -119,6 +119,13 @@ internal sealed class FakeController : IDisposable
     public List<string> Uploads { get; } = [];
 
     /// <summary>
+    /// Which file each upload was for, in order, so a test can count writes rather than only see
+    /// the last one. Overwriting a file with the same bytes leaves no trace in <see cref="Files"/>,
+    /// and "was this written again" is exactly the question a save that skips unchanged work raises.
+    /// </summary>
+    public List<string> Written { get; } = [];
+
+    /// <summary>
     /// This one's configuration, which is where its timetable lives.
     /// <para>
     /// Held rather than fixed, because writing a timetable reads the whole configuration and
@@ -299,6 +306,7 @@ internal sealed class FakeController : IDisposable
                     lock (_posted)
                     {
                         Uploads.Add(path.TrimStart('/'));
+                        Written.Add(name.TrimStart('/'));
                         Files[name] = Encoding.UTF8.GetBytes(sent[start..end]);
                     }
                 }

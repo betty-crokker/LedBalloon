@@ -217,7 +217,16 @@ public sealed class WledConfigClient
     /// thing that records which end of the day they belong to.
     /// </para>
     /// </summary>
-    public async Task SetScheduleAsync(
+    /// <returns>
+    /// True when the controller was written to, false when it already held exactly this.
+    /// </returns>
+    /// <remarks>
+    /// The comparison is not an optimization. Flash has a finite write budget, this posts the whole
+    /// configuration to change the timers inside it, and a save that changed a colour has no
+    /// business rewriting the timetable - saving anything rewrote everything, which is both a cost
+    /// and a lie: the progress window named a step that had nothing to do.
+    /// </remarks>
+    public async Task<bool> SetScheduleAsync(
         IReadOnlyList<ScheduledChange> schedule,
         CancellationToken cancellationToken = default)
     {
@@ -258,6 +267,11 @@ public sealed class WledConfigClient
         entries.Add(WriteSun(schedule, SunTrigger.Sunrise));
         entries.Add(WriteSun(schedule, SunTrigger.Sunset));
 
+        if (timers["ins"] is JsonNode held && held.ToJsonString() == entries.ToJsonString())
+        {
+            return false;
+        }
+
         timers["ins"] = entries;
 
         using var content = new StringContent(
@@ -274,6 +288,8 @@ public sealed class WledConfigClient
                 $"That controller would not take the timetable ({(int)response.StatusCode}). " +
                 "A settings PIN will block this.");
         }
+
+        return true;
     }
 
     /// <summary>

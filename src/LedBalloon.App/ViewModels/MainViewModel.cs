@@ -1237,7 +1237,12 @@ public sealed partial class MainViewModel : ViewModelBase
                 await ApplyPresetRepairsAsync();
 
                 progress?.Say("Writing the timetable");
-                await WriteScheduleAsync();
+                int timetables = await WriteScheduleAsync();
+
+                if (timetables > 0)
+                {
+                    pushed += $" The timetable was written to {timetables} controller(s).";
+                }
 
                 if (Project.Fingerprint() != beforePublishing)
                 {
@@ -1275,10 +1280,19 @@ public sealed partial class MainViewModel : ViewModelBase
                 pushed = $" The layout was stored but a controller would not take its segments: {ex.Message}";
             }
 
+            // Said in terms of what was written. A save that found everything already in place
+            // used to report "Saved revision 36 to ." - the sentence assumed there was a list of
+            // controllers to name, and saying nothing changed is both shorter and the answer to
+            // the question the reader actually has.
+            string wrote = result.AlreadyHeld
+                ? pushed.Length > 0
+                    ? $"The layout was already on the controllers.{pushed}"
+                    : "Nothing had changed, so nothing was written."
+                : $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}.{pushed}";
+
             Status = result.Failures.Count == 0
-                ? $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}.{pushed}"
-                : $"Saved revision {result.Revision} to {string.Join(" and ", result.SavedTo)}, but " +
-                  string.Join("  ", result.Failures);
+                ? wrote
+                : $"{wrote.TrimEnd('.')}, but {string.Join("  ", result.Failures)}";
         }
         catch (Exception ex)
         {
@@ -3879,7 +3893,21 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        _touchedTheHouse = true;
+        // Power alone is not a look. Flicking the house off and on leaves it showing exactly
+        // what it showed before, so there is nothing new to write down - and being asked to name a
+        // scene because the light switch was used reads as the app having done something unnoticed,
+        // which is the very thing the question on the way out is guarded against. Anything that
+        // carries more than power still counts, including a brightness.
+        bool powerOnly =
+            patch.On is not null &&
+            patch.Brightness is null &&
+            patch.Preset is null &&
+            patch.Segments is null or { Count: 0 };
+
+        if (!powerOnly)
+        {
+            _touchedTheHouse = true;
+        }
 
         // Applying a scene is the explicit "put this on the house", so it goes out whole - and it
         // supersedes anything that was waiting for the dark, because a scene describes the whole
@@ -7242,8 +7270,11 @@ public sealed partial class MainViewModel : ViewModelBase
     /// slots nobody mentioned keep running what they used to.
     /// </para>
     /// </summary>
-    private async Task WriteScheduleAsync()
+    /// <returns>How many controllers were actually written to.</returns>
+    private async Task<int> WriteScheduleAsync()
     {
+        int taken = 0;
+
         {
             // The switch presets first, because the preset a line fires has to exist on a
             // controller before a timer there can point at it - and which slot it lands in is the
@@ -7281,12 +7312,18 @@ public sealed partial class MainViewModel : ViewModelBase
                 }
 
                 var config = new WledConfigClient(device.Host);
-                await config.SetScheduleAsync(entries);
+
+                if (await config.SetScheduleAsync(entries))
+                {
+                    taken++;
+                }
             }
 
             ScheduleChanged = false;
             await LoadScheduleAsync();
         }
+
+        return taken;
     }
 
     /// <summary>

@@ -19,9 +19,18 @@ public sealed record ProjectLoadResult(
 public sealed record ProjectSaveResult(
     int Revision,
     IReadOnlyList<string> SavedTo,
-    IReadOnlyList<string> Failures)
+    IReadOnlyList<string> Failures,
+    bool AlreadyHeld = false)
 {
-    public bool AnySucceeded => SavedTo.Count > 0;
+    /// <summary>
+    /// True when the save reached the controllers, including by finding nothing to do.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="AlreadyHeld"/> counts: every controller already had exactly this, so not writing
+    /// is the right outcome rather than a failed one. Without it a second save of an unchanged
+    /// layout reported "could not save to any controller", which is alarming and untrue.
+    /// </remarks>
+    public bool AnySucceeded => SavedTo.Count > 0 || AlreadyHeld;
 }
 
 /// <summary>
@@ -163,21 +172,29 @@ public static class ProjectSync
         // one failure that loses work nobody can get back, so check before writing rather than
         // after. The check costs one read per controller.
         var stale = new List<string>();
+        var held = new List<string?>();
+
         foreach (SyncTarget target in controllers)
         {
             try
             {
                 using var probe = new DeviceProjectStore(target.Host);
-                int? storedRevision = await probe.ReadRevisionAsync(cancellationToken).ConfigureAwait(false);
 
-                if (storedRevision > project.Revision)
+                // The whole file, which is what reading the revision costs anyway - so what the
+                // controller holds is in hand and can be compared rather than overwritten blind.
+                LedBalloonProject? stored = await probe.LoadAsync(cancellationToken).ConfigureAwait(false);
+
+                if (stored?.Revision > project.Revision)
                 {
-                    stale.Add($"{target.Name} already holds revision {storedRevision}");
+                    stale.Add($"{target.Name} already holds revision {stored.Revision}");
                 }
+
+                held.Add(stored?.Fingerprint());
             }
             catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
             {
                 // Unreachable now means it will simply fail the write below and be reported there.
+                held.Add(null);
             }
         }
 
@@ -193,8 +210,6 @@ public static class ProjectSync
                 ]);
         }
 
-        project.Revision++;
-        project.SavedUtc = DateTimeOffset.UtcNow;
         project.Schema = LedBalloonProject.CurrentSchema;
 
         bool storePhoto = photoJpeg is { Length: > 0 } &&
@@ -207,6 +222,25 @@ public static class ProjectSync
             project.PhotoOnDevice = storePhoto;
             project.PhotoPath = storePhoto ? DeviceProjectStore.PhotoFile : null;
         }
+
+        // Nothing to write, so nothing is written and the revision does not move. The fingerprint
+        // covers everything except the revision and the time it was saved, which are the two things
+        // a save would change by happening - so this asks whether the house has changed rather than
+        // whether a save has been asked for.
+        //
+        // All or nothing deliberately: every controller is meant to hold the same bytes, and
+        // writing the newcomer alone would leave them on different revisions for identical content.
+        // The common case this exists for - saving twice, or saving after changing nothing - skips
+        // every controller together.
+        string mine = project.Fingerprint();
+
+        if (held.Count > 0 && held.All(fingerprint => fingerprint == mine))
+        {
+            return new ProjectSaveResult(project.Revision, [], [], AlreadyHeld: true);
+        }
+
+        project.Revision++;
+        project.SavedUtc = DateTimeOffset.UtcNow;
 
         var savedTo = new List<string>();
         var failures = new List<string>();
