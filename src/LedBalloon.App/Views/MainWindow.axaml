@@ -938,13 +938,18 @@
                         <Button Classes="block" Content="Trace it on the photo"
                                 Command="{Binding Owner.StartDrawingSegmentCommand}"
                                 IsEnabled="{Binding !Owner.IsDrawingSegment}" />
-                        <!-- Two jobs, one mechanism: a traced line that simply needs more of it,
-                             and a run that hangs in two places - the stairs are two rails with a
-                             landing between them, one segment to the controller and two stretches
-                             to anyone looking at it. The gap stays dark either way. -->
-                        <Button Classes="block" Content="Add another line"
-                                ToolTip.Tip="Carry on drawing this segment somewhere else on the photo. The gap between stays dark."
-                                Command="{Binding Owner.AddAnotherLineCommand}"
+                        <!-- Two buttons, because they are two questions and only one of them is
+                             about gaps. A porch line that climbs to the peak and comes back down is
+                             one unbroken run with corners in it; the stairs are two rails with a
+                             landing between. Offered as one button, the first got the second's gap
+                             and the only way back was to trace the whole thing again. -->
+                        <Button Classes="block" Content="Carry on from an end"
+                                ToolTip.Tip="Keep drawing the same unbroken line. Click the end you want to carry on from, then click along where it goes."
+                                Command="{Binding Owner.CarryOnDrawingCommand}"
+                                IsEnabled="{Binding Segment.HasGeometry}" />
+                        <Button Classes="block" Content="Start a separate line"
+                                ToolTip.Tip="Draw another stretch of this same segment somewhere else. The gap in between stays dark."
+                                Command="{Binding Owner.StartSeparateLineCommand}"
                                 IsEnabled="{Binding Segment.HasGeometry}" />
                         <Button Classes="block" Content="Done tracing"
                                 Command="{Binding Owner.FinishDrawingSegmentCommand}"
@@ -1069,8 +1074,10 @@
                                 ControllerStates="{Binding ControllerStates}"
                                 IsDrawing="{Binding IsDrawingSegment}"
                                 CanMovePoints="True"
+                                DrawingFromStart="{Binding DrawingFromStart}"
                                 PointAdded="OnCanvasPointAdded"
                                 PointMoved="OnCanvasPointMoved"
+                                PointRemoved="OnCanvasPointRemoved"
                                 SegmentPicked="OnSegmentPicked" />
             </DockPanel>
           </TabItem>

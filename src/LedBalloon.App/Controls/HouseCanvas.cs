@@ -99,6 +99,18 @@ public sealed class HouseCanvas : Control
     public static readonly StyledProperty<bool> CanMovePointsProperty =
         AvaloniaProperty.Register<HouseCanvas, bool>(nameof(CanMovePoints));
 
+    /// <summary>
+    /// Whether the line being drawn is growing from its first point rather than its last.
+    /// </summary>
+    /// <remarks>
+    /// Only the line from the last point to the pointer depends on it, but that line is the whole
+    /// of the feedback while drawing: anchored at the wrong end it reaches across the house from a
+    /// corner nobody is working on, which says the app has misunderstood the click that chose the
+    /// end - and it had not.
+    /// </remarks>
+    public static readonly StyledProperty<bool> DrawingFromStartProperty =
+        AvaloniaProperty.Register<HouseCanvas, bool>(nameof(DrawingFromStart));
+
     public static readonly StyledProperty<int> LayoutRevisionProperty =
         AvaloniaProperty.Register<HouseCanvas, int>(nameof(LayoutRevision));
 
@@ -183,6 +195,12 @@ public sealed class HouseCanvas : Control
         set => SetValue(CanMovePointsProperty, value);
     }
 
+    public bool DrawingFromStart
+    {
+        get => GetValue(DrawingFromStartProperty);
+        set => SetValue(DrawingFromStartProperty, value);
+    }
+
     public event EventHandler<LayoutPoint>? PointAdded;
 
     /// <summary>
@@ -193,6 +211,14 @@ public sealed class HouseCanvas : Control
     /// </para>
     /// </summary>
     public event EventHandler<Segment>? SegmentPicked;
+
+    /// <summary>One of the selected run's points was right-clicked, to take it off the line.</summary>
+    /// <remarks>
+    /// Right-click rather than a mode to go into: taking back a wrong turn is the thing you want
+    /// immediately after making one, and a trip to a button to enable deleting is a trip away from
+    /// the point you are looking at.
+    /// </remarks>
+    public event EventHandler<int>? PointRemoved;
 
     /// <summary>One of the selected run's points was dragged to a new place on the photo.</summary>
     /// <remarks>
@@ -329,6 +355,16 @@ public sealed class HouseCanvas : Control
         }
 
         Point position = e.GetPosition(this);
+
+        if (!IsDrawing && CanMovePoints &&
+            e.GetCurrentPoint(this).Properties.IsRightButtonPressed &&
+            HandleUnder(image, position) is { } unwanted)
+        {
+            PointRemoved?.Invoke(this, unwanted);
+            _hovered = -1;
+            InvalidateVisual();
+            return;
+        }
 
         // A handle first, because it sits on top of the run it belongs to and a click meant for one
         // would otherwise land on the other.
@@ -552,6 +588,11 @@ public sealed class HouseCanvas : Control
 
         for (int i = 0; i < segment.Path.Count - 1; i++)
         {
+            if (segment.IsBreak(i))
+            {
+                continue;
+            }
+
             context.DrawLine(placed, ToControl(image, segment.Path[i]), ToControl(image, segment.Path[i + 1]));
         }
 
@@ -575,10 +616,10 @@ public sealed class HouseCanvas : Control
             LineCap = PenLineCap.Round,
         };
 
-        Point last = ToControl(image, segment.Path[^1]);
-        context.DrawLine(rubber, last, cursor);
+        Point from = ToControl(image, DrawingFromStart ? segment.Path[0] : segment.Path[^1]);
+        context.DrawLine(rubber, from, cursor);
 
-        DrawLengthHint(context, last, cursor, segment);
+        DrawLengthHint(context, from, cursor, segment);
     }
 
     /// <summary>Reports how far the run has been traced, beside the pointer.</summary>

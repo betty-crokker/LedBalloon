@@ -258,6 +258,10 @@ public partial class MainWindow : Window
     private void OnCanvasPointMoved(object? sender, PointMove move) =>
         ViewModel?.MoveSelectedSegmentPoint(move.Index, move.At.X, move.At.Y);
 
+    /// <summary>A traced point was right-clicked, which is how a wrong turn is taken back.</summary>
+    private void OnCanvasPointRemoved(object? sender, int index) =>
+        ViewModel?.RemovePointFromSelectedSegment(index);
+
     /// <summary>A run was clicked on the photo, which is how you pick one once setup is done.</summary>
     private void OnSegmentPicked(object? sender, Segment segment) => ViewModel?.PickSegment(segment);
 }

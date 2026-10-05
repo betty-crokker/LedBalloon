@@ -559,7 +559,7 @@ public sealed partial class MainViewModel : ViewModelBase
         // the handles are on screen - said always, it would be an instruction to do something
         // invisible.
         : SelectedSegment is { HasGeometry: true } open
-            ? $"Drag any point on '{open.Name}' to fit it to the photo. " +
+            ? $"Drag any point on '{open.Name}' to move it; right-click one to delete it. " +
               "Trace it on the photo starts again from scratch."
             : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
 
@@ -6091,17 +6091,48 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </summary>
     private bool _startsAnotherLine;
 
+    /// <summary>Set while the next click picks which end of the line to carry on from.</summary>
+    private bool _awaitingEnd;
+
+    private bool _drawingBackwards;
+
     /// <summary>
-    /// Carries on drawing the selected run, adding another stretch to what is already there.
+    /// True while new points go on the front of the line rather than the back, so the photo can
+    /// anchor the line it draws to the pointer at the end being worked on.
+    /// </summary>
+    public bool DrawingFromStart
+    {
+        get => _drawingBackwards;
+        private set
+        {
+            if (_drawingBackwards == value)
+            {
+                return;
+            }
+
+            _drawingBackwards = value;
+            OnPropertyChanged();
+        }
+    }
+
+    /// <summary>
+    /// Carries on drawing the selected run from one of its ends, as one continuous line.
     /// </summary>
     /// <remarks>
-    /// Two reasons, and they turn out to be one mechanism. A line traced along a porch can simply
-    /// need more of it, and re-tracing from scratch to add two points is work nobody should be
-    /// charged. And one electrical run can hang in two places - the stairs are two rails with a
-    /// landing between - which is this plus a gap recorded where the jump is.
+    /// These two were one command and should never have been. Both add to a line already traced,
+    /// and the difference between them is the whole question: does the strip keep going, or does it
+    /// stop and start somewhere else? A porch line that climbs to the peak and comes back down is
+    /// one unbroken run with corners in it; the stairs are two rails with a landing between. As one
+    /// button the first case got the second's gap, and the only way back was to trace it all again.
+    /// <para>
+    /// Which end has to be asked, because a run has two and either can be the one with more strip
+    /// left on it. So the first click after this says which, and the drawing goes on from there -
+    /// forwards off the last point, or backwards off the first, in which case LED 1 moves with it,
+    /// because that is where the strip now begins.
+    /// </para>
     /// </remarks>
     [RelayCommand]
-    private void AddAnotherLine()
+    private void CarryOnDrawing()
     {
         if (SelectedSegment is not { HasGeometry: true })
         {
@@ -6110,10 +6141,76 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         ActiveTab = HouseTab;
+        _startsAnotherLine = false;
+        _awaitingEnd = true;
+        IsDrawingSegment = true;
+        Status = $"Click the end of '{SelectedSegment.Name}' you want to carry on from.";
+    }
+
+    /// <summary>
+    /// Starts a separate stretch of the selected run, with a dark gap in between.
+    /// </summary>
+    /// <remarks>See <see cref="CarryOnDrawing"/> for why this is a button of its own.</remarks>
+    [RelayCommand]
+    private void StartSeparateLine()
+    {
+        if (SelectedSegment is not { HasGeometry: true })
+        {
+            Status = "Trace it on the photo first, then you can add to it.";
+            return;
+        }
+
+        ActiveTab = HouseTab;
+        _awaitingEnd = false;
+        DrawingFromStart = false;
         _startsAnotherLine = true;
         IsDrawingSegment = true;
         Status = $"Click where the next stretch of '{SelectedSegment.Name}' starts. " +
                  "The gap between it and the last one stays dark.";
+    }
+
+    /// <summary>
+    /// Takes one point back off the selected run's line.
+    /// </summary>
+    /// <remarks>
+    /// The way out of a wrong turn. Without it, three stray clicks meant tracing a roofline again
+    /// from the beginning, which is the cost that made every other mistake expensive too.
+    /// <para>
+    /// Removing a point merges the two stretches either side of it into one, and that merged
+    /// stretch is a gap if either of them was: deleting the first point of a separate line must not
+    /// quietly join it to the line before.
+    /// </para>
+    /// </remarks>
+    public void RemovePointFromSelectedSegment(int index)
+    {
+        if (SelectedSegment is not { } segment || index < 0 || index >= segment.Path.Count)
+        {
+            return;
+        }
+
+        segment.Path.RemoveAt(index);
+
+        var kept = new List<int>();
+
+        foreach (int b in segment.Breaks)
+        {
+            int moved = b == index || b == index - 1 ? index - 1 : b > index ? b - 1 : b;
+
+            if (moved >= 0 && moved < segment.Path.Count - 1 && !kept.Contains(moved))
+            {
+                kept.Add(moved);
+            }
+        }
+
+        kept.Sort();
+        segment.Breaks = kept;
+
+        segment.NotifyPathChanged();
+        LayoutRevision++;
+        HasUnsavedChanges = true;
+
+        OnPropertyChanged(nameof(PhotoHint));
+        OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
     }
 
     [RelayCommand]
@@ -6128,16 +6225,24 @@ public sealed partial class MainViewModel : ViewModelBase
         SelectedSegment.Path.Clear();
         SelectedSegment.Breaks.Clear();
         _startsAnotherLine = false;
+        _awaitingEnd = false;
+        DrawingFromStart = false;
         IsDrawingSegment = true;
         Status = $"Click along '{SelectedSegment.Name}', starting at the end where LED 1 is. " +
                  "Extra clicks follow a corner. You can flip the direction afterwards.";
     }
+
+    /// <summary>How far a click fell from a point, in the photo's own units.</summary>
+    private static double Apart(LayoutPoint point, double x, double y) =>
+        Math.Sqrt(((point.X - x) * (point.X - x)) + ((point.Y - y) * (point.Y - y)));
 
     [RelayCommand]
     private void FinishDrawingSegment()
     {
         IsDrawingSegment = false;
         _startsAnotherLine = false;
+        _awaitingEnd = false;
+        _drawingBackwards = false;
         Status = SelectedSegment is { HasGeometry: true }
             ? $"'{SelectedSegment.Name}' drawn with {SelectedSegment.Path.Count} point(s)."
             : "Nothing drawn.";
@@ -6151,8 +6256,27 @@ public sealed partial class MainViewModel : ViewModelBase
             return;
         }
 
-        // The first point of a new stretch records the jump that gets to it, so the LEDs are not
-        // spread across the gap and nothing is drawn through it.
+        // This click says which end to carry on from rather than placing anything. Nearest wins:
+        // the two ends of a run are nowhere near each other, so there is nothing to get wrong, and
+        // a tolerance would only turn an obvious answer into an error message.
+        if (_awaitingEnd)
+        {
+            double toStart = Apart(SelectedSegment.Path[0], normalizedX, normalizedY);
+            double toEnd = Apart(SelectedSegment.Path[^1], normalizedX, normalizedY);
+
+            DrawingFromStart = toStart < toEnd;
+            _awaitingEnd = false;
+
+            Status = _drawingBackwards
+                ? $"Carrying on from the LED 1 end of '{SelectedSegment.Name}'. " +
+                  "LED 1 moves to wherever this now starts."
+                : $"Carrying on from the far end of '{SelectedSegment.Name}'.";
+
+            return;
+        }
+
+        // The first point of a separate stretch records the jump that gets to it, so no LED is
+        // placed along the gap and nothing is drawn through it.
         if (_startsAnotherLine && SelectedSegment.Path.Count > 0)
         {
             SelectedSegment.Breaks.Add(SelectedSegment.Path.Count - 1);
@@ -6160,7 +6284,18 @@ public sealed partial class MainViewModel : ViewModelBase
 
         _startsAnotherLine = false;
 
-        SelectedSegment.Path.Add(new LayoutPoint(normalizedX, normalizedY));
+        if (DrawingFromStart)
+        {
+            // On the front, so the strip reads from its new beginning. Every gap is one point
+            // further along than it was.
+            SelectedSegment.Path.Insert(0, new LayoutPoint(normalizedX, normalizedY));
+            SelectedSegment.Breaks = [.. SelectedSegment.Breaks.Select(b => b + 1)];
+        }
+        else
+        {
+            SelectedSegment.Path.Add(new LayoutPoint(normalizedX, normalizedY));
+        }
+
         SelectedSegment.NotifyPathChanged();
         LayoutRevision++;
         HasUnsavedChanges = true;
