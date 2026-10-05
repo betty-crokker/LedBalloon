@@ -6086,6 +6086,36 @@ public sealed partial class MainViewModel : ViewModelBase
         StartDrawingSegment();
     }
 
+    /// <summary>
+    /// Set while the next point clicked should begin a new stretch rather than continue the last.
+    /// </summary>
+    private bool _startsAnotherLine;
+
+    /// <summary>
+    /// Carries on drawing the selected run, adding another stretch to what is already there.
+    /// </summary>
+    /// <remarks>
+    /// Two reasons, and they turn out to be one mechanism. A line traced along a porch can simply
+    /// need more of it, and re-tracing from scratch to add two points is work nobody should be
+    /// charged. And one electrical run can hang in two places - the stairs are two rails with a
+    /// landing between - which is this plus a gap recorded where the jump is.
+    /// </remarks>
+    [RelayCommand]
+    private void AddAnotherLine()
+    {
+        if (SelectedSegment is not { HasGeometry: true })
+        {
+            Status = "Trace it on the photo first, then you can add to it.";
+            return;
+        }
+
+        ActiveTab = HouseTab;
+        _startsAnotherLine = true;
+        IsDrawingSegment = true;
+        Status = $"Click where the next stretch of '{SelectedSegment.Name}' starts. " +
+                 "The gap between it and the last one stays dark.";
+    }
+
     [RelayCommand]
     private void StartDrawingSegment()
     {
@@ -6096,6 +6126,8 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         SelectedSegment.Path.Clear();
+        SelectedSegment.Breaks.Clear();
+        _startsAnotherLine = false;
         IsDrawingSegment = true;
         Status = $"Click along '{SelectedSegment.Name}', starting at the end where LED 1 is. " +
                  "Extra clicks follow a corner. You can flip the direction afterwards.";
@@ -6105,6 +6137,7 @@ public sealed partial class MainViewModel : ViewModelBase
     private void FinishDrawingSegment()
     {
         IsDrawingSegment = false;
+        _startsAnotherLine = false;
         Status = SelectedSegment is { HasGeometry: true }
             ? $"'{SelectedSegment.Name}' drawn with {SelectedSegment.Path.Count} point(s)."
             : "Nothing drawn.";
@@ -6117,6 +6150,15 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             return;
         }
+
+        // The first point of a new stretch records the jump that gets to it, so the LEDs are not
+        // spread across the gap and nothing is drawn through it.
+        if (_startsAnotherLine && SelectedSegment.Path.Count > 0)
+        {
+            SelectedSegment.Breaks.Add(SelectedSegment.Path.Count - 1);
+        }
+
+        _startsAnotherLine = false;
 
         SelectedSegment.Path.Add(new LayoutPoint(normalizedX, normalizedY));
         SelectedSegment.NotifyPathChanged();

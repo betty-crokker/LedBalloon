@@ -170,6 +170,27 @@ public sealed class Segment : INotifyPropertyChanged
     /// </summary>
     [JsonPropertyName("path")] public List<LayoutPoint> Path { get; set; } = [];
 
+    /// <summary>
+    /// Where the drawn line jumps rather than runs: the index of a point after which the next
+    /// stretch is a gap, not lit.
+    /// </summary>
+    /// <remarks>
+    /// One electrical run is not always one line on a house. Forty-eight LEDs under a set of stairs
+    /// can be two rails with a landing between them - one segment as far as the controller is
+    /// concerned, two separate stretches as far as anybody looking at it is concerned. Without
+    /// this, the LEDs were spread evenly across the jump as well, so a sixth of them were drawn
+    /// hanging in the air between the two rails.
+    /// <para>
+    /// Indices rather than a list of lists, because the path is already written to every controller
+    /// and read back by every copy of the app: a file from before this is a path with no breaks,
+    /// which is exactly what an empty list means.
+    /// </para>
+    /// </remarks>
+    [JsonPropertyName("breaks")] public List<int> Breaks { get; set; } = [];
+
+    /// <summary>True when the stretch from point <paramref name="index"/> to the next is a gap.</summary>
+    public bool IsBreak(int index) => Breaks.Contains(index);
+
     /// <summary>Exclusive end index, which is what WLED's segment <c>stop</c> field expects.</summary>
     [JsonIgnore] public int StopExclusive => Start + Count;
 
@@ -220,7 +241,11 @@ public sealed class Segment : INotifyPropertyChanged
         {
             double dx = Path[i + 1].X - Path[i].X;
             double dy = Path[i + 1].Y - Path[i].Y;
-            lengths[i] = Math.Sqrt((dx * dx) + (dy * dy));
+
+            // A gap has no length, so no LED is ever placed along it and the spacing either side
+            // comes out the same as if the two stretches were laid end to end - which, electrically,
+            // they are.
+            lengths[i] = IsBreak(i) ? 0d : Math.Sqrt((dx * dx) + (dy * dy));
             total += lengths[i];
         }
 

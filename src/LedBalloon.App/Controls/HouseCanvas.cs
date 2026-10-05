@@ -887,6 +887,13 @@ public sealed class HouseCanvas : Control
 
         for (int i = 0; i < segment.Path.Count - 1; i++)
         {
+            // A gap is where the run is not, so nothing is drawn across it. Drawn anyway, the two
+            // stretches under a set of stairs read as one line going through the landing.
+            if (segment.IsBreak(i))
+            {
+                continue;
+            }
+
             Point from = ToControl(image, segment.Path[i]);
             Point to = ToControl(image, segment.Path[i + 1]);
 

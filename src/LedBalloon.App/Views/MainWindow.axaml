@@ -938,6 +938,14 @@
                         <Button Classes="block" Content="Trace it on the photo"
                                 Command="{Binding Owner.StartDrawingSegmentCommand}"
                                 IsEnabled="{Binding !Owner.IsDrawingSegment}" />
+                        <!-- Two jobs, one mechanism: a traced line that simply needs more of it,
+                             and a run that hangs in two places - the stairs are two rails with a
+                             landing between them, one segment to the controller and two stretches
+                             to anyone looking at it. The gap stays dark either way. -->
+                        <Button Classes="block" Content="Add another line"
+                                ToolTip.Tip="Carry on drawing this segment somewhere else on the photo. The gap between stays dark."
+                                Command="{Binding Owner.AddAnotherLineCommand}"
+                                IsEnabled="{Binding Segment.HasGeometry}" />
                         <Button Classes="block" Content="Done tracing"
                                 Command="{Binding Owner.FinishDrawingSegmentCommand}"
                                 IsEnabled="{Binding Owner.IsDrawingSegment}" />
