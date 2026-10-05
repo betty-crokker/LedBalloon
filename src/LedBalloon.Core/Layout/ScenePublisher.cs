@@ -370,15 +370,37 @@ public static class ScenePublisher
             ?? throw new WledException($"{host} returned a presets file that is not an object.");
     }
 
-    private static Task UploadAsync(
+    private static async Task UploadAsync(
         WledFileSystemClient files,
         JsonObject presets,
-        CancellationToken cancellationToken) =>
-        files.UploadAsync(
+        CancellationToken cancellationToken)
+    {
+        await files.UploadAsync(
             "presets.json",
             System.Text.Encoding.UTF8.GetBytes(presets.ToJsonString()),
             "application/json",
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+
+        // And then say so, because writing the file does not. See AnnouncePresetsChangedAsync.
+        if (FirstEmptySlot(presets) is { } spare)
+        {
+            await files.AnnouncePresetsChangedAsync(spare, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>The lowest slot this file leaves empty, or null when it leaves none.</summary>
+    private static int? FirstEmptySlot(JsonObject presets)
+    {
+        for (int slot = 1; slot <= MaxSlot; slot++)
+        {
+            if (!presets.ContainsKey(slot.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+            {
+                return slot;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Where this name already lives on the box, or the first free slot.

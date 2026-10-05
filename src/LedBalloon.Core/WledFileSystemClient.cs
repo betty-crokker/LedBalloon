@@ -49,6 +49,46 @@ public sealed class WledFileSystemClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// Tells the controller that its presets file has changed under it.
+    /// </summary>
+    /// <param name="emptySlot">
+    /// A slot number that holds nothing. Deleting an empty slot changes no preset - the file comes
+    /// back byte for byte identical - but it takes WLED through the code that stamps the time.
+    /// </param>
+    /// <remarks>
+    /// Writing presets.json through the file editor leaves WLED's own presets-modified timestamp
+    /// untouched, and that timestamp is how every WLED client decides whether its cached list of
+    /// preset names is still good. So the file was right, the stamp said nothing had happened, and
+    /// the web UI went on showing a list from weeks earlier - through a hard reload, because the
+    /// cache is in localStorage rather than the browser's. Two people read that list, concluded
+    /// the app had never saved anything, and were right about what they saw and wrong about why.
+    /// <para>
+    /// Best effort. It changes nothing on the house and nothing the app itself reads - LedBalloon
+    /// reads presets.json directly - so a controller that refuses it has still been published to,
+    /// and failing the save over a stale name in somebody else's list would be the worse trade.
+    /// </para>
+    /// </remarks>
+    public async Task AnnouncePresetsChangedAsync(
+        int emptySlot, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var body = new StringContent(
+                $"{{\"pdel\":{emptySlot.ToString(System.Globalization.CultureInfo.InvariantCulture)}}}",
+                System.Text.Encoding.UTF8,
+                "application/json");
+
+            using HttpResponseMessage response = await _http
+                .PostAsync("json/state", body, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Said above: the presets are written either way.
+        }
+    }
+
     /// <summary>Reads a file, or returns null when it is not there.</summary>
     public async Task<byte[]?> DownloadAsync(string path, CancellationToken cancellationToken = default)
     {
