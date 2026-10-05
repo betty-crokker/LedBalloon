@@ -83,6 +83,11 @@
                                 Components="HueSaturation"
                                 HsvColor="{Binding Hsv, Mode=TwoWay}" />
 
+      <!-- IsPerceptive is False deliberately. True maximises saturation when drawing the
+           track, so a white or near-grey color got a black-to-red ramp sitting under a swatch
+           that was plainly white - the slider describing a color nobody had chosen. False
+           ends the ramp at the color actually picked, which is what "how bright" is asking.
+           It costs the hue cue on a fully desaturated color, where there is no hue to cue. -->
       <TextBlock Classes="hint" Text="Brightness" Margin="0,10,0,2" />
       <primitives:ColorSlider Height="26" HorizontalAlignment="Stretch"
                               AutomationProperties.AutomationId="ColorBrightness"
@@ -90,7 +95,7 @@
                               ColorModel="Hsva"
                               ColorComponent="Component3"
                               IsAlphaVisible="False"
-                              IsPerceptive="True"
+                              IsPerceptive="False"
                               HsvColor="{Binding Hsv, Mode=TwoWay}" />
 
       <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,4,0,0">
