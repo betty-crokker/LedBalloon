@@ -1060,7 +1060,9 @@
                                 SelectedSegment="{Binding SelectedSegment}"
                                 ControllerStates="{Binding ControllerStates}"
                                 IsDrawing="{Binding IsDrawingSegment}"
+                                CanMovePoints="True"
                                 PointAdded="OnCanvasPointAdded"
+                                PointMoved="OnCanvasPointMoved"
                                 SegmentPicked="OnSegmentPicked" />
             </DockPanel>
           </TabItem>

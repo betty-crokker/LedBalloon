@@ -554,7 +554,14 @@ public sealed partial class MainViewModel : ViewModelBase
             : "Pick a segment on the left before tracing it."
         // No "not traced yet" line here: the segment's own row in the panel already says that,
         // under the segment it is about, where it is not competing with the photo.
-        : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
+        //
+        // The dragging is said only while a traced segment is open, because that is the only time
+        // the handles are on screen - said always, it would be an instruction to do something
+        // invisible.
+        : SelectedSegment is { HasGeometry: true } open
+            ? $"Drag any point on '{open.Name}' to fit it to the photo. " +
+              "Trace it on the photo starts again from scratch."
+            : "Click a segment on the photo to select it. To move or re-trace one, open it on the left and press Trace it on the photo.";
 
     /// <summary>True while the selected run has no line on the photo.</summary>
     public bool SelectedSegmentNeedsDrawing => SelectedSegment is { HasGeometry: false };
@@ -6120,6 +6127,34 @@ public sealed partial class MainViewModel : ViewModelBase
         // and rebuilding mid-trace would churn the selection underneath the drawing.
         OnPropertyChanged(nameof(PhotoHint));
         OnPropertyChanged(nameof(SelectedSegmentNeedsDrawing));
+    }
+
+    /// <summary>
+    /// Moves one of the selected segment's traced points, while it is being dragged on the photo.
+    /// </summary>
+    /// <remarks>
+    /// Marked unsaved like any other layout change, but without a list rebuild: this is called for
+    /// every pointer report of a drag, and rebuilding the segment list underneath a finger would
+    /// churn the selection the drag belongs to.
+    /// </remarks>
+    public void MoveSelectedSegmentPoint(int index, double normalizedX, double normalizedY)
+    {
+        if (SelectedSegment is not { } segment || index < 0 || index >= segment.Path.Count)
+        {
+            return;
+        }
+
+        var moved = new LayoutPoint(Math.Clamp(normalizedX, 0, 1), Math.Clamp(normalizedY, 0, 1));
+
+        if (segment.Path[index] == moved)
+        {
+            return;
+        }
+
+        segment.Path[index] = moved;
+        segment.NotifyPathChanged();
+        LayoutRevision++;
+        HasUnsavedChanges = true;
     }
 
     // ---- Plumbing -------------------------------------------------------------------------------

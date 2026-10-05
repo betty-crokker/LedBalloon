@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Platform.Storage;
 using Avalonia.VisualTree;
+using LedBalloon.App.Controls;
 using LedBalloon.App.ViewModels;
 using LedBalloon.Core;
 using LedBalloon.Core.Layout;
@@ -250,6 +251,12 @@ public partial class MainWindow : Window
 
     private void OnCanvasPointAdded(object? sender, LayoutPoint point) =>
         ViewModel?.AddPointToSelectedSegment(point.X, point.Y);
+
+    /// <summary>
+    /// A traced point was dragged, which is how a line is fitted to a photo taken since.
+    /// </summary>
+    private void OnCanvasPointMoved(object? sender, PointMove move) =>
+        ViewModel?.MoveSelectedSegmentPoint(move.Index, move.At.X, move.At.Y);
 
     /// <summary>A run was clicked on the photo, which is how you pick one once setup is done.</summary>
     private void OnSegmentPicked(object? sender, Segment segment) => ViewModel?.PickSegment(segment);

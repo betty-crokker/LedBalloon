@@ -89,6 +89,16 @@ public sealed class HouseCanvas : Control
     /// Bumped by the view model when segments are added or removed. Property changes on a segment
     /// are watched directly, but the list itself is a plain list, so structural edits need a nudge.
     /// </summary>
+    /// <summary>
+    /// Whether the selected run's traced points can be picked up and moved.
+    /// </summary>
+    /// <remarks>
+    /// Setup only. On the colour screen a click on the photo picks a run, and a handle that moved
+    /// the house under a finger aimed at selecting something would be the worst kind of surprise.
+    /// </remarks>
+    public static readonly StyledProperty<bool> CanMovePointsProperty =
+        AvaloniaProperty.Register<HouseCanvas, bool>(nameof(CanMovePoints));
+
     public static readonly StyledProperty<int> LayoutRevisionProperty =
         AvaloniaProperty.Register<HouseCanvas, int>(nameof(LayoutRevision));
 
@@ -96,6 +106,12 @@ public sealed class HouseCanvas : Control
 
     /// <summary>Where the pointer is, so a run being drawn can follow it.</summary>
     private Point? _cursor;
+
+    /// <summary>Which traced point is being dragged, or -1 for none.</summary>
+    private int _dragging = -1;
+
+    /// <summary>Which one the pointer is over, so it can say it is grabbable before it is grabbed.</summary>
+    private int _hovered = -1;
 
     static HouseCanvas()
     {
@@ -161,6 +177,12 @@ public sealed class HouseCanvas : Control
     }
 
     /// <summary>Raised with normalized (0-1) coordinates when the user clicks while drawing.</summary>
+    public bool CanMovePoints
+    {
+        get => GetValue(CanMovePointsProperty);
+        set => SetValue(CanMovePointsProperty, value);
+    }
+
     public event EventHandler<LayoutPoint>? PointAdded;
 
     /// <summary>
@@ -172,8 +194,21 @@ public sealed class HouseCanvas : Control
     /// </summary>
     public event EventHandler<Segment>? SegmentPicked;
 
+    /// <summary>One of the selected run's points was dragged to a new place on the photo.</summary>
+    /// <remarks>
+    /// Raised continuously while dragging rather than once at the end, so the run follows the
+    /// finger. The house is redrawn from it, which is the whole point: fitting a traced line to a
+    /// new photo is a matter of looking at the two together.
+    /// </remarks>
+    public event EventHandler<PointMove>? PointMoved;
+
     /// <summary>How near a click has to land, in pixels, to count as picking a run.</summary>
     private const double PickRadius = 26;
+
+    /// <summary>How big a handle is drawn, and how near a click has to be to take hold of one.</summary>
+    private const double HandleRadius = 5;
+
+    private const double HandleGrabRadius = 12;
 
     /// <summary>
     /// Drives the palette scroll, so an effect is something you can see rather than a word.
@@ -295,6 +330,16 @@ public sealed class HouseCanvas : Control
 
         Point position = e.GetPosition(this);
 
+        // A handle first, because it sits on top of the run it belongs to and a click meant for one
+        // would otherwise land on the other.
+        if (!IsDrawing && CanMovePoints && HandleUnder(image, position) is { } grabbed)
+        {
+            _dragging = grabbed;
+            e.Pointer.Capture(this);
+            InvalidateVisual();
+            return;
+        }
+
         if (!IsDrawing)
         {
             if (NearestSegment(image, position) is { } picked)
@@ -322,6 +367,40 @@ public sealed class HouseCanvas : Control
     {
         base.OnPointerMoved(e);
 
+        if (_dragging >= 0)
+        {
+            Rect image = ImageRect();
+
+            if (image.Width > 0 && image.Height > 0 && SelectedSegment is { } segment &&
+                _dragging < segment.Path.Count)
+            {
+                Point at = e.GetPosition(this);
+
+                // Clamped to the photo. A point dragged off the edge would still be stored, and the
+                // run would then reach somewhere nobody can see or get hold of again.
+                PointMoved?.Invoke(this, new PointMove(
+                    _dragging,
+                    new LayoutPoint(
+                        Math.Clamp((at.X - image.X) / image.Width, 0, 1),
+                        Math.Clamp((at.Y - image.Y) / image.Height, 0, 1))));
+            }
+
+            InvalidateVisual();
+            return;
+        }
+
+        if (CanMovePoints && !IsDrawing)
+        {
+            int over = HandleUnder(ImageRect(), e.GetPosition(this)) ?? -1;
+
+            if (over != _hovered)
+            {
+                _hovered = over;
+                Cursor = over >= 0 ? new Cursor(StandardCursorType.Hand) : Cursor.Default;
+                InvalidateVisual();
+            }
+        }
+
         if (!IsDrawing)
         {
             return;
@@ -329,6 +408,75 @@ public sealed class HouseCanvas : Control
 
         _cursor = e.GetPosition(this);
         InvalidateVisual();
+    }
+
+    protected override void OnPointerReleased(PointerReleasedEventArgs e)
+    {
+        base.OnPointerReleased(e);
+
+        if (_dragging >= 0)
+        {
+            _dragging = -1;
+            e.Pointer.Capture(null);
+            InvalidateVisual();
+        }
+    }
+
+    /// <summary>Which of the selected run's points is under this spot, if any.</summary>
+    private int? HandleUnder(Rect image, Point position)
+    {
+        if (SelectedSegment is not { } segment || segment.Path.Count == 0 ||
+            image.Width <= 0 || image.Height <= 0)
+        {
+            return null;
+        }
+
+        // Nearest rather than first, so overlapping handles at a tight corner give you the one you
+        // aimed at.
+        int best = -1;
+        double bestDistance = HandleGrabRadius;
+
+        for (int index = 0; index < segment.Path.Count; index++)
+        {
+            Point at = ToControl(image, segment.Path[index]);
+            double distance = Math.Sqrt(
+                ((at.X - position.X) * (at.X - position.X)) +
+                ((at.Y - position.Y) * (at.Y - position.Y)));
+
+            if (distance <= bestDistance)
+            {
+                best = index;
+                bestDistance = distance;
+            }
+        }
+
+        return best >= 0 ? best : null;
+    }
+
+    /// <summary>
+    /// The handles themselves: one per traced point on the selected run.
+    /// </summary>
+    /// <remarks>
+    /// Drawn last so they sit above the lit run, and in plain white on a dark ring so they read
+    /// against a daylit roof and a night sky alike - the photo underneath is whatever the house
+    /// looked like the day it was taken.
+    /// </remarks>
+    private void DrawHandles(DrawingContext context, Rect image, Segment segment)
+    {
+        var ring = new Pen(new SolidColorBrush(Color.FromArgb(220, 20, 24, 30)), 1.5);
+        var fill = new SolidColorBrush(Color.FromArgb(245, 255, 255, 255));
+        var live = new SolidColorBrush(Color.FromArgb(255, 90, 190, 255));
+
+        for (int index = 0; index < segment.Path.Count; index++)
+        {
+            Point at = ToControl(image, segment.Path[index]);
+            bool busy = index == _dragging || index == _hovered;
+
+            context.DrawEllipse(
+                busy ? live : fill, ring, at,
+                busy ? HandleRadius + 2 : HandleRadius,
+                busy ? HandleRadius + 2 : HandleRadius);
+        }
     }
 
     protected override void OnPointerExited(PointerEventArgs e)
@@ -379,6 +527,10 @@ public sealed class HouseCanvas : Control
         if (IsDrawing && SelectedSegment is { } drawing)
         {
             DrawInProgress(context, image, drawing);
+        }
+        else if (CanMovePoints && SelectedSegment is { Path.Count: > 0 } movable)
+        {
+            DrawHandles(context, image, movable);
         }
     }
 
