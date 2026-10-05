@@ -135,6 +135,12 @@ internal sealed class FakeController : IDisposable
     /// uncaps the frame rate.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// How many times to answer a configuration read with nothing, the way a controller busy
+    /// writing its flash does. Counts down as they are served.
+    /// </summary>
+    public int BlankConfigReplies { get; set; }
+
     public string Configuration { get; set; } =
         """{"hw":{"led":{"fps":42,"total":10}},"timers":{"cntdwn":{"en":false},"ins":[]}}""";
 
@@ -345,7 +351,7 @@ internal sealed class FakeController : IDisposable
 
             if (path.TrimEnd('/') is "/cfg.json" or "/json/cfg")
             {
-                byte[] body = Encoding.UTF8.GetBytes(Configuration);
+                byte[] body = Encoding.UTF8.GetBytes(Blank() ? string.Empty : Configuration);
 
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = body.Length;
@@ -394,6 +400,21 @@ internal sealed class FakeController : IDisposable
             }
 
             context.Response.Close();
+        }
+    }
+
+    /// <summary>True when this read should come back empty, which also uses one up.</summary>
+    private bool Blank()
+    {
+        lock (_posted)
+        {
+            if (BlankConfigReplies <= 0)
+            {
+                return false;
+            }
+
+            BlankConfigReplies--;
+            return true;
         }
     }
 

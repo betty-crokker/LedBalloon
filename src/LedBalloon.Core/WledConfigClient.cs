@@ -89,10 +89,20 @@ public static class LedOutputMap
 /// </summary>
 public sealed class WledConfigClient
 {
+    /// <summary>How many times a configuration read is attempted before giving up on it.</summary>
+    private const int Attempts = 3;
+
+    /// <summary>How long to leave a busy controller alone, multiplied by the attempt.</summary>
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(400);
+
     private readonly HttpClient _http;
+
+    private readonly string _host;
 
     public WledConfigClient(string host, TimeSpan? timeout = null)
     {
+        _host = host;
+
         _http = new HttpClient
         {
             BaseAddress = WledClient.NormalizeHost(host),
@@ -101,23 +111,70 @@ public sealed class WledConfigClient
     }
 
     /// <summary>The whole configuration document, for inspection or backup.</summary>
-    public async Task<JsonDocument> GetRawAsync(CancellationToken cancellationToken = default)
+    public async Task<JsonDocument> GetRawAsync(CancellationToken cancellationToken = default) =>
+        JsonDocument.Parse(await ReadConfigurationTextAsync(cancellationToken).ConfigureAwait(false));
+
+    /// <summary>
+    /// The configuration as it came off the wire, read again if it comes back empty.
+    /// </summary>
+    /// <remarks>
+    /// An ESP32 part-way through a flash write answers with 200 and no body at all, and saving is
+    /// several flash writes in a row - the presets, the project file - so the read that follows one
+    /// lands in exactly that window. What came out was System.Text.Json's own words, "The input does
+    /// not contain any JSON tokens", attached to a save that had in fact stored everything: a
+    /// frightening sentence about a device that was simply busy for a moment.
+    /// <para>
+    /// Here rather than in each caller, because every one of them wants the same thing and none of
+    /// them wants to know this about ESP32s.
+    /// </para>
+    /// </remarks>
+    private async Task<string> ReadConfigurationTextAsync(CancellationToken cancellationToken)
     {
-        using HttpResponseMessage response = await _http.GetAsync("cfg.json", cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!response.IsSuccessStatusCode)
+        for (int attempt = 1; ; attempt++)
         {
-            throw new WledHttpException(
-                response.StatusCode,
-                $"Could not read /cfg.json ({(int)response.StatusCode}). A settings PIN will block this.");
+            using HttpResponseMessage response = await _http.GetAsync("cfg.json", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new WledHttpException(
+                    response.StatusCode,
+                    $"Could not read /cfg.json ({(int)response.StatusCode}). A settings PIN will block this.");
+            }
+
+            string body = await response.Content.ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            // Anything that parses is taken, including something that is not an object: that is a
+            // real answer and a different complaint, made by whoever asked for it.
+            if (!string.IsNullOrWhiteSpace(body) && Parses(body))
+            {
+                return body;
+            }
+
+            if (attempt >= Attempts)
+            {
+                throw new WledException(
+                    $"{_host} would not give up its settings - it answered {Attempts} times with " +
+                    "nothing usable. A controller busy writing its flash does this; try again in a " +
+                    "moment.");
+            }
+
+            await Task.Delay(SettleDelay * attempt, cancellationToken).ConfigureAwait(false);
         }
+    }
 
-        await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
+    /// <summary>Whether this is JSON at all. A half-written body reads as malformed, not as empty.</summary>
+    private static bool Parses(string body)
+    {
+        try
+        {
+            return JsonNode.Parse(body) is not null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -226,19 +283,20 @@ public sealed class WledConfigClient
     /// business rewriting the timetable - saving anything rewrote everything, which is both a cost
     /// and a lie: the progress window named a step that had nothing to do.
     /// </remarks>
+    /// <summary>The configuration as an object, waited out the same way.</summary>
+    private async Task<JsonObject> ReadConfigurationAsync(CancellationToken cancellationToken) =>
+        JsonNode.Parse(await ReadConfigurationTextAsync(cancellationToken).ConfigureAwait(false))
+            as JsonObject
+        ?? throw new WledException($"{_host} returned a configuration that is not an object.");
+
     public async Task<bool> SetScheduleAsync(
         IReadOnlyList<ScheduledChange> schedule,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(schedule);
 
-        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+        JsonObject configuration = await ReadConfigurationAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (JsonNode.Parse(current) is not JsonObject configuration)
-        {
-            throw new WledException("That controller returned a configuration that is not an object.");
-        }
 
         if (configuration["timers"] is not JsonObject timers)
         {
@@ -350,13 +408,8 @@ public sealed class WledConfigClient
             throw new ArgumentOutOfRangeException(nameof(where), where, "That is not a place.");
         }
 
-        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+        JsonObject configuration = await ReadConfigurationAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (JsonNode.Parse(current) is not JsonObject configuration)
-        {
-            throw new WledException("That controller returned a configuration that is not an object.");
-        }
 
         if (configuration["if"] is not JsonObject network)
         {
@@ -413,13 +466,8 @@ public sealed class WledConfigClient
     {
         ArgumentNullException.ThrowIfNull(lengths);
 
-        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+        JsonObject configuration = await ReadConfigurationAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (JsonNode.Parse(current) is not JsonObject configuration)
-        {
-            throw new WledException("That controller returned a configuration that is not an object.");
-        }
 
         if (!LedOutputWriter.Apply(configuration, lengths))
         {
@@ -456,13 +504,8 @@ public sealed class WledConfigClient
     {
         ArgumentNullException.ThrowIfNull(settings);
 
-        string current = await _http.GetStringAsync("cfg.json", cancellationToken)
+        JsonObject configuration = await ReadConfigurationAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (JsonNode.Parse(current) is not JsonObject configuration)
-        {
-            throw new WledException("That controller returned a configuration that is not an object.");
-        }
 
         if (!LedOutputWriter.ApplySettings(configuration, index, settings))
         {
