@@ -9,6 +9,7 @@ namespace LedBalloon.Core.Tests;
 /// out of WLED's own source rather than out of this implementation. Where a value is an
 /// approximation in the firmware too, they check the approximation.
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class FastLedTests
 {
     [Fact]

@@ -3412,6 +3412,13 @@ public sealed partial class MainViewModel : ViewModelBase
             SceneResolver.Absorb(entry, touched, Project.Wearing(entry));
         }
 
+        // An edit writes the segment's own fields into the scene, which is how a segment wearing a
+        // named look stops wearing it the moment anything is changed - including changing it back.
+        // Two segments showing the same thing then read as two different things, one named and one
+        // not, and the one that lost the name silently stopped following it. Binding happened only
+        // when a scene was first captured.
+        Project.BindLooks(scene);
+
         SceneEdited = true;
 
         // By id rather than name, because renaming one is itself an edit and the prompt on the way
@@ -5559,6 +5566,15 @@ public sealed partial class MainViewModel : ViewModelBase
         {
             _suppressPush = false;
         }
+
+        // The look it is already wearing, so the picker opens on it rather than on "Pick a look"
+        // under a segment that plainly has one. Only read here; choosing one is what applies it.
+        SelectedLook = value is not null &&
+                       SelectedScene is { Scene: { } showing } &&
+                       showing.Segments.TryGetValue(value.Id, out SceneEntry? worn) &&
+                       worn.LookId is { } wearing
+            ? Looks.FirstOrDefault(row => string.Equals(row.Look.Id, wearing, StringComparison.Ordinal))
+            : null;
 
         RefreshSegmentPickers(value);
 

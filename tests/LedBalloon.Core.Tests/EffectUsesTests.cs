@@ -12,6 +12,7 @@ namespace LedBalloon.Core.Tests;
 /// these are the readings that were checked by hand against the source rather than extracted.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class EffectUsesTests
 {
     [Fact]

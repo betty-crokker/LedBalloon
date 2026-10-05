@@ -10,6 +10,7 @@ namespace LedBalloon.Core.Tests;
 /// south controller's 285 LED roofline with the color slots set to red, blue and green - except for
 /// the two glitters, whose third slot was set to white so a spark could be told from the background.
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class SparkEffectsAgainstHardwareTests(ITestOutputHelper output)
 {
     /// <summary>The rainbow the strip showed behind Glitter, which is what palette Default resolves to.</summary>

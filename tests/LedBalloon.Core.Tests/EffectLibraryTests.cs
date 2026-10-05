@@ -9,6 +9,7 @@ namespace LedBalloon.Core.Tests;
 /// controller stores and what the photo can show. A preset stores a number; the number only means
 /// anything against the list the controller itself reports.
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class EffectLibraryTests
 {
     /// <summary>

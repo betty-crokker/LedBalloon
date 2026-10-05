@@ -743,7 +743,14 @@ public sealed class HouseCanvas : Control
         RunAppearance appearance = ResolveAppearance(project, segment);
         bool isSelected = ReferenceEquals(segment, SelectedSegment);
 
-        DrawRunOutline(context, image, segment, isSelected, appearance.IsLit);
+        // Not under a lit downlight. The dashed line says "the strip runs along here", which is
+        // true of a strip and not of a row of lamps: what you see of those is the lamps and what
+        // they throw. Drawn anyway it sat across the porch in a colour that never changed, looking
+        // like a run that had failed to light.
+        if (!(appearance.IsLit && segment.Fixture.IsAimed))
+        {
+            DrawRunOutline(context, image, segment, isSelected, appearance.IsLit);
+        }
 
         if (segment.Count <= 0 || !appearance.IsLit)
         {
@@ -873,9 +880,40 @@ public sealed class HouseCanvas : Control
             points[i] = ToControl(image, segment.PointAlongPath(i / (double)Samples));
         }
 
+        IReadOnlyList<double> jumps = segment.BreakFractions();
+
+        // The one piece whose two samples sit either side of a gap would otherwise draw a glowing
+        // line straight across it, which is how two rails under a set of stairs came to look like
+        // one rail going through the landing.
+        bool Crosses(int piece)
+        {
+            if (jumps.Count == 0)
+            {
+                return false;
+            }
+
+            double from = piece / (double)Samples;
+            double to = (piece + 1) / (double)Samples;
+
+            foreach (double jump in jumps)
+            {
+                if (jump > from && jump < to)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         // Each short piece takes its own color, so a palette gradient runs along the rope.
         for (int i = 0; i < Samples; i++)
         {
+            if (Crosses(i))
+            {
+                continue;
+            }
+
             RgbColor color = appearance.ColorAt(i / (double)Samples, 1d / Samples);
             var glow = new Pen(new SolidColorBrush(Color.FromArgb(55, color.R, color.G, color.B)), 11)
             {
@@ -887,6 +925,11 @@ public sealed class HouseCanvas : Control
 
         for (int i = 0; i < Samples; i++)
         {
+            if (Crosses(i))
+            {
+                continue;
+            }
+
             RgbColor color = appearance.ColorAt(i / (double)Samples, 1d / Samples);
             var body = new Pen(new SolidColorBrush(Color.FromRgb(color.R, color.G, color.B)), 3.5)
             {

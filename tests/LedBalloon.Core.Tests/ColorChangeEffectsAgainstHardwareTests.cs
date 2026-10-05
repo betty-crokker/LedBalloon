@@ -10,6 +10,7 @@ namespace LedBalloon.Core.Tests;
 /// Rainbow, Strobe, Strobe Rainbow, Random Colors, Dynamic, Dynamic Smooth and Colorful. Captured on
 /// the south controller's 285 LED roofline with the color slots set to red, blue and green.
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class ColorChangeEffectsAgainstHardwareTests(ITestOutputHelper output)
 {
     /// <param name="Colors">Distinct colors on the run at once - one means the whole run agrees.</param>

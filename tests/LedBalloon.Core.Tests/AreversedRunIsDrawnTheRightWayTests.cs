@@ -19,6 +19,7 @@ namespace LedBalloon.Core.Tests;
 /// in here.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class AreversedRunIsDrawnTheRightWayTests
 {
     private static EffectSegment Run(bool reversed)

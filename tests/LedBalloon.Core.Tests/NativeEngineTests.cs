@@ -13,6 +13,7 @@ namespace LedBalloon.Core.Tests;
 /// those tests would keep passing and would stop meaning what they say.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class NativeEngineTests
 {
     [Fact]

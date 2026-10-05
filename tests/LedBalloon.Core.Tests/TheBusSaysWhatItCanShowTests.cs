@@ -20,6 +20,7 @@ namespace LedBalloon.Core.Tests;
 /// the house, where every effect drew flat.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class TheBusSaysWhatItCanShowTests
 {
     /// <summary>Indices into <see cref="NativeEngine.CapabilityTrace"/>.</summary>

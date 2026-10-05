@@ -21,6 +21,7 @@ namespace LedBalloon.Core.Tests;
 /// on the controller.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class FrameTimeAgainstHardwareTests(ITestOutputHelper output)
 {
     private static (double OnFraction, double BlinksPerSecond) Blinking(byte speed, uint milliseconds)

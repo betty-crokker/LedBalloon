@@ -21,6 +21,7 @@ namespace LedBalloon.Core.Tests;
 /// four times as many bands.
 /// </para>
 /// </summary>
+[Collection(EngineCollection.Name)]
 public class Noise16EffectsAgainstHardwareTests(ITestOutputHelper output)
 {
     private static readonly RgbColor[] Rainbow =

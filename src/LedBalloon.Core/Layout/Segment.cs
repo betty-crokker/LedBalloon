@@ -191,6 +191,55 @@ public sealed class Segment : INotifyPropertyChanged
     /// <summary>True when the stretch from point <paramref name="index"/> to the next is a gap.</summary>
     public bool IsBreak(int index) => Breaks.Contains(index);
 
+    /// <summary>
+    /// How far along the run each gap falls, as a fraction of its lit length.
+    /// </summary>
+    /// <remarks>
+    /// For anything drawn by sampling the path rather than by walking its points: a rope light is
+    /// drawn as a hundred short pieces between consecutive samples, and the one piece whose two
+    /// samples sit either side of a gap drew a glowing line straight across it. A gap has no
+    /// length, so it lands on a single fraction, and a piece spanning that fraction is the one to
+    /// leave out.
+    /// </remarks>
+    public IReadOnlyList<double> BreakFractions()
+    {
+        if (Breaks.Count == 0 || Path.Count < 2)
+        {
+            return [];
+        }
+
+        var lengths = new double[Path.Count - 1];
+        double total = 0d;
+
+        for (int i = 0; i < lengths.Length; i++)
+        {
+            double dx = Path[i + 1].X - Path[i].X;
+            double dy = Path[i + 1].Y - Path[i].Y;
+            lengths[i] = IsBreak(i) ? 0d : Math.Sqrt((dx * dx) + (dy * dy));
+            total += lengths[i];
+        }
+
+        if (total <= double.Epsilon)
+        {
+            return [];
+        }
+
+        var at = new List<double>();
+        double walked = 0d;
+
+        for (int i = 0; i < lengths.Length; i++)
+        {
+            if (IsBreak(i))
+            {
+                at.Add(walked / total);
+            }
+
+            walked += lengths[i];
+        }
+
+        return at;
+    }
+
     /// <summary>Exclusive end index, which is what WLED's segment <c>stop</c> field expects.</summary>
     [JsonIgnore] public int StopExclusive => Start + Count;
 
