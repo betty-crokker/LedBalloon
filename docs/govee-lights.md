@@ -59,7 +59,9 @@ There are several on GitHub; they are all someone's Node or Python app holding y
 The authoring surface, and the only one.
 
 - **DIY scenes** are built here: *device → DIY → +*, where you lay out colours, movement and speed.
-  Once saved, a DIY scene becomes an option every other route can select by name.
+  Once saved, the scene joins the list of options the device reports, so other software can find it
+  and play it — see [picking a scene from code](#picking-a-scene-from-code) for what that actually
+  involves.
 - **Segment control** — the H7020 is RGBIC, so its 15 bulbs are individually addressable and the app
   can colour them one at a time.
 - **Music mode**, using the control box's own microphone.
@@ -95,6 +97,42 @@ Capabilities worth knowing by name:
 `segment_color_setting` takes an array of segment indices plus a colour, so you can address one bulb
 or a handful in a single call. This is how you build something the app does not offer — a chase, a
 gradient, a colour per bulb driven by your own data.
+
+### Picking a scene from code
+
+The name is a label for people; the wire carries numbers.
+
+Ask the device what it has, with `GET /router/api/v1/device/scenes` for the built-in ones or
+`GET /router/api/v1/device/diy-scenes` for yours. Each option comes back shaped like this:
+
+```json
+{ "name": "Sunrise", "value": { "paramId": 4280, "id": 3853 } }
+```
+
+To play it, POST to `/router/api/v1/device/control` with the whole `value` object:
+
+```json
+{
+  "capability": {
+    "type": "devices.capabilities.dynamic_scene",
+    "instance": "diyScene",
+    "value": { "paramId": 4280, "id": 3853 }
+  }
+}
+```
+
+`instance` is `lightScene` for Govee's own effects and `diyScene` for yours.
+
+Two consequences worth planning for:
+
+- **You cannot hard-code the numbers.** They belong to that model and that account, and a DIY scene
+  edited in the app can come back with different ones. Fetch the list, match on the name, send the
+  value you were given.
+- **A renamed scene breaks anything matching on the name.** The ids are the identity; the name is
+  how a person finds it. If something has to survive renaming, store the id.
+
+This is what Home Assistant is doing when a Govee light offers its scenes as a dropdown: it fetched
+the list, and the names you see are the labels from it.
 
 **The cost:** every frame is a round trip to Govee's servers and back, and the API is rate limited.
 Fine for a slow gradient, a per-minute update, or a one-shot arrangement. Useless for animation at
