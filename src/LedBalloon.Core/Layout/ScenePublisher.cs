@@ -96,7 +96,12 @@ public static class ScenePublisher
         return new WledPreset
         {
             Name = scene.Name,
-            On = state.On,
+
+            // Always on, whatever the scene was captured as. Recalling a preset is somebody - or a
+            // timer, or the wall button - asking to see this look, and a look that starts by
+            // switching the house off cannot be seen. Scenes captured before this carry on
+            // working, because this is the only place it is decided.
+            On = true,
             Brightness = state.Brightness,
             Transition = scene.Transition,
             Segments = state.Segments,

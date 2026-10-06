@@ -134,10 +134,17 @@ public static class SceneResolver
 
         foreach ((string controllerKey, WledState state) in states)
         {
-            // Power is still one idea for the house, so the first controller to state it wins.
-            // Brightness is not: each controller keeps its own, and reading them is the only way a
-            // house that really is brighter on one side than the other survives being written down.
-            scene.On ??= state.On;
+            // A scene is a look, and a look is on. What is written down here is what the house
+            // would be showing, not whether the switch happened to be up at the moment somebody
+            // pressed New scene - and a house whose lights are off is exactly when anybody sits
+            // down to arrange one.
+            //
+            // Captured as off, it published a preset that begins by switching the house off, so a
+            // timer firing it set every segment correctly and then killed the power. Which is what
+            // happened: "Stairs white" fired at 23:00 and the stairs were dark at a quarter past
+            // five. The way to make the house go dark on a timetable is the switch, which is a
+            // line in the timetable and not a scene.
+            scene.On = true;
             scene.SetBrightnessOn(controllerKey, state.Brightness);
 
             foreach (Segment segment in project.SegmentsOn(controllerKey))
