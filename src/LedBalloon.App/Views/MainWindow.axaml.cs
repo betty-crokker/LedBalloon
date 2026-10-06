@@ -30,6 +30,7 @@ public partial class MainWindow : Window
                 viewModel.ShowHelp = () => HelpDialog.ShowAsync(this);
                 viewModel.ShowSegmentEditor = () => SegmentEditorDialog.ShowAsync(this, viewModel);
                 viewModel.ShowSchedule = () => ScheduleDialog.ShowAsync(this, viewModel);
+                viewModel.ShowTimerRule = row => TimerRuleDialog.ShowAsync(this, row);
                 viewModel.ShowProgress = title => ProgressDialog.Open(this, title);
             }
         };

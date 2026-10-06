@@ -20,10 +20,26 @@ public sealed record ScheduledChange(
     int Minute,
     int PresetId,
     int DaysOfWeek,
-    SunTrigger Sun)
+    SunTrigger Sun,
+    int StartMonth = 1,
+    int StartDay = 1,
+    int EndMonth = 12,
+    int EndDay = 31)
 {
     /// <summary>All seven days, which is how these are almost always set.</summary>
     public bool EveryDay => (DaysOfWeek & 0x7F) == 0x7F;
+
+    /// <summary>
+    /// Every day of the year, which is the other thing these almost always are.
+    /// </summary>
+    /// <remarks>
+    /// The controller keeps a date range per timer and the app wrote the whole year into every one
+    /// without ever reading it back, so a range set in WLED's own pages was silently flattened on
+    /// the next save. Now it is carried, which is also what makes a timer for the fortnight either
+    /// side of Christmas possible without remembering to turn it off in January.
+    /// </remarks>
+    public bool AllYear =>
+        StartMonth == 1 && StartDay == 1 && EndMonth == 12 && EndDay == 31;
 
     /// <summary>When it fires, in words. Preset names are resolved by the caller.</summary>
     public string When => Sun switch
@@ -97,11 +113,29 @@ public static class WledSchedule
                 DaysOfWeek: entry.TryGetProperty("dow", out JsonElement dow) && dow.TryGetInt32(out int days)
                     ? days
                     : 0x7F,
-                Sun: sun));
+                Sun: sun,
+                StartMonth: Part(entry, "start", "mon", 1),
+                StartDay: Part(entry, "start", "day", 1),
+                EndMonth: Part(entry, "end", "mon", 12),
+                EndDay: Part(entry, "end", "day", 31)));
         }
 
         return found;
     }
+
+    /// <summary>One half of a date range, or the default when the controller does not carry one.</summary>
+    /// <remarks>
+    /// The sun slots have no start or end at all in the configuration a controller writes back, so
+    /// a missing object means the whole year rather than a malformed entry.
+    /// </remarks>
+    private static int Part(JsonElement entry, string which, string field, int fallback) =>
+        entry.TryGetProperty(which, out JsonElement part) &&
+        part.ValueKind == JsonValueKind.Object &&
+        part.TryGetProperty(field, out JsonElement value) &&
+        value.TryGetInt32(out int found) &&
+        found > 0
+            ? found
+            : fallback;
 
     /// <summary>The entries that will actually fire, which is the only kind worth mentioning.</summary>
     public static IReadOnlyList<ScheduledChange> Active(IReadOnlyList<ScheduledChange> schedule)

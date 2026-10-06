@@ -540,8 +540,8 @@ public sealed class WledConfigClient
         ["min"] = entry.Minute,
         ["macro"] = entry.PresetId,
         ["dow"] = entry.DaysOfWeek,
-        ["start"] = new JsonObject { ["mon"] = 1, ["day"] = 1 },
-        ["end"] = new JsonObject { ["mon"] = 12, ["day"] = 31 },
+        ["start"] = new JsonObject { ["mon"] = entry.StartMonth, ["day"] = entry.StartDay },
+        ["end"] = new JsonObject { ["mon"] = entry.EndMonth, ["day"] = entry.EndDay },
     };
 
     /// <summary>
@@ -574,6 +574,16 @@ public sealed class WledConfigClient
             ["min"] = 0,
             ["macro"] = entry?.PresetId ?? 0,
             ["dow"] = entry?.DaysOfWeek ?? 0x7F,
+            ["start"] = new JsonObject
+            {
+                ["mon"] = entry?.StartMonth ?? 1,
+                ["day"] = entry?.StartDay ?? 1,
+            },
+            ["end"] = new JsonObject
+            {
+                ["mon"] = entry?.EndMonth ?? 12,
+                ["day"] = entry?.EndDay ?? 31,
+            },
         };
     }
 

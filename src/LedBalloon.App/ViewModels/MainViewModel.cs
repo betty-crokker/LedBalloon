@@ -7308,7 +7308,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// Naming a scene here is now what makes it land on every box: see
     /// <see cref="PutScenesTimersNameOnEveryControllerAsync"/>.
     /// </remarks>
-    private IReadOnlyList<string> ScenesATimerCanName()
+    private IReadOnlyList<(string Name, IBrush? Swatch)> ScenesATimerCanName()
     {
         IEnumerable<string> known = Project.Scenes.Select(scene => scene.Name);
 
@@ -7324,8 +7324,67 @@ public sealed partial class MainViewModel : ViewModelBase
             .. known
                 .Where(name => !string.IsNullOrWhiteSpace(name) && TimedSwitch.SwitchIn(name) is null)
                 .Distinct(StringComparer.CurrentCultureIgnoreCase)
-                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase),
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(name => (name, SwatchFor(name))),
         ];
+    }
+
+    /// <summary>
+    /// A band of colour for a scene, so a timetable can be read by looking as well as by reading.
+    /// </summary>
+    /// <remarks>
+    /// The first segment in the scene whose palette this app can resolve decides it. Not an average
+    /// of the whole house: a scene that is deep red on the roof and warm white under the stairs
+    /// averages to a muddy pink that matches nothing on the house, and the point of the chip is to
+    /// be recognised rather than to be accurate.
+    /// <para>
+    /// Null when nothing can be resolved - a scene named by a timer but never loaded here, or one
+    /// whose segments carry no palette. An empty space says "not known"; a grey box would say "this
+    /// scene is grey".
+    /// </para>
+    /// </remarks>
+    private IBrush? SwatchFor(string sceneName)
+    {
+        Scene? scene = Project.Scenes.FirstOrDefault(
+            s => string.Equals(s.Name, sceneName, StringComparison.CurrentCultureIgnoreCase));
+
+        if (scene is null)
+        {
+            return null;
+        }
+
+        IBrush? plain = null;
+
+        foreach ((string segmentId, SceneEntry entry) in scene.Segments)
+        {
+            Appearance worn = Project.Wearing(entry);
+
+            if (Project.Segments.FirstOrDefault(
+                    run => string.Equals(run.Id, segmentId, StringComparison.Ordinal))
+                is not { ControllerKey: { } key })
+            {
+                continue;
+            }
+
+            if (worn.Palette is { } id && PalettesOn(key) is { } held &&
+                held.TryGetValue(id, out WledPalette? palette))
+            {
+                return GradientOf(
+                    palette,
+                    worn.Primary ?? RgbColor.White,
+                    worn.Secondary ?? RgbColor.Black,
+                    worn.Tertiary ?? RgbColor.Black);
+            }
+
+            // Kept in case no segment turns out to have a palette: a solid colour is a poorer
+            // answer than a gradient and a much better one than nothing.
+            if (plain is null && worn.Primary is { } only && only != RgbColor.Black)
+            {
+                plain = new SolidColorBrush(Color.FromRgb(only.R, only.G, only.B));
+            }
+        }
+
+        return plain;
     }
 
     /// <summary>The slot that controller keeps a named scene in, if it keeps one at all.</summary>
@@ -7346,7 +7405,8 @@ public sealed partial class MainViewModel : ViewModelBase
     private static List<ScheduleRow> Collapse(List<ScheduleRow> rows)
     {
         var shown = new List<ScheduleRow>();
-        var seen = new HashSet<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled)>();
+        var seen = new HashSet<(string? Target, SunTrigger Sun, int Hour, int Minute, bool Enabled,
+            int Days, int StartMonth, int StartDay, int EndMonth, int EndDay)>();
 
         foreach (ScheduleRow row in rows)
         {
@@ -7367,6 +7427,26 @@ public sealed partial class MainViewModel : ViewModelBase
     /// away any line changed before this was opened and not yet saved. Cancel should undo what this
     /// window did and nothing else.
     /// </remarks>
+    /// <summary>Opens the days-and-dates rule for one timer.</summary>
+    /// <remarks>
+    /// A seam like the others, so a test can answer the window without one being shown.
+    /// </remarks>
+    public Func<ScheduleRow, Task>? ShowTimerRule { get; set; }
+
+    [RelayCommand]
+    private async Task EditTimerRuleAsync(ScheduleRow? row)
+    {
+        if (row is null || ShowTimerRule is not { } show)
+        {
+            return;
+        }
+
+        await show(row);
+
+        ScheduleChanged = true;
+        HasUnsavedChanges = true;
+    }
+
     [RelayCommand]
     private async Task OpenScheduleAsync()
     {

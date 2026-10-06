@@ -45,6 +45,7 @@
                    timers look like four pages. The scene picker takes the room left over, so it is
                    the part that grows with the window. -->
               <Border Classes="card" Margin="0,0,0,4" Padding="8">
+                <StackPanel Spacing="4">
                 <DockPanel>
 
                   <CheckBox DockPanel.Dock="Left" IsChecked="{Binding Enabled}"
@@ -79,13 +80,50 @@
                                FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
                   </Button>
 
+                  <!-- E8BD is "Repeat All", the nearest thing in the set to "this happens on a
+                       rule". Beside the trash can rather than inside the picker, because what a
+                       timer fires and when it is allowed to fire are two different questions. -->
+                  <Button DockPanel.Dock="Right" Padding="7,3" Margin="6,0,0,0"
+                          VerticalAlignment="Center"
+                          ToolTip.Tip="Which days, and between which dates"
+                          AutomationProperties.AutomationId="TimerRule"
+                          Command="{Binding $parent[ItemsControl].((vm:MainViewModel)DataContext).EditTimerRuleCommand}"
+                          CommandParameter="{Binding}">
+                    <TextBlock Text="&#xE8BD;" FontSize="13"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                  </Button>
+
+                  <!-- The chip first, because that is what the eye lands on in a list of names
+                       that all begin with the same word. The switch has none: it is not a look,
+                       and a grey box beside it would imply it was. -->
                   <ComboBox ItemsSource="{Binding Presets}"
                             SelectedItem="{Binding Preset}"
                             PlaceholderText="pick what it does"
                             VerticalAlignment="Center" Margin="8,0,0,0"
-                            HorizontalAlignment="Stretch" />
+                            HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="vm:PresetChoice">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                          <Border Width="34" Height="14" CornerRadius="3"
+                                  VerticalAlignment="Center"
+                                  Background="{Binding Swatch}"
+                                  BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                                  IsVisible="{Binding HasSwatch}" />
+                          <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                                     TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                      </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
 
                 </DockPanel>
+
+                <!-- Said on the row, not only behind the button: a timer that quietly does not fire
+                     on a Tuesday is exactly the kind of thing nobody thinks to go and check. -->
+                <TextBlock Classes="hint" Margin="28,0,0,0"
+                           Text="{Binding Limits}"
+                           IsVisible="{Binding IsLimited}" />
+                </StackPanel>
               </Border>
             </DataTemplate>
           </ItemsControl.ItemTemplate>

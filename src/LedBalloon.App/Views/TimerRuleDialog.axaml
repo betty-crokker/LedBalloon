@@ -1,0 +1,100 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:LedBalloon.App.ViewModels"
+        x:Class="LedBalloon.App.Views.TimerRuleDialog"
+        x:DataType="vm:ScheduleRow"
+        Icon="/Assets/ledballoon.ico"
+        Title="When this timer may fire"
+        Width="430" SizeToContent="Height"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="PanelBackground" Color="#F4F5F7" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#DFE1E5" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="PanelBackground" Color="#16181C" />
+          <SolidColorBrush x:Key="PanelBorder" Color="#2A2E35" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <Window.Styles>
+    <Style Selector="TextBlock.hint">
+      <Setter Property="Opacity" Value="0.7" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="FontSize" Value="12" />
+    </Style>
+    <Style Selector="TextBlock.heading">
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,12,0,6" />
+    </Style>
+  </Window.Styles>
+
+  <Border Padding="18" Background="{DynamicResource PanelBackground}">
+    <StackPanel Spacing="4">
+
+      <TextBlock FontSize="16" FontWeight="SemiBold" Text="When this timer may fire" />
+      <TextBlock Classes="hint"
+                 Text="It still fires at the time on the line. This is what stops it firing — days it skips, and the dates it runs between." />
+
+      <TextBlock Classes="heading" Text="Days of the week" />
+
+      <UniformGrid Columns="7">
+        <CheckBox Content="Mon" IsChecked="{Binding Monday}" />
+        <CheckBox Content="Tue" IsChecked="{Binding Tuesday}" />
+        <CheckBox Content="Wed" IsChecked="{Binding Wednesday}" />
+        <CheckBox Content="Thu" IsChecked="{Binding Thursday}" />
+        <CheckBox Content="Fri" IsChecked="{Binding Friday}" />
+        <CheckBox Content="Sat" IsChecked="{Binding Saturday}" />
+        <CheckBox Content="Sun" IsChecked="{Binding Sunday}" />
+      </UniformGrid>
+
+      <TextBlock Classes="hint" Foreground="#C9821B" Margin="0,4,0,0"
+                 IsVisible="{Binding NoDays}"
+                 Text="No days ticked, so this timer can never fire." />
+
+      <!-- Dates rather than a full calendar: the controller stores a month and a day and nothing
+           else, so a year would be a field the hardware throws away. It repeats annually, which is
+           what anybody hanging lights for a season actually wants. -->
+      <TextBlock Classes="heading" Text="Between these dates, every year" />
+
+      <Grid ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto">
+        <TextBlock Grid.Column="0" Text="From" VerticalAlignment="Center" Margin="0,0,8,0" />
+        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+          <ComboBox ItemsSource="{Binding Months}" SelectedIndex="{Binding StartMonthIndex}"
+                    Width="86" />
+          <NumericUpDown Value="{Binding StartDay}" Minimum="1" Maximum="31"
+                         ShowButtonSpinner="False" Width="58" />
+        </StackPanel>
+
+        <TextBlock Grid.Column="2" Text="to" VerticalAlignment="Center" Margin="12,0,8,0" />
+        <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+          <ComboBox ItemsSource="{Binding Months}" SelectedIndex="{Binding EndMonthIndex}"
+                    Width="86" />
+          <NumericUpDown Value="{Binding EndDay}" Minimum="1" Maximum="31"
+                         ShowButtonSpinner="False" Width="58" />
+        </StackPanel>
+      </Grid>
+
+      <TextBlock Classes="hint" Margin="0,8,0,0"
+                 IsVisible="{Binding WrapsTheYear}"
+                 Text="The end is before the start, so this runs across the turn of the year — which is usually what was meant." />
+
+      <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <Button Content="Every day, all year" Click="OnReset"
+                AutomationProperties.AutomationId="TimerRuleReset"
+                ToolTip.Tip="Clear both limits, so this timer fires whenever its time comes round" />
+        <Button Content="Done" Click="OnDone" IsDefault="True"
+                AutomationProperties.AutomationId="TimerRuleDone" />
+      </StackPanel>
+
+    </StackPanel>
+  </Border>
+</Window>
