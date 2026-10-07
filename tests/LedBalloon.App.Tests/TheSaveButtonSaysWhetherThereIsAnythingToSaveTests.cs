@@ -9,8 +9,13 @@ namespace LedBalloon.App.Tests;
 /// <para>
 /// It was only ever offered in Setup, so everything made on the colour screen — scenes, looks —
 /// had no button at all: the status bar said "Unsaved changes" and left the reader to go and find
-/// another page to deal with it on. Now it is here, and greyed rather than hidden, so "is all of
-/// this written down" has one place to be asked whatever the answer is.
+/// another page to deal with it on.
+/// </para>
+/// <para>
+/// Greyed when there is nothing of yours to write, which is right and stays. What it cannot know
+/// is whether the controllers still agree with the project — a box edited from WLED's own pages,
+/// or a preset repaired by hand, leaves nothing for Save to notice. That is what "Write everything
+/// again" is for, and it is the one thing that ignores this.
 /// </para>
 /// </summary>
 [Collection(UiThreadCollection.Name)]
@@ -29,6 +34,30 @@ public class TheSaveButtonSaysWhetherThereIsAnythingToSaveTests(UiThreadFixture 
         app.HasUnsavedChanges = false;
 
         Assert.False(app.SaveProjectCommand.CanExecute(null));
+    });
+
+    /// <summary>
+    /// But writing it all out again is always available, because the project having no edits in it
+    /// says nothing about what the controllers are holding.
+    /// </summary>
+    [Fact]
+    public void Writing_it_all_again_does_not_wait_for_achange() => ui.Run(async () =>
+    {
+        (MainViewModel app, _) = await HouseAsync();
+
+        app.HasUnsavedChanges = false;
+
+        Assert.True(app.WriteEverythingAgainCommand.CanExecute(null));
+    });
+
+    [Fact]
+    public void Writing_it_all_again_still_waits_for_asave_in_flight() => ui.Run(async () =>
+    {
+        (MainViewModel app, _) = await HouseAsync();
+
+        app.IsBusy = true;
+
+        Assert.False(app.WriteEverythingAgainCommand.CanExecute(null));
     });
 
     [Fact]

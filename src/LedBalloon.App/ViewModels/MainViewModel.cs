@@ -422,6 +422,7 @@ public sealed partial class MainViewModel : ViewModelBase
     {
         FinishSetupCommand.NotifyCanExecuteChanged();
         SaveProjectCommand.NotifyCanExecuteChanged();
+        WriteEverythingAgainCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnHasUnsavedChangesChanged(bool value) =>
@@ -1147,6 +1148,25 @@ public sealed partial class MainViewModel : ViewModelBase
     /// is worth being able to ask of a control that is always in the same place.
     /// </remarks>
     private bool CanSaveProject => HasUnsavedChanges && !IsBusy;
+
+    /// <summary>
+    /// Writes the layout out again whether or not anything here has changed.
+    /// </summary>
+    /// <remarks>
+    /// "Nothing has changed in the project" is not the same claim as "the house already holds
+    /// this", and Save only ever knew the first. So when a controller drifts - edited from WLED's
+    /// own pages, repaired by hand, or left behind by a version of this app that wrote something
+    /// differently - there was no way to say "go and look, and put right whatever does not match".
+    /// <para>
+    /// It is not a bigger hammer than Save. Every step still compares before it writes, so a house
+    /// that already agrees is read and left alone; what this skips is the guess about whether it
+    /// is worth asking.
+    /// </para>
+    /// </remarks>
+    [RelayCommand(CanExecute = nameof(CanWriteAgain))]
+    private Task WriteEverythingAgainAsync() => SaveAsync(force: false);
+
+    private bool CanWriteAgain => !IsBusy;
 
     /// <summary>Saves over a newer revision, once the user has said that is what they want.</summary>
     [RelayCommand]

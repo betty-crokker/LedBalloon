@@ -582,7 +582,16 @@
                       IsVisible="{Binding HasUnsavedChanges}"
                       IsEnabled="{Binding !IsBusy}" />
               <Button Content="Save to controllers"
-                      Command="{Binding SaveProjectCommand}" IsEnabled="{Binding !IsBusy}" />
+                      Command="{Binding SaveProjectCommand}" />
+
+              <!-- The way out of the one thing Save cannot see. Save knows whether anything here
+                   has changed; it has no idea whether the controllers still agree, so a box edited
+                   from WLED's own pages or a preset put right by hand leaves it greyed with work
+                   plainly left to do. -->
+              <Button Content="Write everything again"
+                      AutomationProperties.AutomationId="WriteEverythingAgain"
+                      ToolTip.Tip="Check every controller against this layout and write anything that does not match. Use it if a controller has been changed from somewhere else."
+                      Command="{Binding WriteEverythingAgainCommand}" />
               <Button Content="Overwrite anyway"
                       Command="{Binding OverwriteNewerRevisionCommand}"
                       IsVisible="{Binding SaveBlockedByNewerRevision}"
