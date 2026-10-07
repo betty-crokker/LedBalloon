@@ -82,6 +82,61 @@ public class AsceneIsAlookAndAlookIsOnTests
     }
 
     /// <summary>
+    /// And applying one from the app does too, so the app and the timer cannot disagree about it.
+    /// </summary>
+    [Fact]
+    public void Applying_one_from_the_app_turns_the_house_on()
+    {
+        LedBalloonProject project = House();
+
+        var captured = new Scene { Name = "Stairs white", On = false };
+        captured.Segments["stairs"] = new SceneEntry { On = true, Effect = 0, PrimaryHex = "#FFFFFF" };
+
+        WledState sent = SceneResolver.ResolveFor(project, captured, North);
+
+        Assert.True(sent.On);
+    }
+
+    /// <summary>
+    /// A controller the scene says nothing about still keeps its switch, which is the thing this
+    /// must not break. South's "Off" preset carries on:true with the brightness at zero, and
+    /// applying it used to switch North on.
+    /// </summary>
+    [Fact]
+    public void Acontroller_the_scene_says_nothing_about_keeps_its_switch()
+    {
+        const string South = "020000000002";
+
+        var project = new LedBalloonProject
+        {
+            Controllers =
+            [
+                new ControllerRef { Key = North, Name = "North" },
+                new ControllerRef { Key = South, Name = "South" },
+            ],
+            Segments =
+            [
+                new Segment
+                {
+                    Id = "stairs", Name = "Under stairs", ControllerKey = North,
+                    Output = 1, Count = 48, SegmentId = 0,
+                },
+                new Segment
+                {
+                    Id = "garage", Name = "Garage", ControllerKey = South,
+                    Output = 1, Count = 20, SegmentId = 0,
+                },
+            ],
+        };
+
+        // Not accounting for everything, so it genuinely says nothing about South.
+        var scene = new Scene { Name = "Stairs white", On = true, UnlistedSegmentsOff = false };
+        scene.Segments["stairs"] = new SceneEntry { On = true, Effect = 0, PrimaryHex = "#FFFFFF" };
+
+        Assert.Null(SceneResolver.ResolveFor(project, scene, South).On);
+    }
+
+    /// <summary>
     /// A segment the scene turns off still goes off: that is a fact about the segment, and it is
     /// the whole point of a scene that lights the stairs and leaves the porch dark.
     /// </summary>

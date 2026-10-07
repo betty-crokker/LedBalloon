@@ -53,7 +53,11 @@ public static class SceneResolver
             // for the whole box, so sending either to a controller this scene says nothing about
             // reaches every segment it has just promised to leave alone. The "Off" preset on South
             // carries on:true with the brightness at zero, and applying it switched North on.
-            On = mentioned ? scene.On : null,
+            // True rather than scene.On, for the same reason the published preset says true: a
+            // scene is a look and a look is on. A scene written down while the house was dark
+            // carried off inside it, and applying it then switched the house off - the app and the
+            // timer agreeing with each other and both of them wrong.
+            On = mentioned ? true : null,
             Brightness = mentioned ? scene.BrightnessOn(controllerKey) : null,
             TransitionOnce = scene.Transition,
             Segments = [],
