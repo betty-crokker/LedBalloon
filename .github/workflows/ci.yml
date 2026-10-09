@@ -1,0 +1,58 @@
+name: build
+
+# Every pull request, and every push to main. The point of it is that a contributor finds out
+# whether their change holds up without needing a house, two controllers and a camera.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The effect engine has to be built before anything is tested. Without wledfx.dll there are
+      # no effects at all - EffectLibrary.All comes from the engine and nothing else - so the ten
+      # test classes that drive it would fail rather than skip.
+      #
+      # MSYS2 rather than MSVC: bus_manager.h uses GCC's named-variadic macro extension, which MSVC
+      # has no switch for. native/build.ps1 looks in C:\msys64\mingw64\bin, which is where both the
+      # runner image and this action put it.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          location: C:\msys64
+
+      - name: Build the WLED effect engine
+        shell: pwsh
+        run: pwsh native/build.ps1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        run: dotnet build --configuration Release
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+  # Checks the vendored WLED and FastLED sources are byte-identical to the upstream tags they claim
+  # to come from. NOTICE makes that claim and the licence rests on it, so it is worth a machine
+  # saying so rather than a README.
+  vendor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify vendored sources against upstream
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash native/verify-vendor.sh

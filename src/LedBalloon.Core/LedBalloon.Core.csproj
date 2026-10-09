@@ -40,6 +40,6 @@
   </ItemGroup>
 
   <Target Name="WarnWithoutNativeEngine" BeforeTargets="Build" Condition="!Exists('$(WledEngine)')">
-    <Warning Text="native/wledfx.dll is missing, so the app falls back to the ported effects. Build it with: pwsh native/build.ps1" />
+    <Warning Text="native/wledfx.dll is missing, so there are no effects at all - the hand-written ports it used to fall back to have been deleted, and EffectLibrary.All comes from the engine. Build it with: pwsh native/build.ps1" />
   </Target>
 </Project>

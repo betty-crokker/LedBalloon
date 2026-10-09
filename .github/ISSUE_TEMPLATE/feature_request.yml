@@ -1,0 +1,32 @@
+name: An idea
+description: Something the app does not do yet, or does awkwardly.
+labels: ["idea"]
+
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: What you are trying to do
+      description: >
+        The thing you want to achieve with your house, rather than the control you think would
+        achieve it. Both are welcome, but the first one is what gets a feature designed well - the
+        best changes in this app so far came from somebody describing a house, not a dialog box.
+      placeholder: |
+        The lights under my stairs hang in two separate runs with a landing between them, but the
+        controller drives them as one. Drawing them as one line puts LEDs in mid-air.
+    validations:
+      required: true
+
+  - type: textarea
+    id: now
+    attributes:
+      label: What you do about it today
+      description: How you work around it, if you do.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Worth knowing
+      options:
+        - label: This needs hardware I have and could test a change on
+        - label: I would be willing to have a go at it myself

@@ -43,6 +43,36 @@ the app has to be right about both.
 If you only have one controller, that is fine — most of the tests run against a
 stand-in (`FakeController`) that serves the same endpoints.
 
+## How a change gets in
+
+Anyone may open an issue or a pull request. You do not need to be invited, and
+you do not need to ask first — though for anything large, an issue describing
+the house you are trying to light will usually save you an evening.
+
+Every change reaches `main` through a pull request, including the maintainer's.
+A pull request needs one approving review before it can be merged, and today
+that review comes from Chris Cooper. If the project outgrows one person, that
+list will grow and this paragraph will say so.
+
+What a review is looking for, in roughly this order:
+
+1. **Does it work, and how do you know?** See below. This is the one that gets
+   changes sent back.
+2. **Does it keep working?** `dotnet test` passes, and new behaviour has a test
+   that would fail without it.
+3. **Will the next person understand why?** Comments say what was measured and
+   what surprised you, not what the code already says.
+4. **Does it fit the house?** Nothing may assume two Gledopto controllers, or
+   any particular firmware, or a house shaped like this one.
+
+Build and tests run automatically on every pull request — including a check that
+the vendored WLED and FastLED sources still match the upstream tags they claim to
+come from, since the licence rests on that being true.
+
+A change that is right but arrives without a test, or without a word about how it
+was verified, is not refused. It is asked about, which is slower for everybody,
+so it is worth getting in first.
+
 ## Tests
 
     dotnet test

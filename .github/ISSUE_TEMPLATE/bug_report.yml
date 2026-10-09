@@ -1,0 +1,52 @@
+name: Something is wrong
+description: The app or the lights did something other than what you expected.
+labels: ["bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lighting bugs are usually about one specific house, so the details below are what make the
+        difference between a report somebody can act on and one they can only sympathise with.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what the house or the app did instead.
+      placeholder: |
+        Set a timer for 23:00 showing "Stairs white", saved, and went to bed. At 05:15 the stairs
+        were dark. The app still showed the timer.
+    validations:
+      required: true
+
+  - type: textarea
+    id: controllers
+    attributes:
+      label: Your controllers
+      description: >
+        Model and firmware version, and how many. "Settings → Info" in WLED's own pages has the
+        version. Different firmware on two controllers in one house is normal and worth saying.
+      placeholder: |
+        2 x Gledopto GL-C-616WL, WLED 0.15.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: measured
+    attributes:
+      label: Anything you read off the controller
+      description: >
+        Optional, and the single most useful thing you can include. Much of what the app does is
+        visible in the controller's own files - `http://<address>/presets.json`,
+        `http://<address>/cfg.json`, `http://<address>/json/state`. If one of those shows the
+        problem, paste the relevant part.
+      render: json
+
+  - type: input
+    id: version
+    attributes:
+      label: Which build of LedBalloon
+      description: A release name, or the first line of `git log` if you built it yourself.
+    validations:
+      required: true
