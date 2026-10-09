@@ -22,8 +22,8 @@ None of that becomes acceptable for being technically correct at the same time.
 ## If something goes wrong
 
 Report it to Chris Cooper through a GitHub issue if it can be discussed openly, or by email at
-**led_balloon_app@proton.me** if it cannot. Reports are handled privately, and the person reporting is not expected to confront anybody
-first.
+**led_balloon_app@proton.me** if it cannot. Reports are handled privately, and the person
+reporting is not expected to confront anybody first.
 
 The maintainer may edit or delete comments, close issues and pull requests, and block accounts. Where
 that happens for conduct rather than content, it will be said so plainly rather than dressed up as a
