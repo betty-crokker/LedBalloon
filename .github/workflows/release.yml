@@ -1,0 +1,109 @@
+name: release
+
+# Tag a commit and this builds the download. Nothing is published from anybody's desktop, so what
+# people run is what is in the repository at that tag and can be rebuilt by anyone who doubts it.
+#
+#     git tag v0.2.0 && git push origin v0.2.0
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, without the leading v
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "number=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The effect engine first: without wledfx.dll the app draws no effects at all, and
+      # publish.ps1 bundles it into the single file.
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          location: C:\msys64
+
+      - name: Build the WLED effect engine
+        shell: pwsh
+        run: pwsh native/build.ps1
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # Tested before it is published, so a release is never the first time the suite has run
+      # against exactly these bytes.
+      - name: Test
+        run: dotnet test --configuration Release
+
+      - name: Publish
+        shell: pwsh
+        run: pwsh publish.ps1 -Runtime win-x64 -Version ${{ steps.version.outputs.number }}
+
+      - name: Name it after the version and take its fingerprint
+        id: asset
+        shell: pwsh
+        run: |
+          $name = "LedBalloon-${{ steps.version.outputs.number }}-win-x64.exe"
+          Move-Item publish/win-x64/LedBalloon.App.exe "publish/win-x64/$name"
+          $hash = (Get-FileHash "publish/win-x64/$name" -Algorithm SHA256).Hash.ToLower()
+          "name=$name" >> $env:GITHUB_OUTPUT
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
+
+      - name: Write the release notes
+        shell: bash
+        run: |
+          cat > notes.md <<'HEADER'
+          ## Windows
+
+          Download the `.exe` below. That one file is the whole program — the .NET runtime and the
+          WLED effect engine are inside it, so there is nothing to install and nothing to uninstall.
+          Put it anywhere and run it.
+
+          **Windows will warn you the first time.** The file is not code-signed, because a
+          certificate costs a few hundred dollars a year and this is a project about Christmas
+          lights. Click *More info*, then *Run anyway*. If you would rather not take that on faith,
+          every release is built by GitHub from the tagged commit — the workflow is in
+          `.github/workflows/release.yml` — so you can rebuild it yourself and compare the hash
+          below.
+
+          Your computer needs to be on the same network as the controllers. mDNS does not cross
+          subnets or most VPNs; if nothing is found, you can type an address in by hand.
+
+          HEADER
+          {
+            echo "### Checksum"
+            echo
+            echo '```'
+            echo "SHA256  ${{ steps.asset.outputs.sha256 }}  ${{ steps.asset.outputs.name }}"
+            echo '```'
+          } >> notes.md
+
+      - name: Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME:-v${{ steps.version.outputs.number }}}" \
+            "publish/win-x64/${{ steps.asset.outputs.name }}" \
+            --title "LedBalloon ${{ steps.version.outputs.number }}" \
+            --notes-file notes.md \
+            --verify-tag

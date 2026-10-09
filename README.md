@@ -1,10 +1,60 @@
 # LedBalloon
 
-A cross-platform desktop app and library for [WLED](https://kno.wled.ge) controllers, in C# on .NET 10.
-Runs on Windows, Linux and macOS from one codebase.
+[![build](https://github.com/betty-crokker/LedBalloon/actions/workflows/ci.yml/badge.svg)](https://github.com/betty-crokker/LedBalloon/actions/workflows/ci.yml)
+[![licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)](LICENSE)
 
-Built and tested against two Gledopto ESP32 controllers running WLED 0.15.3, but nothing in it is
+**Decorate your house with [WLED](https://kno.wled.ge) lights, by looking at a photograph of your
+house.**
+
+Take a picture of the place at dusk, draw each run of LEDs onto it as a line, and from then on the
+app paints the live colours back onto that photo as you work. You pick what the porch does by
+clicking the porch. Nobody has to remember that the roofline is LEDs 25 to 309 on the second
+controller.
+
+A cross-platform desktop app and library in C# on .NET 10, running on Windows, Linux and macOS from
+one codebase. Built against two Gledopto ESP32 controllers on WLED 0.15.3, but nothing in it is
 vendor-specific — every list, limit and capability is read from the device rather than assumed.
+
+## Download
+
+**[Get the latest release](https://github.com/betty-crokker/LedBalloon/releases/latest)** — one
+`.exe` for Windows, about 49 MB, with the .NET runtime and WLED's effect engine inside it. There
+is nothing to install and nothing to uninstall.
+
+Windows will warn you the first time, because the file is not code-signed: *More info* → *Run
+anyway*. Every release is built by GitHub from the tagged commit and carries a SHA-256, so you can
+rebuild it yourself and compare rather than take that on trust.
+
+Your computer needs to be on the same network as the controllers. Linux and macOS are supported by
+the code but not yet published as downloads — build from source for now, which is three commands.
+
+## What it is trying to be
+
+- **About the house, not the hardware.** Controllers, outputs and LED indices are a setup chore you
+  do once. After that the app talks about the porch, the roofline and the stairs.
+- **Honest about what it shows.** The preview compiles WLED's own effect engine rather than
+  reimplementing it, because a preview you cannot trust is worse than no preview. Where the app
+  cannot know something, it says so instead of guessing.
+- **Not dependent on a running PC.** Scenes are written onto the controllers as presets, so timers
+  and the wall button keep working with every computer in the house switched off.
+- **Portable between people.** The whole project lives on the controllers themselves. A second
+  machine on the same network opens the app and finds the house already described, with nothing
+  copied and no account anywhere.
+
+### What it is not
+
+- **Not a WLED replacement.** It drives WLED and leans on it entirely. Firmware updates, wifi setup
+  and anything about the device itself belong in WLED's own pages.
+- **Not a lighting console.** No timeline, no cues, no DMX. It is for a house that looks nice.
+- **Not 2D.** WLED's matrix effects are out of scope for now.
+- **Not cloud anything.** There is no account, no server and no telemetry.
+
+## Status
+
+Working and in daily use on one house, which is the only house it has ever run on. Version numbers
+are below 1.0 for a reason: if you have a different controller or a differently shaped house, you
+will probably be the first person to find out what that breaks. Reports of that are the most useful
+thing anyone can send.
 
 ## Why this exists
 
@@ -71,6 +121,30 @@ src/LedBalloon.App     the Avalonia desktop app
 tests/                xUnit tests, with sample documents captured from a real controller
 ```
 
+## Building it yourself
+
+Needs the [.NET 10 SDK](https://dotnet.microsoft.com/download) and, on Windows, MSYS2 with
+`mingw-w64-x86_64-gcc` for the effect engine.
+
+```bash
+git clone https://github.com/betty-crokker/LedBalloon
+cd LedBalloon
+pwsh native/build.ps1     # the WLED effect engine, as a DLL
+dotnet test               # 600 or so tests, no hardware needed
+dotnet run --project src/LedBalloon.App
+```
+
+Without `native/wledfx.dll` the app runs but draws no effects at all, so build it first.
+`native/README.md` explains what it is, why WLED's own source is compiled rather than
+reimplemented, and why MSVC cannot build it.
+
+To make the single-file download for yourself:
+
+```bash
+pwsh publish.ps1                       # publish/win-x64/LedBalloon.App.exe
+pwsh publish.ps1 -Runtime linux-x64    # or osx-arm64, cross-published from anywhere
+```
+
 ## Quick start
 
 ```bash
@@ -119,18 +193,11 @@ post it back yourself once you have a backup.
 
 ## Giving it to someone else
 
-`publish.ps1` produces a single self-contained executable with the .NET runtime bundled inside it.
-The other machine needs nothing installed — no SDK, no runtime, no Visual Studio.
+Point them at the [releases page](https://github.com/betty-crokker/LedBalloon/releases/latest), or
+hand them the one file `publish.ps1` makes — see [Building it yourself](#building-it-yourself).
+The other machine needs nothing installed: no SDK, no runtime, no Visual Studio.
 
-```powershell
-.\publish.ps1
-```
-
-That writes `publish/win-x64/LedBalloon.App.exe`, about 48 MB. Copy that one file anywhere and run
-it. Pass `-Runtime linux-x64` or `-Runtime osx-arm64` to build for the other platforms; you can
-cross-publish all of them from Windows.
-
-Two things to expect: Windows SmartScreen warns the first time because the file is not code-signed
+Two things to expect either way. Windows warns the first time because the file is not code-signed
 (More info → Run anyway), and the machine has to be on the same network segment as the controllers,
 since mDNS does not cross subnets.
 

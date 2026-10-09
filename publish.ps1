@@ -26,7 +26,12 @@
 [CmdletBinding()]
 param(
     [ValidateSet('win-x64', 'win-arm64', 'linux-x64', 'osx-x64', 'osx-arm64')]
-    [string]$Runtime = 'win-x64'
+    [string]$Runtime = 'win-x64',
+
+    # Stamped into the executable. Left out, it takes whatever Directory.Build.props says, which is
+    # right for a local build and wrong for a released one - a download called 0.4.0 that reports
+    # 0.1.0 in its own properties is the kind of small lie that costs somebody an hour.
+    [string]$Version
 )
 
 $ErrorActionPreference = 'Stop'
@@ -35,16 +40,29 @@ $outDir = Join-Path $root "publish/$Runtime"
 
 Write-Host "Publishing LedBalloon for $Runtime..." -ForegroundColor Cyan
 
-dotnet publish (Join-Path $root 'src/LedBalloon.App/LedBalloon.App.csproj') `
-    --configuration Release `
-    --runtime $Runtime `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -p:IncludeAllContentForSelfExtract=true `
-    -p:EnableCompressionInSingleFile=true `
-    -p:DebugType=none `
-    --output $outDir
+# Built as a list and splatted in one go. Spliced into a backtick-continued command instead, an
+# empty @versioned is passed through to MSBuild as the literal text and it stops with "Unknown
+# switch" - which reads like a problem with the publish rather than with the quoting.
+$publish = @(
+    'publish'
+    (Join-Path $root 'src/LedBalloon.App/LedBalloon.App.csproj')
+    '--configuration', 'Release'
+    '--runtime', $Runtime
+    '--self-contained', 'true'
+    '-p:PublishSingleFile=true'
+    '-p:IncludeNativeLibrariesForSelfExtract=true'
+    '-p:IncludeAllContentForSelfExtract=true'
+    '-p:EnableCompressionInSingleFile=true'
+    '-p:DebugType=none'
+    '--output', $outDir
+)
+
+if ($Version) {
+    $publish += "-p:Version=$Version"
+    $publish += "-p:InformationalVersion=$Version"
+}
+
+& dotnet @publish
 
 if ($LASTEXITCODE -ne 0) { throw "Publish failed." }
 
