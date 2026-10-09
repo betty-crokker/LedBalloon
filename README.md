@@ -346,6 +346,16 @@ drives and whose effects it reproduces. None of this exists without it.
 are built out of — a sine that is deliberately a little wrong, and which this no longer reproduces
 by hand: both are compiled from their own source under [`native/`](native/README.md).
 
+## Getting in touch
+
+- **Something is broken, or you want something it does not do** — open an
+  [issue](https://github.com/betty-crokker/LedBalloon/issues). There are forms for both, and they
+  ask the questions that decide whether a lighting problem can be acted on.
+- **Anything else** — led_balloon_app@proton.me.
+
+Questions about a particular house are welcome. Most of what this app knows about hanging lights
+was learned from one, and the second one will teach it more.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). The house rule is that measurement beats reading: twice the
