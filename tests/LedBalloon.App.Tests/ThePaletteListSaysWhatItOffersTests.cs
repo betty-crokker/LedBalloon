@@ -82,7 +82,7 @@ public class ThePaletteListSaysWhatItOffersTests(UiThreadFixture ui) : IDisposab
     [Fact]
     public void The_row_is_renamed_when_the_effect_changes_under_it() => ui.Run(async () =>
     {
-        // Measured on 192.0.2.12 with pure green in slot 1: Colorwaves on palette 0 rendered 285
+        // Measured on a GL-C-616WL with pure green in slot 1: Colorwaves on palette 0 rendered 285
         // LEDs of one hue, 120 degrees - the green. Pacifica on the same setting came back 72 hues
         // of its own teals with no green in it anywhere. Same palette, opposite meanings, and the
         // row said only the second, which is how it came to sit over a green color box claiming the

@@ -7,7 +7,7 @@ namespace LedBalloon.Core.Tests;
 /// Reading a location out of whatever was pasted in.
 /// <para>
 /// Pasting is the whole interface. The number is come by in one place - right-click a spot in Google
-/// Maps and it copies "22.694768, 114.283689" - and a copied map link carries the same pair after
+/// Maps and it copies "51.477928, -0.001545" - and a copied map link carries the same pair after
 /// an <c>@</c>, so both are what people will actually arrive with.
 /// </para>
 /// <para>
@@ -19,19 +19,19 @@ public class WhereTheHouseIsTests
 {
     [Theory]
     // What Google Maps puts on the clipboard.
-    [InlineData("22.694768, 114.283689")]
+    [InlineData("51.477928, -0.001545")]
     // The same with the space people's fingers add, or leave out.
-    [InlineData("  22.694768,114.283689  ")]
+    [InlineData("  51.477928,-0.001545  ")]
     // A copied map link. The zoom level after it must not be read as part of the pair.
-    [InlineData("https://www.google.com/maps/@22.694768,114.283689,15z")]
+    [InlineData("https://www.google.com/maps/@51.477928,-0.001545,15z")]
     // The form a shared link uses.
-    [InlineData("https://maps.google.com/?q=22.694768,114.283689")]
+    [InlineData("https://maps.google.com/?q=51.477928,-0.001545")]
     public void The_ways_the_number_is_actually_arrived_with(string pasted)
     {
         Assert.True(HouseLocation.TryParse(pasted, out HouseLocation where));
 
-        Assert.Equal(22.694768, where.Latitude, 6);
-        Assert.Equal(114.283689, where.Longitude, 6);
+        Assert.Equal(51.477928, where.Latitude, 6);
+        Assert.Equal(-0.001545, where.Longitude, 6);
     }
 
     [Theory]
@@ -39,7 +39,7 @@ public class WhereTheHouseIsTests
     [InlineData("   ")]
     [InlineData(null)]
     [InlineData("Boulder, Colorado")]
-    [InlineData("22.694768")]
+    [InlineData("51.477928")]
     // Off the earth. A typo in the sign or a digit too many, which would otherwise be taken.
     [InlineData("140.06, -105.17")]
     [InlineData("40.06, -205.17")]
@@ -55,7 +55,7 @@ public class WhereTheHouseIsTests
     [Fact]
     public void It_reads_back_in_the_form_it_accepts()
     {
-        var boulder = new HouseLocation(22.694768, 114.283689);
+        var boulder = new HouseLocation(51.477928, -0.001545);
 
         Assert.True(HouseLocation.TryParse(boulder.ToString(), out HouseLocation again));
         Assert.Equal(boulder, again);

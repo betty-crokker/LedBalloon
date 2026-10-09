@@ -10,8 +10,8 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class MirroredProjectTests
 {
-    private const string South = "020000000002";
-    private const string North = "020000000003";
+    private const string South = TestHouse.South;
+    private const string North = TestHouse.North;
 
     private static LedBalloonProject House(int revision = 1, params string[] segmentNames)
     {

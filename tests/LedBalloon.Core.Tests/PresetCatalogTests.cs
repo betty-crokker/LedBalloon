@@ -10,8 +10,8 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class PresetCatalogTests
 {
-    private const string Front = "020000000001";
-    private const string Garage = "020000000002";
+    private const string Front = TestHouse.North;
+    private const string Garage = TestHouse.South;
 
     private static WledPreset Preset(int id, string name) => new() { Id = id, Name = name };
 

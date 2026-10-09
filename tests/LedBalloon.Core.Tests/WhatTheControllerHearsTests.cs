@@ -19,7 +19,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class WhatTheControllerHearsTests
 {
-    /// <summary>Verbatim from 192.0.2.12, a GL-C-616WL on 0.15.3 with nothing wired to its I2S pins.</summary>
+    /// <summary>Verbatim from a GL-C-616WL on 0.15.3 with nothing wired to its I2S pins.</summary>
     private const string Gledopto = """
     {
       "AudioReactive": ["<button class=\"btn btn-xs\" onclick=\"requestJson({AudioReactive:{enabled:false}});\"><i class=\"icons on\">&#xe08f;</i></button>"],

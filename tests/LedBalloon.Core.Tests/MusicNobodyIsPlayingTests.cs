@@ -98,7 +98,7 @@ public class MusicNobodyIsPlayingTests
     [Fact]
     public void The_packet_is_laid_out_where_the_firmware_looks()
     {
-        // Every offset here was confirmed against 192.0.2.12 on 0.15.3: it answered "UDP sound
+        // Every offset here was confirmed against a GL-C-616WL on 0.15.3: it answered "UDP sound
         // sync - receiving" and named the format "v2", which it only does once a packet parses.
         var frame = new AudioFrame(
             Volume: 200,

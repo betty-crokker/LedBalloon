@@ -21,7 +21,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class AsceneIsAlookAndAlookIsOnTests
 {
-    private const string North = "020000000001";
+    private const string North = TestHouse.North;
 
     private static LedBalloonProject House() => new()
     {
@@ -105,7 +105,7 @@ public class AsceneIsAlookAndAlookIsOnTests
     [Fact]
     public void Acontroller_the_scene_says_nothing_about_keeps_its_switch()
     {
-        const string South = "020000000002";
+        const string South = TestHouse.South;
 
         var project = new LedBalloonProject
         {

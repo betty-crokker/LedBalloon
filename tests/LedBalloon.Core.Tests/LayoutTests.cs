@@ -10,8 +10,8 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class LayoutTests
 {
-    private const string Front = "020000000001";
-    private const string Garage = "020000000002";
+    private const string Front = TestHouse.North;
+    private const string Garage = TestHouse.South;
 
     private static LedBalloonProject TwoSegmentHouse() => new()
     {
@@ -217,11 +217,11 @@ public class LayoutTests
     {
         var project = new LedBalloonProject();
 
-        project.RegisterController(Front, "192.0.2.11", "wled-a1b2c3.local", "WLED-Gledopto");
+        project.RegisterController(Front, TestHouse.NorthHost, "wled-000001.local", "WLED-Gledopto");
         project.FindController(Front)!.Name = "Front of house";
 
         // Rediscovery must not undo the rename, even though the device still calls itself Gledopto.
-        project.RegisterController(Front, "192.0.2.50", "wled-a1b2c3.local", "WLED-Gledopto");
+        project.RegisterController(Front, "192.0.2.50", "wled-000001.local", "WLED-Gledopto");
 
         ControllerRef stored = project.FindController(Front)!;
         Assert.Equal("Front of house", stored.Name);

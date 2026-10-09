@@ -76,14 +76,14 @@ public class ProjectFormatTests
             Revision = 7,
             PhotoHash = "c4defed60437dd2a",
             PhotoOnDevice = true,
-            Controllers = [new ControllerRef { Key = "020000000002", Name = "Front of house" }],
+            Controllers = [new ControllerRef { Key = TestHouse.South, Name = "Front of house" }],
             Segments =
             [
                 new Segment
                 {
                     Id = "gable1",
                     Name = "Upper gable",
-                    ControllerKey = "020000000002",
+                    ControllerKey = TestHouse.South,
                     Start = 20,
                     Count = 285,
                     Reverse = true,

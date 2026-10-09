@@ -13,8 +13,8 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class ScenePublisherTests
 {
-    private const string North = "020000000001";
-    private const string South = "020000000002";
+    private const string North = TestHouse.North;
+    private const string South = TestHouse.South;
 
     /// <summary>The real house: the stairs are on North, the garage and porch on South.</summary>
     private static LedBalloonProject House()

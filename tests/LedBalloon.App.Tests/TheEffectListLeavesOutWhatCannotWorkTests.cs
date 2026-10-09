@@ -250,7 +250,7 @@ public class TheEffectListLeavesOutWhatCannotWorkTests(UiThreadFixture ui) : IDi
     }
     """;
 
-    /// <summary>The usermod block from 192.0.2.12, which has no microphone wired to its I2S pins.</summary>
+    /// <summary>The usermod block from a GL-C-616WL, which has no microphone wired to its I2S pins.</summary>
     private const string Quiet = """
     {
       "AudioReactive": ["<button></button>"],

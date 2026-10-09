@@ -11,7 +11,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class PresetAdoptionTests
 {
-    private const string South = "020000000002";
+    private const string South = TestHouse.South;
 
     /// <summary>South as it is actually wired: garage, porch, roofline across 310 LEDs.</summary>
     private static LedBalloonProject House()

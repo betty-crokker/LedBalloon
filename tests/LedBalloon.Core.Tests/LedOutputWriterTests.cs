@@ -5,14 +5,14 @@ using Xunit;
 namespace LedBalloon.Core.Tests;
 
 /// <summary>
-/// Against a real <c>cfg.json</c> taken off the South controller: two outputs, 25 LEDs on GPIO 16
+/// Against a real <c>cfg.json</c> from a GL-C-616WL on 0.15.3: two outputs, 25 LEDs on GPIO 16
 /// and 285 on GPIO 2. Writing configuration to a controller is the most destructive thing this app
 /// does, so what it leaves alone matters as much as what it changes.
 /// </summary>
 public class LedOutputWriterTests
 {
     private static JsonObject Config() =>
-        (JsonObject)JsonNode.Parse(File.ReadAllText(Path.Combine("Fixtures", "south-cfg.json")))!;
+        (JsonObject)JsonNode.Parse(File.ReadAllText(Path.Combine("Fixtures", "wled-0.15.3-two-outputs.json")))!;
 
     private static JsonArray Outputs(JsonObject config) => (JsonArray)config["hw"]!["led"]!["ins"]!;
 

@@ -8,7 +8,7 @@ namespace LedBalloon.App.Tests;
 /// What goes to the controller when somebody picks an effect.
 /// <para>
 /// It used to be the effect number and nothing else, so the effect arrived carrying whatever the
-/// last one had been set to. Measured on 192.0.2.12: Palette declares Animate Shift on, and
+/// last one had been set to. Measured on a GL-C-616WL: Palette declares Animate Shift on, and
 /// without it the gradient is laid across the run and never moved - the same effect looking like
 /// two different things depending on whether WLED's own app or this one had picked it.
 /// </para>

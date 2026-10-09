@@ -73,7 +73,7 @@ public class AtimerRemembersWhatItFiresTests(UiThreadFixture ui) : IDisposable
 
         controller.Configuration =
             """
-            { "if": { "ntp": { "en": true, "lt": 40.02, "ln": -105.27, "tz": 6 } },
+            { "if": { "ntp": { "en": true, "lt": 40.0, "ln": -105.0, "tz": 6 } },
               "timers": { "ins": [ { "en": 1, "hour": 23, "min": 0, "macro": 1, "dow": 127 } ] } }
             """;
 

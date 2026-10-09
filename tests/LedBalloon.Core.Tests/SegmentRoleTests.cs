@@ -17,7 +17,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class SegmentRoleTests
 {
-    private const string South = "020000000002";
+    private const string South = TestHouse.South;
 
     private static LedBalloonProject House()
     {

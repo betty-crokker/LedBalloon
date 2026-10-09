@@ -8,7 +8,7 @@ namespace LedBalloon.Core.Tests;
 /// <para>
 /// WLED's own UI applies these the moment an effect is picked. An app that sends only the effect
 /// number leaves the segment carrying whatever the last effect was set to, so the same effect looks
-/// like two different things depending on which app selected it - measured on 192.0.2.12, where
+/// like two different things depending on which app selected it - measured on a GL-C-616WL, where
 /// Palette with its own defaults draws 244 colors across 285 LEDs and scrolls, and with the flags
 /// left alone draws the same 244 and sits still.
 /// </para>

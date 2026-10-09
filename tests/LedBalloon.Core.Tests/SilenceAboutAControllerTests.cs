@@ -12,7 +12,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class SilenceAboutAControllerTests
 {
-    private const string South = "020000000002";
+    private const string South = TestHouse.South;
     private const string North = "a04bca414699";
 
     private static LedBalloonProject House()

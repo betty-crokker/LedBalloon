@@ -109,7 +109,7 @@ public class AtimerRuleSurvivesTheRoundTripTests(UiThreadFixture ui) : IDisposab
         // Weekdays only, from the first of December to Twelfth Night.
         controller.Configuration =
             """
-            { "if": { "ntp": { "en": true, "lt": 40.02, "ln": -105.27, "tz": 6 } },
+            { "if": { "ntp": { "en": true, "lt": 40.0, "ln": -105.0, "tz": 6 } },
               "timers": { "ins": [
                 { "en": 1, "hour": 17, "min": 30, "macro": 1, "dow": 31,
                   "start": { "mon": 12, "day": 1 }, "end": { "mon": 1, "day": 6 } } ] } }

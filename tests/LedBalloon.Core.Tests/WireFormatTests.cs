@@ -71,8 +71,8 @@ public class WireFormatTests
         Assert.NotNull(info);
 
         // Two controllers out of the same box share a friendly name; the MAC is what distinguishes them.
-        Assert.Equal("020000000001", info.DeviceKey);
-        Assert.Equal("wled-a1b2c3.local", info.MdnsHostName);
+        Assert.Equal(TestHouse.North, info.DeviceKey);
+        Assert.Equal("wled-000001.local", info.MdnsHostName);
         Assert.Equal(934, info.FileSystem!.FreeKb);
     }
 

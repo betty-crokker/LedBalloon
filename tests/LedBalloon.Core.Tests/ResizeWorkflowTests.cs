@@ -10,7 +10,7 @@ namespace LedBalloon.Core.Tests;
 /// </summary>
 public class ResizeWorkflowTests
 {
-    private const string South = "020000000002";
+    private const string South = TestHouse.South;
 
     /// <summary>The real layout this was written against: four runs across 310 LEDs.</summary>
     private static LedBalloonProject House() => new()
@@ -96,7 +96,7 @@ public class ResizeWorkflowTests
     [Fact]
     public void Each_controller_re_lays_on_its_own()
     {
-        const string North = "020000000001";
+        const string North = TestHouse.North;
 
         var project = new LedBalloonProject
         {
