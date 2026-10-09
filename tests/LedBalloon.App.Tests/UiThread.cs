@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Avalonia.Threading;
 using Xunit;
 
@@ -50,7 +51,8 @@ internal sealed class UiThread : IDisposable
 
     private void Pump()
     {
-        // The first touch of the dispatcher is what binds it to this thread.
+        // The first touch of the dispatcher is what binds it to this thread, which is why
+        // UiThreadBootstrap gets this running before any test can touch it from anywhere else.
         Dispatcher.UIThread.Post(_owned.Set);
 
         while (!_stopping.IsCancellationRequested)
@@ -80,13 +82,42 @@ public sealed class UiThreadCollection : ICollectionFixture<UiThreadFixture>
     public const string Name = "ui thread";
 }
 
+/// <summary>
+/// Claims the dispatcher for the test UI thread before anything else in the assembly can.
+/// </summary>
+/// <remarks>
+/// Avalonia's dispatcher belongs to whichever thread touches it first, and that used to be decided
+/// by a race. Three test classes build a view model without being in the UI collection, so xunit
+/// was free to run them in parallel with it; whichever got there first became the owner. On this
+/// machine the pump thread usually won. On CI it lost, and the whole assembly died at the first
+/// <c>RunJobs</c> with "The calling thread cannot access this object because a different thread owns
+/// it" - which names the symptom and says nothing about the race behind it.
+/// <para>
+/// A module initializer runs when the assembly is loaded, before any test, any fixture and any
+/// discovery. So the question of who owns the dispatcher has one answer and it is not a matter of
+/// timing.
+/// </para>
+/// </remarks>
+internal static class UiThreadBootstrap
+{
+    internal static UiThread Shared { get; private set; } = null!;
+
+    [ModuleInitializer]
+    internal static void Claim() => Shared ??= new UiThread();
+}
+
 /// <summary>The shared UI thread, as xunit hands it to a test class.</summary>
 public sealed class UiThreadFixture : IDisposable
 {
-    private readonly UiThread _ui = new();
-
     /// <summary>Runs a test body on the UI thread and waits for it.</summary>
-    public void Run(Func<Task> body) => _ui.Run(body);
+    public void Run(Func<Task> body) => UiThreadBootstrap.Shared.Run(body);
 
-    public void Dispose() => _ui.Dispose();
+    /// <summary>
+    /// Nothing. The thread outlives every collection by design and is a background thread, so it
+    /// goes when the process does - and stopping it here would strand any class that is not in the
+    /// collection but still needs the dispatcher pumped.
+    /// </summary>
+    public void Dispose()
+    {
+    }
 }
