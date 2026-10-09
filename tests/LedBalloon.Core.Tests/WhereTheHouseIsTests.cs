@@ -7,15 +7,21 @@ namespace LedBalloon.Core.Tests;
 /// Reading a location out of whatever was pasted in.
 /// <para>
 /// Pasting is the whole interface. The number is come by in one place - right-click a spot in Google
-/// Maps and it copies "22.691500, 114.293100" - and a copied map link carries the same pair after
+/// Maps and it copies "22.694768, 114.283689" - and a copied map link carries the same pair after
 /// an <c>@</c>, so both are what people will actually arrive with.
 /// </para>
 /// <para>
-/// The coordinates are Baolong, in the Longgang district of Shenzhen, where Gledopto make the
-/// controllers this was written against. Rounded to the neighbourhood rather than the building:
-/// they publish three addresses between their website, their manual and their LinkedIn page, and
-/// none of them with a surveyed point. It is a fixture either way, and a better one than somebody's
-/// front door - which is what it used to be.
+/// The coordinates are Wanda Industrial Park in Baolong, Longgang district, Shenzhen - the address
+/// Gledopto give for the factory that made the controllers this was written against. A fixture
+/// that can be checked: OpenStreetMap carries the park by name as 万达工业园, which is how these
+/// digits were arrived at rather than by rounding off a company page.
+/// </para>
+/// <para>
+/// They are WGS-84, which is what a parser receives and what OpenStreetMap publishes. Opened in
+/// Google or Baidu the pin lands a few hundred metres off, because mapping inside China is
+/// published shifted - GCJ-02 and BD-09 respectively - and the offset is deliberate. Nothing here
+/// converts between them; the app hands whatever was pasted to the controller, which wants WGS-84
+/// too.
 /// </para>
 /// <para>
 /// Refusing is as important as reading. A location that is wrong by a digit is worse than one that
@@ -26,19 +32,19 @@ public class WhereTheHouseIsTests
 {
     [Theory]
     // What Google Maps puts on the clipboard.
-    [InlineData("22.691500, 114.293100")]
+    [InlineData("22.694768, 114.283689")]
     // The same with the space people's fingers add, or leave out.
-    [InlineData("  22.691500,114.293100  ")]
+    [InlineData("  22.694768,114.283689  ")]
     // A copied map link. The zoom level after it must not be read as part of the pair.
-    [InlineData("https://www.google.com/maps/@22.691500,114.293100,15z")]
+    [InlineData("https://www.google.com/maps/@22.694768,114.283689,15z")]
     // The form a shared link uses.
-    [InlineData("https://maps.google.com/?q=22.691500,114.293100")]
+    [InlineData("https://maps.google.com/?q=22.694768,114.283689")]
     public void The_ways_the_number_is_actually_arrived_with(string pasted)
     {
         Assert.True(HouseLocation.TryParse(pasted, out HouseLocation where));
 
-        Assert.Equal(22.691500, where.Latitude, 6);
-        Assert.Equal(114.293100, where.Longitude, 6);
+        Assert.Equal(22.694768, where.Latitude, 6);
+        Assert.Equal(114.283689, where.Longitude, 6);
     }
 
     [Theory]
@@ -46,10 +52,10 @@ public class WhereTheHouseIsTests
     [InlineData("   ")]
     [InlineData(null)]
     [InlineData("Shenzhen, China")]
-    [InlineData("22.691500")]
+    [InlineData("22.694768")]
     // Off the earth. A typo in the sign or a digit too many, which would otherwise be taken.
-    [InlineData("122.69, 114.29")]
-    [InlineData("22.69, 214.29")]
+    [InlineData("122.69, 114.28")]
+    [InlineData("22.69, 214.28")]
     public void Anything_that_is_not_a_place_is_refused_rather_than_guessed_at(string? pasted)
     {
         Assert.False(HouseLocation.TryParse(pasted, out HouseLocation where));
@@ -62,7 +68,7 @@ public class WhereTheHouseIsTests
     [Fact]
     public void It_reads_back_in_the_form_it_accepts()
     {
-        var shenzhen = new HouseLocation(22.691500, 114.293100);
+        var shenzhen = new HouseLocation(22.694768, 114.283689);
 
         Assert.True(HouseLocation.TryParse(shenzhen.ToString(), out HouseLocation again));
         Assert.Equal(shenzhen, again);
