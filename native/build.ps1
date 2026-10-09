@@ -9,12 +9,56 @@
 # (`#define DEBUGBUS_PRINTF(x...)`), which is not standard C++ and has no /Zc switch. g++ from MSYS2
 # does, and nothing in the vendored source needed changing to make it.
 
+param(
+    # The directory holding g++.exe, when it is somewhere this cannot work out for itself.
+    [string]$Mingw
+)
+
 $ErrorActionPreference = 'Stop'
 $here = $PSScriptRoot
 
-$mingw = 'C:\msys64\mingw64\bin'
-if (-not (Test-Path "$mingw\g++.exe")) {
-    throw "g++ not found at $mingw. Install MSYS2 and the mingw-w64-x86_64-gcc package."
+# Candidates in order, and the first one that can actually do the job wins. Which g++ is found
+# matters as much as whether one is: a machine with Strawberry Perl on PATH offers GCC 4.8 from
+# 2014, which does not know -std=c++17 and fails forty lines into the compile with an error about a
+# command line option rather than about the compiler being twelve years old.
+#
+# Hard-coding the MSYS2 path alone was wrong the other way: it fails for anybody whose MSYS2 is
+# elsewhere, and it failed on CI, where the runner installs it under its own temp directory.
+# A directory named on the command line is the only candidate. Searching on past it would mean
+# asking for one compiler, getting another, and being told neither - which is how this was found:
+# -Mingw pointed at the 2014 one and the build quietly succeeded with a different toolchain.
+$candidates = if ($Mingw) { @($Mingw) } else {
+    $found = @('C:\msys64\mingw64\bin')
+    if ($onPath = Get-Command g++ -ErrorAction SilentlyContinue) { $found += Split-Path $onPath.Source }
+    $found
+}
+
+$mingw = $null
+$rejected = @()
+
+foreach ($candidate in $candidates) {
+    $exe = Join-Path $candidate 'g++.exe'
+    if (-not (Test-Path $exe)) { continue }
+
+    $version = (& $exe -dumpversion 2>$null)
+    $major = 0
+    [int]::TryParse(($version -split '\.')[0], [ref]$major) | Out-Null
+
+    # GCC 7 is where C++17 became complete enough for the vendored source to compile.
+    if ($major -ge 7) { $mingw = $candidate; break }
+
+    $rejected += "  $exe is GCC $version, too old for -std=c++17"
+}
+
+if (-not $mingw) {
+    throw @"
+No g++ that can build this was found. Tried:
+$($candidates -join "`n  ")
+$(if ($rejected) { "`n" + ($rejected -join "`n") })
+
+Install MSYS2 and its mingw-w64-x86_64-gcc package, or pass -Mingw with the directory holding a
+g++.exe of GCC 7 or newer. MSVC cannot build this at all - see native/README.md for why.
+"@
 }
 # g++ needs its own bin directory on PATH, not just an absolute path to the executable: without it
 # the compile succeeds, emits nothing, and reports no error.

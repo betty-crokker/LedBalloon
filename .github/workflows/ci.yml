@@ -20,13 +20,21 @@ jobs:
       # test classes that drive it would fail rather than skip.
       #
       # MSYS2 rather than MSVC: bus_manager.h uses GCC's named-variadic macro extension, which MSVC
-      # has no switch for. native/build.ps1 looks in C:\msys64\mingw64\bin, which is where both the
-      # runner image and this action put it.
+      # has no switch for.
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc
-          location: C:\msys64
+
+      # Asked rather than assumed. "location" names the parent directory, so setting it to
+      # C:\msys64 installed into C:\msys64\msys64 and the compiler was not where anybody looked.
+      - name: Put g++ on PATH
+        shell: pwsh
+        run: |
+          $bin = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'mingw64\bin'
+          Write-Host "mingw64 bin: $bin"
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Build the WLED effect engine
         shell: pwsh

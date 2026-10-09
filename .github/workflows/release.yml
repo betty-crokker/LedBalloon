@@ -36,10 +36,19 @@ jobs:
       # The effect engine first: without wledfx.dll the app draws no effects at all, and
       # publish.ps1 bundles it into the single file.
       - uses: msys2/setup-msys2@v2
+        id: msys2
         with:
           msystem: MINGW64
           install: mingw-w64-x86_64-gcc
-          location: C:\msys64
+
+      # Asked rather than assumed. "location" names the parent directory, so setting it to
+      # C:\msys64 installed into C:\msys64\msys64 and the compiler was not where anybody looked.
+      - name: Put g++ on PATH
+        shell: pwsh
+        run: |
+          $bin = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'mingw64\bin'
+          Write-Host "mingw64 bin: $bin"
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
       - name: Build the WLED effect engine
         shell: pwsh
