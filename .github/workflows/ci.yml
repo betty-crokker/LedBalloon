@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The effect engine has to be built before anything is tested. Without wledfx.dll there are
       # no effects at all - EffectLibrary.All comes from the engine and nothing else - so the ten
@@ -54,10 +54,13 @@ jobs:
   # to come from. NOTICE makes that claim and the licence rests on it, so it is worth a machine
   # saying so rather than a README.
   vendor:
-    runs-on: ubuntu-latest
+    # Pinned rather than ubuntu-latest: that label becomes Ubuntu 26 on 19 October 2026, and a job
+    # whose whole purpose is verifying bytes against upstream should not change the ground it
+    # stands on without somebody deciding to.
+    runs-on: ubuntu-24.04
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Verify vendored sources against upstream
         shell: bash
