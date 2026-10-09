@@ -4594,7 +4594,7 @@ public sealed partial class MainViewModel : ViewModelBase
     /// set" - and for the seventeen that read no slot even then, the effect supplies its own and the
     /// boxes reach nothing.
     /// <para>
-    /// Measured on 192.0.2.12 rather than read: with pure green in slot 1, Colorwaves on palette
+    /// Measured on a GL-C-616WL rather than read: with pure green in slot 1, Colorwaves on palette
     /// 0 rendered 285 LEDs of exactly one hue, 120 degrees. Blends, Rainbow, Pacifica, Sunrise and
     /// Flow on the same setting came back with 122, 240, 72, 1 and 11 hues of their own and no green
     /// anywhere. One row, two meanings, and it was labelled with only the second - which is why it

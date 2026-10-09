@@ -12,10 +12,15 @@ What stays here is the part that is only true of this house.
 
 ## The controllers
 
-| Name  | Address       | LEDs | Notes |
-|-------|---------------|------|-------|
-| South | 192.0.2.12 | 310  | Roofline is segment 2, LEDs 25-309. The one to test on. |
-| North | 192.0.2.11 | 356  | **Leave alone.** Its configuration got muddled at some point and untangling it is a separate job. |
+| Name  | LEDs | Notes |
+|-------|------|-------|
+| South | 310  | Roofline is segment 2, LEDs 25-309. The one to test on. |
+| North | 356  | **Leave alone.** Its configuration got muddled at some point and untangling it is a separate job. |
+
+Their addresses are not written down here, because this file is public and they are a fact about one
+house rather than about the project. The app finds them by mDNS; `tools/wled.cs` takes an address or
+an `.local` name as its first argument, and the ones for this house are in the app's own device list
+and in the router.
 
 Both run at a configured 42 frames a second (`hw.led.fps`). They spent a long time at 0, which
 uncaps the rate and had them rendering flat out at 96 and 107. That is the symptom of a partial
@@ -37,9 +42,9 @@ no amount of reading the firmware would have. Daytime is preferred: the lights a
 running test patterns is less noticeable to passers-by and neighbours in daylight.
 
 ```bash
-dotnet run tools/wled.cs -- state 192.0.2.12
-dotnet run tools/wled.cs -- capture 192.0.2.12 seg=2 from=25 to=309 fx=73 sx=0 ix=128 pal=11 ms=12000
-dotnet run tools/wled.cs -- off 192.0.2.12
+dotnet run tools/wled.cs -- state <south>
+dotnet run tools/wled.cs -- capture <south> seg=2 from=25 to=309 fx=73 sx=0 ix=128 pal=11 ms=12000
+dotnet run tools/wled.cs -- off <south>
 ```
 
 `native/against-house-all.py` captures every effect off south twice and compares both runs against

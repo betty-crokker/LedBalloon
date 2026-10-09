@@ -14,10 +14,12 @@ stepping the DLL by the capture interval. The fitted residual says the shape is 
 residual says the rate is right. An effect that draws the correct picture at the wrong speed passes
 the first and fails the second, and that distinction is the whole point of measuring this way.
 """
-import subprocess, statistics, sys
+import os, subprocess, statistics, sys
 
 REPO = r"D:\projects\LedBalloon"
-HOST = "192.0.2.12"
+# The controller to measure against. Set it to yours - this is a script for driving a strip
+# on a bench or a house, and there is no useful default.
+HOST = os.environ.get("WLED_HOST", "wled.local")
 # Measured per capture rather than assumed. South runs unlimited, so its rate is whatever the wire
 # and the loop allow: about 100 fps idle, 95 to 99 while the live preview is streaming. Assuming 9 ms
 # was 14 percent fast, which only showed up on the effects that advance per rendered frame.

@@ -139,7 +139,7 @@
               <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Content="Look again" Command="{Binding ScanCommand}"
                         IsEnabled="{Binding !IsScanning}" />
-                <TextBox Width="150" PlaceholderText="192.0.2.11" Text="{Binding ManualHost}" />
+                <TextBox Width="150" PlaceholderText="192.168.1.50" Text="{Binding ManualHost}" />
                 <Button Content="Add by address" Command="{Binding AddManualCommand}" />
               </StackPanel>
               <Button Content="Continue without a controller"
@@ -877,7 +877,7 @@
                         Command="{Binding ScanCommand}" IsEnabled="{Binding !IsScanning}" />
 
                 <Grid ColumnDefinitions="*,6,Auto" Margin="0,6,0,0">
-                  <TextBox Grid.Column="0" PlaceholderText="192.0.2.11" Text="{Binding ManualHost}" />
+                  <TextBox Grid.Column="0" PlaceholderText="192.168.1.50" Text="{Binding ManualHost}" />
                   <Button Grid.Column="2" Content="Add" Command="{Binding AddManualCommand}" />
                 </Grid>
 

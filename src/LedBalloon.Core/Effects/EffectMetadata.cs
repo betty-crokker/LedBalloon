@@ -76,7 +76,7 @@ public sealed class EffectMetadata
     /// depending on which app selected it: an app that sends only the effect number leaves the
     /// segment carrying whatever the last effect was set to.
     /// <para>
-    /// Measured on 192.0.2.12: Palette with its own defaults draws 244 colors across 285 LEDs and
+    /// Measured on a GL-C-616WL: Palette with its own defaults draws 244 colors across 285 LEDs and
     /// scrolls; with the flags left as they were it draws the same 244 and sits still. Keys other
     /// than the eight controls - <c>m12</c> for how a 2D effect maps itself, <c>si</c> for which
     /// sound input it reads - are the firmware's business and are kept out.
