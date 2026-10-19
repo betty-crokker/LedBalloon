@@ -14,6 +14,56 @@
       <TextBlock Text="What the house does on its own" FontWeight="SemiBold" FontSize="16" />
       <TextBlock Classes="hint" TextWrapping="Wrap"
                  Text="These timers fire even if this app or this computer are off. Every line covers the whole house." />
+      <!-- Above the timers, because it is what happens before any of them get a chance to: a
+           controller coming back from a power cut is in whatever state this says, and the first
+           timer may be fifteen hours away. -->
+      <Border Classes="card" Padding="8" Margin="0,8,0,0">
+        <StackPanel Spacing="4">
+
+          <TextBlock Text="After a power cut" FontWeight="SemiBold" />
+
+          <TextBlock Classes="hint" TextWrapping="Wrap"
+                     Text="{Binding BootNotice}"
+                     IsVisible="{Binding HasBootNotice}" />
+
+          <ComboBox ItemsSource="{Binding BootChoices}"
+                    SelectedItem="{Binding ComesBackTo}"
+                    PlaceholderText="pick what the house comes back to"
+                    HorizontalAlignment="Stretch"
+                    AutomationProperties.AutomationId="ComesBackTo">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:BootChoice">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                  <Border Width="34" Height="14" CornerRadius="3"
+                          VerticalAlignment="Center"
+                          Background="{Binding Swatch}"
+                          BorderBrush="{DynamicResource PanelBorder}" BorderThickness="1"
+                          IsVisible="{Binding HasSwatch}" />
+                  <TextBlock Text="{Binding Label}" VerticalAlignment="Center"
+                             TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+
+          <!-- Disabled rather than explained when a scene is named, the way the scene panel's own
+               brightness is: a scene carries its own, and a second number that quietly loses is
+               worse than a grey one. -->
+          <DockPanel>
+            <TextBlock Classes="hint" DockPanel.Dock="Left" Text="brightness"
+                       VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Classes="hint" DockPanel.Dock="Right" Width="36"
+                       TextAlignment="Right" VerticalAlignment="Center" Margin="6,0,10,0"
+                       Text="{Binding BootBrightnessPercent}" />
+            <Slider Minimum="0" Maximum="255"
+                    AutomationProperties.AutomationId="BootBrightness"
+                    IsEnabled="{Binding BootBrightnessApplies}"
+                    Value="{Binding BootBrightness, Mode=TwoWay}" />
+          </DockPanel>
+
+        </StackPanel>
+      </Border>
+
       <Button Content="Add a timer" Margin="0,6,0,6"
               AutomationProperties.AutomationId="AddTimer"
               Command="{Binding AddScheduleEntryCommand}" />
@@ -26,7 +76,7 @@
                 HorizontalAlignment="Right" Margin="0,10,0,0">
       <TextBlock Classes="hint" VerticalAlignment="Center" Margin="0,0,8,0"
                  Text="Saved with everything else."
-                 IsVisible="{Binding ScheduleChanged}" />
+                 IsVisible="{Binding SomethingHereIsUnsaved}" />
       <Button Content="Cancel" Click="OnCancel" />
       <Button Content="Done" Click="OnSave" IsDefault="True" />
     </StackPanel>

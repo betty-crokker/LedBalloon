@@ -8,9 +8,10 @@ namespace LedBalloon.App.Tests;
 /// The account a save gives of itself while it runs.
 /// <para>
 /// Saving the setup is several writes to every controller — the layout, the output lengths and
-/// settings, the segment boundaries, the scenes, the timetable, any preset repairs asked for — and
-/// on a slow network that is a few seconds of a window that appears to be doing nothing. The buttons
-/// disabling themselves say only that something is going on.
+/// settings, the segment boundaries, the scenes, what to come back to after a power cut, the
+/// timetable, any preset repairs asked for — and on a slow network that is a few seconds of a window
+/// that appears to be doing nothing. The buttons disabling themselves say only that something is
+/// going on.
 /// </para>
 /// </summary>
 [Collection(UiThreadCollection.Name)]
@@ -47,6 +48,7 @@ public class TheSaveSaysWhatItIsDoingTests(UiThreadFixture ui) : IDisposable
                 "Moving the segment boundaries to match",
                 "Putting the scenes on the controllers",
                 "Repairing the presets that were asked about",
+                "Saying what to come back to after a power cut",
                 "Writing the timetable",
             ],
             spy.Steps);

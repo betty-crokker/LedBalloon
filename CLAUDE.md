@@ -15,7 +15,7 @@ What stays here is the part that is only true of this house.
 | Name  | LEDs | Notes |
 |-------|------|-------|
 | South | 310  | Roofline is segment 2, LEDs 25-309. The one to test on. |
-| North | 356  | **Leave alone.** Its configuration got muddled at some point and untangling it is a separate job. |
+| North | 356  | Two outputs, 308 and 48. Fair game now; its configuration was muddled for a long time and no longer is. |
 
 Their addresses are not written down here, because this file is public and they are a fact about one
 house rather than about the project. The app finds them by mDNS; `tools/wled.cs` takes an address or
@@ -28,12 +28,19 @@ configuration post: WLED's handler assigns `strip.setTargetFps(hw_led["fps"])` w
 key is present, so a document that omits it reads as zero. If you post a configuration, post the
 whole document. Colour blending (`hw.led.cb`) is 0 on both.
 
-## Two rules that are not negotiable
+## The rule that is not negotiable
 
 - **Leave the lights off.** Every capture ends with everything dark, every segment, and any timed
   preset activations disabled. `tools/wled.cs` does this itself; if you drive a controller another
   way, do it yourself.
-- **South only.** North is not to be changed, configured or lit.
+
+South is still the one to test effects on, because its roofline is the segment every capture here
+was measured against — but that is a preference, not a rule. North may be read, configured and lit.
+
+Both are set to come up **off** after a power cycle, and are to stay that way: `def.on` false and
+`def.ps` 0 in the configuration, which is what the app's own "After a power cut" picker calls "come
+back dark". A house that lights itself up at three in the morning because the power blinked is the
+thing this setting exists to prevent.
 
 ## Testing against the hardware
 

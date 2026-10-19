@@ -141,7 +141,23 @@ public sealed class WledLedInfo
     /// <summary>True when the device is configured as a 2D matrix.</summary>
     [JsonPropertyName("matrix")] public bool? Matrix { get; set; }
 
-    /// <summary>Preset applied at boot.</summary>
+    /// <summary>
+    /// The preset slot applied at boot, which the firmware files under <c>leds</c> rather than
+    /// beside the other settings.
+    /// </summary>
+    /// <remarks>
+    /// Read by <see cref="WledConfigClient.SetBootStateAsync"/>, and only to check that a write
+    /// landed: a configuration post answers 200 and changes nothing when a settings PIN is set, and
+    /// this is the one part of the boot state the controller will say back without being asked for
+    /// its whole configuration.
+    /// <para>
+    /// Not what the app shows anybody, because it is a third of the answer. Whether the strip comes
+    /// up lit at all, and how bright, live in <c>def.on</c> and <c>def.bri</c> and are not reported
+    /// here - and a preset saved while the lights were off comes up dark whatever this says. The
+    /// question "what does the house come back to after a power cut" can only be answered from
+    /// <c>cfg.json</c>; see <see cref="BootState"/>.
+    /// </para>
+    /// </remarks>
     [JsonPropertyName("bootps")] public int? BootPreset { get; set; }
 }
 

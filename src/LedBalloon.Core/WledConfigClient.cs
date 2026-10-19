@@ -1,6 +1,8 @@
 ﻿using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using LedBalloon.Core.Json;
+using LedBalloon.Core.Models;
 
 namespace LedBalloon.Core;
 
@@ -443,6 +445,124 @@ public sealed class WledConfigClient
                 response.StatusCode,
                 $"That controller would not take the location ({(int)response.StatusCode}). " +
                 "A settings PIN will block this.");
+        }
+    }
+
+    /// <summary>
+    /// What this controller comes back to when the power does, or null when it will not say.
+    /// </summary>
+    /// <remarks>
+    /// Read from the configuration rather than from <c>bootps</c> in <c>/json/info</c>, which is the
+    /// cheaper read and not the answer: info reports the boot preset alone, and the boot preset is
+    /// only one of the three things that decide what comes up. See <see cref="Models.WledInfo"/>.
+    /// </remarks>
+    public async Task<BootState?> GetBootStateAsync(CancellationToken cancellationToken = default)
+    {
+        using JsonDocument document = await GetRawAsync(cancellationToken).ConfigureAwait(false);
+        return WledBootState.Parse(document.RootElement);
+    }
+
+    /// <summary>
+    /// Tells the controller what to come back to after a power cut.
+    /// <para>
+    /// Written the same way as the timetable and the location - the whole configuration read and
+    /// posted back with only <c>def</c> changed - because a partial post is not safe on 0.15.3. See
+    /// <see cref="SetScheduleAsync"/>, where leaving out hw.led.fps uncapped the frame rate.
+    /// </para>
+    /// <para>
+    /// A slot has to hold something before this is pointed at it. The controller does not check, and
+    /// a boot preset naming an empty slot is not an error anywhere - it simply does nothing, months
+    /// later, in the dark.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// True when the controller was written to, false when it already came back to exactly this.
+    /// </returns>
+    public async Task<bool> SetBootStateAsync(
+        BootState state,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+
+        JsonObject configuration = await ReadConfigurationAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!WledBootState.Apply(configuration, state))
+        {
+            return false;
+        }
+
+        using var content = new StringContent(
+            configuration.ToJsonString(), Encoding.UTF8, "application/json");
+
+        using HttpResponseMessage response = await _http
+            .PostAsync("json/cfg", content, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new WledHttpException(
+                response.StatusCode,
+                $"That controller would not take the boot state ({(int)response.StatusCode}). " +
+                "A settings PIN will block this.");
+        }
+
+        // The status code is not proof, the way it is not for the rename and the sound sync: a
+        // settings PIN makes this post answer 200 and change nothing. The boot preset is the one
+        // part of this the controller will say back - /json/info reports the slot it is now holding
+        // - and a setting that is only read months later during a power cut is worth the extra
+        // request to confirm now.
+        await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+
+        int wanted = configuration["def"]?["ps"]?.GetValue<int>() ?? BootState.NoPreset;
+        int? applied = await ReadBootPresetAsync(cancellationToken).ConfigureAwait(false);
+
+        // Only when it answers and disagrees. A build that does not report the slot at all is not
+        // evidence of anything, and refusing a write that may well have landed would be worse than
+        // taking the 200 at its word.
+        if (applied is { } slot && slot != wanted)
+        {
+            throw new WledException(
+                $"{_host} still boots to preset {slot} rather than {wanted}. The boot state did " +
+                "not take; a settings PIN will do this.");
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The boot preset the controller is holding now, from <c>info.leds.bootps</c>, or null when it
+    /// does not report one.
+    /// </summary>
+    /// <remarks>
+    /// The cheap half of the boot state, and the only half readable anywhere but the configuration.
+    /// Here to check a write rather than to show anybody: <c>on</c> and <c>bri</c> are not in info,
+    /// so this cannot answer what the house will come back to on its own.
+    /// </remarks>
+    private async Task<int?> ReadBootPresetAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using HttpResponseMessage response = await _http
+                .GetAsync("json/info", cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            string body = await response.Content.ReadAsStringAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            WledInfo? info = JsonSerializer.Deserialize(body, WledJson.Default.WledInfo);
+
+            return info?.Leds?.BootPreset;
+        }
+        catch (Exception ex) when (ex is JsonException or HttpRequestException)
+        {
+            // A controller that will not describe itself has not said the write failed.
+            return null;
         }
     }
 

@@ -144,6 +144,18 @@ internal sealed class FakeController : IDisposable
     public string Configuration { get; set; } =
         """{"hw":{"led":{"fps":42,"total":10}},"timers":{"cntdwn":{"en":false},"ins":[]}}""";
 
+    /// <summary>
+    /// What <c>/json/info</c> reports as the boot preset, or null to not answer that request at all
+    /// - which is both this stand-in's default and how a build that does not report the slot behaves.
+    /// </summary>
+    /// <remarks>
+    /// Served on its own rather than as part of the info carried in <c>/json</c>, because the only
+    /// thing that reads it wants this one key: writing a boot state posts the configuration and then
+    /// asks the controller which slot it is actually holding, since a post blocked by a settings PIN
+    /// answers 200 and changes nothing.
+    /// </remarks>
+    public int? BootPresetReported { get; set; }
+
     /// <summary>Puts a custom palette on this controller, as if somebody had made it here.</summary>
     public void Holds(params string[] palettes)
     {
@@ -380,6 +392,18 @@ internal sealed class FakeController : IDisposable
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = body.Length;
                 await context.Response.OutputStream.WriteAsync(body);
+
+                context.Response.Close();
+                continue;
+            }
+
+            if (path.TrimEnd('/') is "/json/info" && BootPresetReported is { } boot)
+            {
+                byte[] reported = Encoding.UTF8.GetBytes($"{{\"leds\":{{\"bootps\":{boot}}}}}");
+
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = reported.Length;
+                await context.Response.OutputStream.WriteAsync(reported);
 
                 context.Response.Close();
                 continue;

@@ -1263,6 +1263,24 @@ public sealed partial class MainViewModel : ViewModelBase
                 progress?.Say("Repairing the presets that were asked about");
                 await ApplyPresetRepairsAsync();
 
+                // After the scenes and the repairs, because this points at a slot and the slot has
+                // to exist and hold the right thing first. Before the timetable, because writing
+                // that ends by reading the controllers back - and that read fills the same picker
+                // this is about, so a choice made here would be overwritten by the old value before
+                // it was ever sent.
+                progress?.Say("Saying what to come back to after a power cut");
+                (int boots, List<string> bootTrouble) = await WriteBootStateAsync();
+
+                if (boots > 0)
+                {
+                    pushed += $" {boots} controller(s) told what to come back to after a power cut.";
+                }
+
+                foreach (string complaint in bootTrouble)
+                {
+                    pushed += $" {complaint}";
+                }
+
                 progress?.Say("Writing the timetable");
                 int timetables = await WriteScheduleAsync();
 
@@ -7102,6 +7120,83 @@ public sealed partial class MainViewModel : ViewModelBase
     /// </remarks>
     partial void OnScheduleChangedChanged(bool value)
     {
+        OnPropertyChanged(nameof(SomethingHereIsUnsaved));
+
+        if (value)
+        {
+            HasUnsavedChanges = true;
+        }
+    }
+
+    /// <summary>
+    /// True when anything on the schedule screen is unsaved, which is what the line down in its
+    /// corner is about. Both halves of that screen go out with the one Save.
+    /// </summary>
+    public bool SomethingHereIsUnsaved => ScheduleChanged || BootStateChanged;
+
+    /// <summary>
+    /// What the house comes back to when the power does, and the choices it could be told to come
+    /// back to instead.
+    /// <para>
+    /// It belongs beside the timetable because it is the same kind of fact: something the
+    /// controllers do by themselves, with nobody present and this app not running. It is the
+    /// quietest setting in here - read once, by the controller, at the end of a power cut - and the
+    /// only way to find out it was wrong is to have a power cut.
+    /// </para>
+    /// </summary>
+    [ObservableProperty] private IReadOnlyList<BootChoice> _bootChoices = [];
+
+    /// <summary>The choice in the picker, which is the house's rather than one controller's.</summary>
+    /// <remarks>
+    /// One choice for the whole house, like a timer and for the same reason: the lights do not come
+    /// back in halves. The slot it lands in is worked out per controller at the moment of saving.
+    /// </remarks>
+    [ObservableProperty] private BootChoice? _comesBackTo;
+
+    /// <summary>
+    /// The brightness it comes back at, 0-255.
+    /// </summary>
+    /// <remarks>
+    /// Only decides anything when no scene is named - a scene carries its own brightness - but it is
+    /// written either way, because WLED uses the same number as the level to return to when the
+    /// lights are switched on having been off.
+    /// </remarks>
+    [ObservableProperty] private double _bootBrightness = 128;
+
+    /// <summary>True once the choice has been touched and the controllers have not been told.</summary>
+    [ObservableProperty] private bool _bootStateChanged;
+
+    /// <summary>What the controllers say they will come back to now, in a sentence.</summary>
+    [ObservableProperty] private string _bootNotice = string.Empty;
+
+    /// <summary>Whether there is a sentence to show, so the line can be left out when there is not.</summary>
+    public bool HasBootNotice => BootNotice.Length > 0;
+
+    partial void OnBootNoticeChanged(string value) => OnPropertyChanged(nameof(HasBootNotice));
+
+    /// <summary>True when the brightness box is deciding anything, so it can be greyed when not.</summary>
+    public bool BootBrightnessApplies => ComesBackTo is { Scene: null, LightsUp: true };
+
+    /// <summary>As a proportion, because 38 beside a slider says nothing about how dark that is.</summary>
+    public string BootBrightnessPercent => $"{Math.Round(BootBrightness / 255d * 100)}%";
+
+    partial void OnComesBackToChanged(BootChoice? value)
+    {
+        OnPropertyChanged(nameof(BootBrightnessApplies));
+        BootStateChanged = true;
+    }
+
+    partial void OnBootBrightnessChanged(double value)
+    {
+        OnPropertyChanged(nameof(BootBrightnessPercent));
+        BootStateChanged = true;
+    }
+
+    /// <summary>A touched boot state is unsaved work like any other, and says so on the one Save.</summary>
+    partial void OnBootStateChangedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SomethingHereIsUnsaved));
+
         if (value)
         {
             HasUnsavedChanges = true;
@@ -7235,6 +7330,7 @@ public sealed partial class MainViewModel : ViewModelBase
 
         var found = new List<(ScheduledChange Entry, string? Holds)>();
         var said = new List<string>();
+        var comingBack = new List<(DeviceViewModel Device, BootState State, string? Holds)>();
 
         foreach (DeviceViewModel device in Devices)
         {
@@ -7247,6 +7343,21 @@ public sealed partial class MainViewModel : ViewModelBase
             {
                 var config = new WledConfigClient(device.Host);
                 IReadOnlyList<ScheduledChange> entries = await config.GetScheduleAsync();
+
+                // Read here rather than in a pass of its own: it is the same question as the
+                // timetable - what does this controller do without us - and asking at the same
+                // moment means the two cannot disagree about which controllers exist.
+                if (await config.GetBootStateAsync() is { } boot)
+                {
+                    string? comesBackTo = NameOfSlot(device, boot.PresetId);
+
+                    if (comesBackTo is { Length: > 0 })
+                    {
+                        _bootedInto.Add(comesBackTo);
+                    }
+
+                    comingBack.Add((device, boot, comesBackTo));
+                }
 
                 foreach (ScheduledChange entry in entries)
                 {
@@ -7285,6 +7396,19 @@ public sealed partial class MainViewModel : ViewModelBase
 
         List<ScheduleRow> shown = Collapse(rows);
 
+        // After the reading too, and for the same reason as the timer list above: a controller can
+        // be booting into a preset this app has never written, and that name is learned in the loop.
+        IReadOnlyList<BootChoice> boots = BootChoice.Offered(ScenesTheHouseCanComeBackTo());
+
+        BootChoice? comesBack = comingBack.Count > 0 ? Matching(comingBack[0], boots) : null;
+
+        double bootBrightness = comingBack.Count > 0 ? comingBack[0].State.Brightness : BootBrightness;
+
+        string comesBackSaid = string.Join(
+            "; ",
+            comingBack.Select(c =>
+                $"{c.Device.DisplayName} {c.State.Describe(slot => NameOfSlot(c.Device, slot))}"));
+
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             Schedule.Clear();
@@ -7298,6 +7422,17 @@ public sealed partial class MainViewModel : ViewModelBase
                 ? string.Empty
                 : $"The house changes on its own \u2014 {string.Join("; ", said)}.";
 
+            BootChoices = boots;
+            ComesBackTo = comesBack;
+            BootBrightness = bootBrightness;
+
+            BootNotice = comesBackSaid.Length == 0
+                ? string.Empty
+                : $"After a power cut \u2014 {comesBackSaid}.";
+
+            // Both flags last. Setting the two above raises the change notifications that say the
+            // boot state has been touched, and reading a controller is not touching it.
+            BootStateChanged = false;
             ScheduleChanged = false;
             OnPropertyChanged(nameof(SceneTimerNote));
             RefreshPresetGaps();
@@ -7313,6 +7448,17 @@ public sealed partial class MainViewModel : ViewModelBase
     /// a timer somebody meant.
     /// </remarks>
     private readonly HashSet<string> _firedByTimers = new(StringComparer.CurrentCultureIgnoreCase);
+
+    /// <summary>
+    /// Names the controllers are already booting into, gathered as they are read.
+    /// </summary>
+    /// <remarks>
+    /// The same trap as <see cref="_firedByTimers"/>, with a longer fuse. A boot preset set up
+    /// outside this app has to read back as itself, or the picker comes up blank - and a blank
+    /// picker is indistinguishable from "come back dark", which is what the next save would then
+    /// quietly write over it.
+    /// </remarks>
+    private readonly HashSet<string> _bootedInto = new(StringComparer.CurrentCultureIgnoreCase);
 
     /// <summary>What the slot holds on that controller, by name.</summary>
     private static string? NameOfSlot(DeviceViewModel device, int slot) =>
@@ -7347,6 +7493,55 @@ public sealed partial class MainViewModel : ViewModelBase
                 .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
                 .Select(name => (name, SwatchFor(name))),
         ];
+    }
+
+    /// <summary>
+    /// The scenes the house can be told to come back to.
+    /// </summary>
+    /// <remarks>
+    /// The house's own, plus whatever the controllers are already booting into - which is the same
+    /// list a timer offers, for the same reasons, plus the boot presets. Kept separate from
+    /// <see cref="ScenesATimerCanName"/> so that reading a boot preset does not quietly add a name
+    /// to the timetable's picker, where it would look like a scene this app can put anywhere.
+    /// </remarks>
+    private IReadOnlyList<(string Name, IBrush? Swatch)> ScenesTheHouseCanComeBackTo()
+    {
+        IEnumerable<string> known = Project.Scenes.Select(scene => scene.Name).Concat(_bootedInto);
+
+        return
+        [
+            .. known
+                .Where(name => !string.IsNullOrWhiteSpace(name) && TimedSwitch.SwitchIn(name) is null)
+                .Distinct(StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+                .Select(name => (name, SwatchFor(name))),
+        ];
+    }
+
+    /// <summary>
+    /// Which of the offered choices a controller's boot state reads back as, or null when none of
+    /// them says what it is doing.
+    /// </summary>
+    /// <remarks>
+    /// Null happens for a real controller: one booting into a slot whose preset this app cannot name
+    /// - deleted, or saved from WLED's own pages under a name nothing here knows. The picker is left
+    /// empty rather than guessed at, and <see cref="WriteBootStateAsync"/> writes nothing while it
+    /// is empty, so an unrecognised boot preset is left alone instead of being overwritten by the
+    /// nearest thing in the list.
+    /// </remarks>
+    private static BootChoice? Matching(
+        (DeviceViewModel Device, BootState State, string? Holds) read,
+        IReadOnlyList<BootChoice> offered)
+    {
+        if (!read.State.FromPreset)
+        {
+            return read.State.LightsUp ? BootChoice.Lit : BootChoice.Dark;
+        }
+
+        return read.Holds is { Length: > 0 } name
+            ? offered.FirstOrDefault(
+                choice => string.Equals(choice.Scene, name, StringComparison.CurrentCultureIgnoreCase))
+            : null;
     }
 
     /// <summary>
@@ -7652,6 +7847,80 @@ public sealed partial class MainViewModel : ViewModelBase
         }
 
         return taken;
+    }
+
+    /// <summary>
+    /// Tells every controller what to come back to after a power cut.
+    /// <para>
+    /// Not a command and not a button, for the same reason the timetable is neither: it is part of
+    /// the description of the house, so it goes out when that does.
+    /// </para>
+    /// <para>
+    /// After the scenes and after the timetable. A boot preset is a slot, so the preset has to be on
+    /// the controller before this can be pointed at it - and unlike a timer, a boot preset aimed at
+    /// an empty slot is not visibly wrong anywhere. It simply does nothing, months later, in the
+    /// dark.
+    /// </para>
+    /// </summary>
+    /// <returns>
+    /// How many controllers were written to, and anything that went wrong, per controller.
+    /// </returns>
+    private async Task<(int Written, List<string> Trouble)> WriteBootStateAsync()
+    {
+        var trouble = new List<string>();
+
+        // Nothing picked means nothing to say. A controller booting into a preset this app cannot
+        // name reads back as an empty picker, and writing then would replace a setting somebody
+        // meant with the app's own idea of a default.
+        if (ComesBackTo is not { } wanted)
+        {
+            return (0, trouble);
+        }
+
+        int taken = 0;
+
+        foreach (DeviceViewModel device in Devices)
+        {
+            int slot = BootState.NoPreset;
+
+            if (wanted.Scene is { } name)
+            {
+                // A scene that says nothing about this controller has no slot on it, so that box is
+                // left coming back to whatever it came back to before. The same rule the timetable
+                // keeps: a scene covering only the roofline should not decide what the other
+                // controller does with its morning.
+                if (SlotOf(device, name) is not { } found)
+                {
+                    continue;
+                }
+
+                slot = found;
+            }
+
+            try
+            {
+                var state = new BootState(
+                    LightsUp: wanted.LightsUp,
+                    Brightness: (int)Math.Round(BootBrightness),
+                    PresetId: slot);
+
+                if (await new WledConfigClient(device.Host).SetBootStateAsync(state))
+                {
+                    taken++;
+                }
+            }
+            catch (Exception ex) when (ex is WledException or HttpRequestException or TaskCanceledException)
+            {
+                // Said rather than thrown. One controller refusing this is not a reason to abandon
+                // a save that has already written the layout, the scenes and the timetable - but it
+                // is absolutely a reason to say so, because nothing else will ever mention it.
+                trouble.Add($"{device.DisplayName} would not take what to come back to: {ex.Message}");
+            }
+        }
+
+        BootStateChanged = false;
+
+        return (taken, trouble);
     }
 
     /// <summary>
